@@ -1,3 +1,6 @@
 IsaacLab/
 openarm_isaac_lab/source/openarm/openarm.egg-info/
 open_source/
+
+openarm_isaac_lab/.git.bak/
+env_setup/reachability/output/

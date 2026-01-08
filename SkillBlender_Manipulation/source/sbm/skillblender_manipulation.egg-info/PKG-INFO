@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: skillblender-manipulation
+Version: 0.1.0
+Summary: SkillBlender-based hierarchical policies for OpenArm manipulation.
+Author: Enactic, Inc.
+License: Apache-2.0
+Requires-Python: >=3.10
+Dynamic: author
+Dynamic: license
+Dynamic: requires-python
+Dynamic: summary

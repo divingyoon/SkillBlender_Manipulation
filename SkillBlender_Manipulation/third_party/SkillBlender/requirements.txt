@@ -1,0 +1,14 @@
+isaacgym-stubs
+skrl
+ipython
+wandb
+screeninfo
+aitviewer
+smplx
+chumpy
+scikit-learn
+numpy==1.20
+mujoco==2.3.6
+mujoco-python-viewer
+gpustat
+pillow==10.2.0

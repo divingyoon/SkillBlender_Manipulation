@@ -1,0 +1,395 @@
+# SPDX-FileCopyrightText: Copyright (c) 2021 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: BSD-3-Clause
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+# list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+# this list of conditions and the following disclaimer in the documentation
+# and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+# contributors may be used to endorse or promote products derived from
+# this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+#
+# Copyright (c) 2021 ETH Zurich, Nikita Rudin
+# Modifications copyright (c) 2025 Enactic, Inc.
+
+from __future__ import annotations
+
+import os
+import re
+from copy import deepcopy
+
+import torch
+import torch.nn as nn
+from torch.distributions import Normal
+
+from rsl_rl.modules import ActorCritic
+
+
+class ActorCriticHierarchical(nn.Module):
+    is_recurrent = False
+
+    def __init__(
+        self,
+        num_actor_obs,
+        num_critic_obs,
+        num_actions,
+        obs_context_len=1,
+        actor_hidden_dims=None,
+        critic_hidden_dims=None,
+        activation="elu",
+        init_noise_std=1.0,
+        **kwargs,
+    ):
+        super().__init__()
+
+        self.obs_context_len = obs_context_len
+        actor_hidden_dims = actor_hidden_dims or [256, 256, 256]
+        critic_hidden_dims = critic_hidden_dims or [256, 256, 256]
+
+        activation_fn = get_activation(activation)
+        self.device = kwargs.get("device", "cpu")
+        self.frame_stack = kwargs.get("frame_stack")
+        self.command_dim = kwargs.get("command_dim")
+        self.num_dofs = kwargs.get("num_dofs")
+        self.command_slice = kwargs.get("command_slice")
+
+        if self.frame_stack is None or self.command_dim is None:
+            raise ValueError("frame_stack and command_dim must be provided in policy kwargs.")
+        if self.command_slice is not None and len(self.command_slice) != 2:
+            raise ValueError("command_slice must be a (start, end) pair.")
+
+        self._get_low_level_policies(kwargs)
+        num_output = self._get_num_output(self.frame_stack)
+
+        actor_layers = [nn.Linear(num_actor_obs, actor_hidden_dims[0]), activation_fn]
+        for idx, hidden_dim in enumerate(actor_hidden_dims):
+            is_last = idx == len(actor_hidden_dims) - 1
+            next_dim = num_output if is_last else actor_hidden_dims[idx + 1]
+            actor_layers.append(nn.Linear(hidden_dim, next_dim))
+            if not is_last:
+                actor_layers.append(activation_fn)
+        self.actor = nn.Sequential(*actor_layers)
+
+        critic_layers = [nn.Linear(num_critic_obs, critic_hidden_dims[0]), activation_fn]
+        for idx, hidden_dim in enumerate(critic_hidden_dims):
+            is_last = idx == len(critic_hidden_dims) - 1
+            next_dim = 1 if is_last else critic_hidden_dims[idx + 1]
+            critic_layers.append(nn.Linear(hidden_dim, next_dim))
+            if not is_last:
+                critic_layers.append(activation_fn)
+        self.critic = nn.Sequential(*critic_layers)
+
+        self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
+        self.distribution = None
+        Normal.set_default_validate_args = False
+
+    def _get_low_level_policies(self, kwargs):
+        skill_dict = kwargs.get("skill_dict")
+        if not skill_dict:
+            raise ValueError("skill_dict is required to build hierarchical policies.")
+
+        self.skill_names = []
+        self.policy_list = []
+        self.skill_command_dims = []
+        self.low_high_list = []
+
+        for name, value in skill_dict.items():
+            if "command_dim" not in value:
+                raise ValueError(f"Skill '{name}' must define command_dim.")
+
+            if "policy" in value:
+                policy = value["policy"]
+                action_dim = self.num_dofs or policy[-1].out_features
+            else:
+                policy, action_dim = self._load_policy_from_checkpoint(name, value)
+
+            if self.num_dofs is None:
+                self.num_dofs = action_dim
+            elif self.num_dofs != action_dim:
+                raise ValueError(
+                    f"Skill '{name}' action dim {action_dim} does not match num_dofs={self.num_dofs}."
+                )
+
+            self.skill_names.append(name)
+            self.policy_list.append(policy)
+            self.skill_command_dims.append(int(value["command_dim"]))
+            self.low_high_list.append(value.get("low_high"))
+
+        self.num_skills = len(self.policy_list)
+
+    def _load_policy_from_checkpoint(self, name, skill_cfg):
+        checkpoint_path = _resolve_checkpoint_path(skill_cfg)
+        state_dict = _load_model_state_dict(checkpoint_path, self.device)
+        actor_obs_dim, actor_hidden, action_dim = _infer_mlp_dims(state_dict, "actor")
+        critic_obs_dim, critic_hidden, _ = _infer_mlp_dims(state_dict, "critic")
+
+        policy_kwargs = deepcopy(skill_cfg.get("policy_kwargs", {}))
+        policy_kwargs.setdefault("actor_hidden_dims", actor_hidden)
+        policy_kwargs.setdefault("critic_hidden_dims", critic_hidden)
+        policy_kwargs.setdefault("activation", skill_cfg.get("activation", "elu"))
+        policy_kwargs.setdefault("init_noise_std", skill_cfg.get("init_noise_std", 1.0))
+
+        policy = ActorCritic(
+            actor_obs_dim,
+            critic_obs_dim,
+            action_dim,
+            obs_context_len=1,
+            **policy_kwargs,
+        ).to(self.device)
+        policy.load_state_dict(state_dict)
+        _freeze_module(policy)
+        return policy.actor, action_dim
+
+    def _get_num_output(self, frame_stack=1):
+        command_total = sum(self.skill_command_dims)
+        num_output = command_total + (self.num_skills * self.num_dofs)
+        return num_output * frame_stack
+
+    def reset(self, dones=None):
+        pass
+
+    def forward(self):
+        raise NotImplementedError
+
+    @property
+    def action_mean(self):
+        return self.distribution.mean
+
+    @property
+    def action_std(self):
+        return self.distribution.stddev
+
+    @property
+    def entropy(self):
+        return self.distribution.entropy().sum(dim=-1)
+
+    def _replace_observations(self, observations, command, low_high=None):
+        if low_high is not None:
+            low, high = low_high
+            command = torch.clamp(command, low, high)
+        new_observations = observations.clone().reshape(observations.shape[0], self.frame_stack, -1)
+        num_envs, frame_stack, num_single_obs = new_observations.shape
+        new_command = command.reshape(num_envs, frame_stack, -1)
+        start, end = self._resolve_command_slice(num_single_obs)
+        prefix = new_observations[:, :, :start]
+        suffix = new_observations[:, :, end:]
+        replaced = torch.cat((prefix, new_command, suffix), dim=-1)
+        return replaced.reshape(num_envs, -1)
+
+    def _resolve_command_slice(self, num_single_obs: int) -> tuple[int, int]:
+        if self.command_slice is None:
+            start, end = 0, self.command_dim
+        else:
+            start, end = int(self.command_slice[0]), int(self.command_slice[1])
+        if start < 0:
+            start = num_single_obs + start
+        if end < 0:
+            end = num_single_obs + end
+        if start < 0 or end < 0 or start > num_single_obs or end > num_single_obs:
+            raise ValueError(f"command_slice {self.command_slice} out of bounds for obs dim {num_single_obs}.")
+        if end < start:
+            raise ValueError(f"command_slice {self.command_slice} must satisfy start <= end.")
+        if (end - start) != self.command_dim:
+            raise ValueError(
+                f"command_slice length {end - start} does not match command_dim={self.command_dim}."
+            )
+        return start, end
+
+    def _actor(self, observations):
+        raw_mean = self.actor(observations)
+        input_to_low = raw_mean[:, : -(self.num_skills * self.num_dofs)]
+        mask_to_low = raw_mean[:, -(self.num_skills * self.num_dofs) :]
+        masks = []
+        for i in range(self.num_skills):
+            mask = mask_to_low[:, i * self.num_dofs : (i + 1) * self.num_dofs]
+            masks.append(mask)
+        masks = torch.stack(masks, dim=1)
+        masks = torch.softmax(masks, dim=1)
+
+        means = []
+        command_offset = 0
+        for i in range(self.num_skills):
+            curr_command_dim = self.skill_command_dims[i]
+            cmd_slice = input_to_low[:, command_offset : command_offset + curr_command_dim]
+            command_offset += curr_command_dim
+            cmd_obs = self._replace_observations(
+                observations,
+                cmd_slice,
+                low_high=self.low_high_list[i],
+            )
+            mean = self.policy_list[i](cmd_obs) * masks[:, i]
+            means.append(mean)
+        actions_mean = sum(means)
+        return {"actions_mean": actions_mean, "masks": masks}
+
+    def update_distribution(self, observations):
+        mean = self._actor(observations)["actions_mean"]
+        self.distribution = Normal(mean, mean * 0.0 + self.std)
+
+    def act(self, observations, **kwargs):
+        if self.obs_context_len != 1:
+            observations = observations[..., -1, :]
+        self.update_distribution(observations)
+        return self.distribution.sample()
+
+    def get_actions_log_prob(self, actions):
+        return self.distribution.log_prob(actions).sum(dim=-1)
+
+    def act_inference(self, observations):
+        if self.obs_context_len != 1:
+            observations = observations[..., -1, :]
+        return self._actor(observations)["actions_mean"]
+
+    def act_inference_hrl(self, observations):
+        if self.obs_context_len != 1:
+            observations = observations[..., -1, :]
+        return self._actor(observations)
+
+    def evaluate(self, critic_observations, **kwargs):
+        if self.obs_context_len != 1:
+            critic_observations = critic_observations[..., -1, :]
+        return self.critic(critic_observations)
+
+
+def _freeze_module(module: nn.Module):
+    for param in module.parameters():
+        param.requires_grad = False
+    module.eval()
+
+
+def _resolve_checkpoint_path(skill_cfg: dict) -> str:
+    if "checkpoint_path" in skill_cfg:
+        return skill_cfg["checkpoint_path"]
+
+    experiment_name = skill_cfg.get("experiment_name")
+    if experiment_name is None:
+        raise ValueError("Skill config must include checkpoint_path or experiment_name.")
+
+    log_root = skill_cfg.get("log_root")
+    if log_root is None:
+        log_root = os.path.join(os.getcwd(), "logs", "rsl_rl", experiment_name)
+
+    run_dir = _select_run_dir(log_root, skill_cfg.get("load_run", "latest"))
+    return _select_checkpoint(run_dir, skill_cfg.get("checkpoint", "latest"))
+
+
+def _select_run_dir(log_root: str, load_run):
+    if not os.path.isdir(log_root):
+        raise FileNotFoundError(f"Log root not found: {log_root}")
+    runs = [d for d in os.listdir(log_root) if os.path.isdir(os.path.join(log_root, d))]
+    if not runs:
+        raise FileNotFoundError(f"No runs found in log root: {log_root}")
+
+    if load_run in (None, -1, "latest", ".*"):
+        return os.path.join(log_root, sorted(runs)[-1])
+
+    if isinstance(load_run, str) and load_run in runs:
+        return os.path.join(log_root, load_run)
+
+    pattern = re.compile(str(load_run))
+    matches = sorted([d for d in runs if pattern.search(d)])
+    if not matches:
+        raise FileNotFoundError(f"No runs match '{load_run}' in {log_root}")
+    return os.path.join(log_root, matches[-1])
+
+
+def _select_checkpoint(run_dir: str, checkpoint):
+    if checkpoint in (None, -1, "latest", ".*"):
+        return _latest_checkpoint(run_dir)
+
+    if isinstance(checkpoint, int):
+        candidate = os.path.join(run_dir, f"model_{checkpoint}.pt")
+        if os.path.exists(candidate):
+            return candidate
+        raise FileNotFoundError(f"Checkpoint not found: {candidate}")
+
+    if isinstance(checkpoint, str):
+        if checkpoint.endswith(".pt"):
+            candidate = checkpoint if os.path.isabs(checkpoint) else os.path.join(run_dir, checkpoint)
+            if os.path.exists(candidate):
+                return candidate
+        pattern = re.compile(checkpoint)
+        matches = sorted([f for f in os.listdir(run_dir) if pattern.search(f)])
+        if matches:
+            return os.path.join(run_dir, matches[-1])
+
+    raise FileNotFoundError(f"Checkpoint not found in {run_dir}: {checkpoint}")
+
+
+def _latest_checkpoint(run_dir: str) -> str:
+    candidates = [f for f in os.listdir(run_dir) if f.startswith("model_") and f.endswith(".pt")]
+    if not candidates:
+        raise FileNotFoundError(f"No checkpoints found in {run_dir}")
+
+    def sort_key(name: str):
+        match = re.search(r"model_(\\d+)\\.pt", name)
+        return int(match.group(1)) if match else -1
+
+    latest = max(candidates, key=sort_key)
+    return os.path.join(run_dir, latest)
+
+
+def _load_model_state_dict(checkpoint_path: str, device):
+    try:
+        loaded = torch.load(checkpoint_path, map_location=device)
+    except Exception:
+        loaded = torch.load(checkpoint_path, map_location="cpu")
+    if "model_state_dict" not in loaded:
+        raise KeyError(f"model_state_dict missing in checkpoint: {checkpoint_path}")
+    return loaded["model_state_dict"]
+
+
+def _infer_mlp_dims(state_dict: dict, prefix: str):
+    weights = []
+    for key, tensor in state_dict.items():
+        if key.startswith(f"{prefix}.") and key.endswith(".weight"):
+            parts = key.split(".")
+            if len(parts) < 3:
+                continue
+            try:
+                layer_idx = int(parts[1])
+            except ValueError:
+                continue
+            weights.append((layer_idx, tensor))
+    if not weights:
+        raise KeyError(f"No weights found for prefix '{prefix}' in state_dict.")
+    weights = [tensor for _, tensor in sorted(weights, key=lambda item: item[0])]
+    input_dim = weights[0].shape[1]
+    hidden_dims = [w.shape[0] for w in weights[:-1]]
+    output_dim = weights[-1].shape[0]
+    return input_dim, hidden_dims, output_dim
+
+
+def get_activation(act_name):
+    if act_name == "elu":
+        return nn.ELU()
+    if act_name == "selu":
+        return nn.SELU()
+    if act_name == "relu":
+        return nn.ReLU()
+    if act_name == "crelu":
+        return nn.ReLU()
+    if act_name == "lrelu":
+        return nn.LeakyReLU()
+    if act_name == "tanh":
+        return nn.Tanh()
+    if act_name == "sigmoid":
+        return nn.Sigmoid()
+    raise ValueError(f"Unsupported activation: {act_name}")

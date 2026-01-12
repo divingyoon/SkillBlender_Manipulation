@@ -108,6 +108,8 @@ class ActionsCfg:
 
     left_arm_action: ActionTerm = MISSING
     right_arm_action: ActionTerm = MISSING
+    left_hand_action: ActionTerm = MISSING
+    right_hand_action: ActionTerm = MISSING
 
 
 @configclass
@@ -177,6 +179,26 @@ class ObservationsCfg:
             },
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
+        left_hand_joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+        )
+        right_hand_joint_pos = ObsTerm(
+            func=mdp.joint_pos_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+        )
+        left_hand_joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+        )
+        right_hand_joint_vel = ObsTerm(
+            func=mdp.joint_vel_rel,
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+        )
         left_pose_command = ObsTerm(
             func=mdp.generated_commands, params={"command_name": "left_ee_pose"}
         )
@@ -189,6 +211,12 @@ class ObservationsCfg:
         right_actions = ObsTerm(func=mdp.last_action,
                 params={
                 "action_name": "right_arm_action"})
+        left_hand_actions = ObsTerm(
+            func=mdp.last_action, params={"action_name": "left_hand_action"}
+        )
+        right_hand_actions = ObsTerm(
+            func=mdp.last_action, params={"action_name": "right_hand_action"}
+        )
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -237,7 +265,7 @@ class RewardsCfg:
 
     left_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "std": 0.1,
@@ -257,7 +285,7 @@ class RewardsCfg:
 
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.orientation_z_axis_error,
-        weight=-0.1,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
@@ -266,7 +294,7 @@ class RewardsCfg:
 
     right_end_effector_orientation_tracking = RewTerm(
         func=mdp.orientation_z_axis_error,
-        weight=-0.1,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "right_ee_pose",
@@ -299,6 +327,16 @@ class RewardsCfg:
                                                                     "openarm_right_joint7"
                                                                   ])},
     )
+    left_hand_joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.00005,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+    )
+    right_hand_joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-0.00005,
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+    )
 
 
 @configclass
@@ -325,6 +363,14 @@ class CurriculumCfg:
     right_joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
         params={"term_name": "right_joint_vel", "weight": -0.001, "num_steps": 4500},
+    )
+    left_hand_joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "left_hand_joint_vel", "weight": -0.001, "num_steps": 4500},
+    )
+    right_hand_joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "right_hand_joint_vel", "weight": -0.001, "num_steps": 4500},
     )
 
 

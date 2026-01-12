@@ -25,6 +25,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
+from isaaclab.sensors import ContactSensorCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -43,6 +44,47 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
     # target object
     object: RigidObjectCfg = MISSING
     object2: RigidObjectCfg = MISSING
+
+    contact_left_left_finger = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/openarm_left_left_finger",
+        update_period=0.0,
+        history_length=6,
+        debug_vis=False,
+        filter_prim_paths_expr=[
+            "{ENV_REGEX_NS}/Object",
+            "{ENV_REGEX_NS}/Object2",
+        ],
+    )
+    contact_left_right_finger = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/openarm_left_right_finger",
+        update_period=0.0,
+        history_length=6,
+        debug_vis=False,
+        filter_prim_paths_expr=[
+            "{ENV_REGEX_NS}/Object",
+            "{ENV_REGEX_NS}/Object2",
+        ],
+    )
+    contact_right_left_finger = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/openarm_right_left_finger",
+        update_period=0.0,
+        history_length=6,
+        debug_vis=False,
+        filter_prim_paths_expr=[
+            "{ENV_REGEX_NS}/Object",
+            "{ENV_REGEX_NS}/Object2",
+        ],
+    )
+    contact_right_right_finger = ContactSensorCfg(
+        prim_path="{ENV_REGEX_NS}/Robot/openarm_right_right_finger",
+        update_period=0.0,
+        history_length=6,
+        debug_vis=False,
+        filter_prim_paths_expr=[
+            "{ENV_REGEX_NS}/Object",
+            "{ENV_REGEX_NS}/Object2",
+        ],
+    )
 
     # table
     table = AssetBaseCfg(
@@ -195,6 +237,23 @@ class ObservationsCfg:
         right_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         left_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
         right_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
+        # contact sensors
+        left_left_finger_contact = ObsTerm(
+            func=mdp.contact_observation,
+            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_left_finger")},
+        )
+        left_right_finger_contact = ObsTerm(
+            func=mdp.contact_observation,
+            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_right_finger")},
+        )
+        right_left_finger_contact = ObsTerm(
+            func=mdp.contact_observation,
+            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_left_finger")},
+        )
+        right_right_finger_contact = ObsTerm(
+            func=mdp.contact_observation,
+            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_right_finger")},
+        )
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -241,6 +300,28 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    # Finger contact rewards
+    left_left_finger_contact_reward = RewTerm(
+        func=mdp.contact_reward,
+        weight=2.5,
+        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_left_finger")},
+    )
+    left_right_finger_contact_reward = RewTerm(
+        func=mdp.contact_reward,
+        weight=2.5,
+        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_right_finger")},
+    )
+    right_left_finger_contact_reward = RewTerm(
+        func=mdp.contact_reward,
+        weight=2.5,
+        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_left_finger")},
+    )
+    right_right_finger_contact_reward = RewTerm(
+        func=mdp.contact_reward,
+        weight=2.5,
+        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_right_finger")},
+    )
+
     left_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
@@ -267,7 +348,12 @@ class RewardsCfg:
         weight=20.0,
         params={"minimal_height": 0.05, "hold_duration": 5.0},
     )
-
+    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05})
+    right_hold_reward = RewTerm(
+        func=mdp.object_is_held,
+        weight=20.0,
+        params={"minimal_height": 0.05, "hold_duration": 5.0},
+    )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
@@ -325,7 +411,7 @@ class TerminationsCfg:
 
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": 0.0, "asset_cfg": SceneEntityCfg("object")},
+        params={"minimum_height": 0.00, "asset_cfg": SceneEntityCfg("object")},
     )
 
 
@@ -333,7 +419,7 @@ class TerminationsCfg:
 class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual grasping environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=8192, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -349,3 +435,18 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
+        if self.scene.contact_left_left_finger is not None:
+            self.scene.contact_left_left_finger.update_period = self.sim.dt * 2
+        if self.scene.contact_left_right_finger is not None:
+            self.scene.contact_left_right_finger.update_period = self.sim.dt * 2
+        if self.scene.contact_right_left_finger is not None:
+            self.scene.contact_right_left_finger.update_period = self.sim.dt * 2
+        if self.scene.contact_right_right_finger is not None:
+            self.scene.contact_right_right_finger.update_period = self.sim.dt * 2
+        
+        # increase buffers to prevent physx overflow error with many contacts
+        # @see https://docs.omniverse.nvidia.com/py/isaacsim/source/extensions/omni.isaac.core/docs/index.html#omni.isaac.core.physics_context.PhysicsContext.set_gpu_total_aggregate_pairs_capacity
+        self.sim.physx.gpu_found_lost_aggregate_pairs_count = 1048576  # 2^20
+        self.sim.physx.gpu_max_rigid_contact_count = 1048576  # 2^20
+        self.sim.physx.gpu_max_rigid_patch_count = 327680  # 5 * 2^16
+        self.sim.physx.gpu_found_lost_patch_count = 524288  # 2^19

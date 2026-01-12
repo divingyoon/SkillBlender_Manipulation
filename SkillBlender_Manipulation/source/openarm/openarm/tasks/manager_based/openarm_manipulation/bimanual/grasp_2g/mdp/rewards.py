@@ -110,3 +110,19 @@ def object_is_held(
     )
     
     return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
+
+
+def contact_reward(
+    env: ManagerBasedRLEnv,
+    threshold: float,
+    sensor_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Reward for making contact with the specified sensor above a threshold."""
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    net_forces = contact_sensor.data.net_forces_w_history
+    # compute the norm of the force vector
+    contact_mag = torch.norm(net_forces, dim=-1)
+    # max over history and bodies
+    contact_mag = torch.max(contact_mag, dim=2)[0].max(dim=1)[0]
+    # reward is 1 if contact is above threshold, 0 otherwise
+    return torch.where(contact_mag > threshold, 1.0, 0.0)

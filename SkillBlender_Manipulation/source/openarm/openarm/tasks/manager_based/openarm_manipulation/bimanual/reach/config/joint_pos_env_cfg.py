@@ -103,6 +103,18 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
             scale=0.5,
             use_default_offset=True,
         )
+        self.actions.left_hand_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["openarm_left_finger_joint.*"],
+            scale=0.5,
+            use_default_offset=True,
+        )
+        self.actions.right_hand_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=["openarm_right_finger_joint.*"],
+            scale=0.5,
+            use_default_offset=True,
+        )
 
         # override command generator body
         # end-effector is along z-direction

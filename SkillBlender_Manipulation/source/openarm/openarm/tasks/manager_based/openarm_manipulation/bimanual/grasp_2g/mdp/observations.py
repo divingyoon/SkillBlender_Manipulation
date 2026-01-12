@@ -17,8 +17,24 @@ from __future__ import annotations
 import torch
 from typing import TYPE_CHECKING
 
+from isaaclab.managers import SceneEntityCfg
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+
+
+def contact_observation(
+    env: ManagerBasedRLEnv,
+    threshold: float,
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("contact_left_left_finger"),
+) -> torch.Tensor:
+    """Binary contact indicator from the specified contact sensor."""
+    contact_sensor = env.scene.sensors[sensor_cfg.name]
+    net_forces = contact_sensor.data.net_forces_w_history
+    contact_mag = torch.norm(net_forces, dim=-1)
+    contact_mag = torch.max(contact_mag, dim=2)[0].max(dim=1)[0]
+    # unsqueeze to make it a 1D tensor (shape: [num_envs, 1])
+    return (contact_mag > threshold).to(torch.float).unsqueeze(-1)
 
 
 def object_obs(

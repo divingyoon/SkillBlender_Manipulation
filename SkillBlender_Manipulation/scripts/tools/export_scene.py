@@ -19,6 +19,7 @@ import argparse
 import json
 import os
 import sys
+import torch
 
 import torch
 
@@ -75,27 +76,42 @@ def main(env_cfg, agent_cfg):
     if joint_input_path := args_cli.joint_input:
         with open(joint_input_path, "r", encoding="utf-8") as joint_file:
             desired_joint_state = json.load(joint_file)
+        # OVERWRITE the initial state in the config BEFORE the environment is created.
+        # This is a much more reliable way to set the initial pose.
+        if desired_joint_state and hasattr(env_cfg.scene, "robot"):
+            print("[INFO] Overwriting robot's initial joint positions from the provided JSON file.")
+            # Define fixed joints that should not have their position set from the JSON,
+            # as they have a joint range of zero and are likely for defining frames.
+            fixed_joints = [
+                "openarm_left_hand",
+                "openarm_right_hand",
+                "openarm_left_ee_tcp_joint",
+                "openarm_right_ee_tcp_joint",
+            ]
+            # Filter out the fixed joints from the desired state dictionary
+            movable_joint_state = {k: v for k, v in desired_joint_state.items() if k not in fixed_joints}
+            print(f"[INFO] Applying positions for {len(movable_joint_state)} movable joints (fixed joints were excluded).")
+            # Overwrite the config's joint positions with only the movable joints
+            env_cfg.scene.robot.init_state.joint_pos = movable_joint_state
     else:
         desired_joint_state = None
 
+    # Create the environment with the (possibly modified) configuration
+    print("[INFO] Creating environment...")
     env = gym.make(args_cli.task, cfg=env_cfg)
+    # The reset call will apply the initial state, including our modified joint positions.
+    print("[INFO] Resetting environment to apply the initial state...")
     env.reset()
+
+    # Unwrap the environment to access the base environment's properties like 'device'.
     core_env = env.unwrapped if hasattr(env, "unwrapped") else env
 
-    # optionally apply JSON joint positions
-    if desired_joint_state:
-        robot = core_env.scene["robot"]
-        joint_names = robot.joint_names
-        joint_tensor = robot.data.joint_pos.clone()
-        name_to_index = {name: idx for idx, name in enumerate(joint_names)}
-        for name, value in desired_joint_state.items():
-            if name in name_to_index:
-                joint_tensor[:, name_to_index[name]] = float(value)
-        robot.set_joint_position_target(joint_tensor)
-        robot.set_joint_velocity_target(torch.zeros_like(joint_tensor))
-        robot.write_data_to_sim()
-        core_env.scene.sim.step(render=False)
-        core_env.scene.update(dt=core_env.scene.physics_dt)
+    # Stepping simulation once to finalize the scene:
+    # Convert numpy array action to torch tensor for the environment's step function.
+    print("[INFO] Stepping simulation once to finalize the scene...")
+    action_numpy = env.action_space.sample()
+    action_tensor = torch.from_numpy(action_numpy).to(core_env.device)  # Use core_env.device
+    env.step(action_tensor)
 
     stage = core_env.scene.stage
     output_path = os.path.abspath(args_cli.output or f"{args_cli.task}_scene.usd")

@@ -15,6 +15,8 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
+from isaaclab.sim import PhysxCfg
+#from isaaclab.sim.schemas.schemas_cfg import RigidBodyMaterialCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
@@ -44,47 +46,6 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
     # target object
     object: RigidObjectCfg = MISSING
     object2: RigidObjectCfg = MISSING
-
-    contact_left_left_finger = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/openarm_left_left_finger",
-        update_period=0.0,
-        history_length=6,
-        debug_vis=False,
-        filter_prim_paths_expr=[
-            "{ENV_REGEX_NS}/Object",
-            "{ENV_REGEX_NS}/Object2",
-        ],
-    )
-    contact_left_right_finger = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/openarm_left_right_finger",
-        update_period=0.0,
-        history_length=6,
-        debug_vis=False,
-        filter_prim_paths_expr=[
-            "{ENV_REGEX_NS}/Object",
-            "{ENV_REGEX_NS}/Object2",
-        ],
-    )
-    contact_right_left_finger = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/openarm_right_left_finger",
-        update_period=0.0,
-        history_length=6,
-        debug_vis=False,
-        filter_prim_paths_expr=[
-            "{ENV_REGEX_NS}/Object",
-            "{ENV_REGEX_NS}/Object2",
-        ],
-    )
-    contact_right_right_finger = ContactSensorCfg(
-        prim_path="{ENV_REGEX_NS}/Robot/openarm_right_right_finger",
-        update_period=0.0,
-        history_length=6,
-        debug_vis=False,
-        filter_prim_paths_expr=[
-            "{ENV_REGEX_NS}/Object",
-            "{ENV_REGEX_NS}/Object2",
-        ],
-    )
 
     # table
     table = AssetBaseCfg(
@@ -237,22 +198,14 @@ class ObservationsCfg:
         right_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         left_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
         right_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
-        # contact sensors
-        left_left_finger_contact = ObsTerm(
-            func=mdp.contact_observation,
-            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_left_finger")},
+        # finger joint efforts
+        left_hand_effort = ObsTerm(
+            func=mdp.joint_effort_observation,
+            params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
         )
-        left_right_finger_contact = ObsTerm(
-            func=mdp.contact_observation,
-            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_right_finger")},
-        )
-        right_left_finger_contact = ObsTerm(
-            func=mdp.contact_observation,
-            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_left_finger")},
-        )
-        right_right_finger_contact = ObsTerm(
-            func=mdp.contact_observation,
-            params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_right_finger")},
+        right_hand_effort = ObsTerm(
+            func=mdp.joint_effort_observation,
+            params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
         )
 
         def __post_init__(self):
@@ -300,26 +253,16 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # Finger contact rewards
-    left_left_finger_contact_reward = RewTerm(
-        func=mdp.contact_reward,
-        weight=2.5,
-        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_left_finger")},
+    # Finger effort rewards
+    left_hand_effort_reward = RewTerm(
+        func=mdp.joint_effort_reward,
+        weight=5.0,
+        params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
     )
-    left_right_finger_contact_reward = RewTerm(
-        func=mdp.contact_reward,
-        weight=2.5,
-        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_left_right_finger")},
-    )
-    right_left_finger_contact_reward = RewTerm(
-        func=mdp.contact_reward,
-        weight=2.5,
-        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_left_finger")},
-    )
-    right_right_finger_contact_reward = RewTerm(
-        func=mdp.contact_reward,
-        weight=2.5,
-        params={"threshold": 0.5, "sensor_cfg": SceneEntityCfg("contact_right_right_finger")},
+    right_hand_effort_reward = RewTerm(
+        func=mdp.joint_effort_reward,
+        weight=5.0,
+        params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
     )
 
     left_eef_to_object_distance = RewTerm(
@@ -435,18 +378,25 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-        if self.scene.contact_left_left_finger is not None:
-            self.scene.contact_left_left_finger.update_period = self.sim.dt * 2
-        if self.scene.contact_left_right_finger is not None:
-            self.scene.contact_left_right_finger.update_period = self.sim.dt * 2
-        if self.scene.contact_right_left_finger is not None:
-            self.scene.contact_right_left_finger.update_period = self.sim.dt * 2
-        if self.scene.contact_right_right_finger is not None:
-            self.scene.contact_right_right_finger.update_period = self.sim.dt * 2
-        
-        # increase buffers to prevent physx overflow error with many contacts
-        # @see https://docs.omniverse.nvidia.com/py/isaacsim/source/extensions/omni.isaac.core/docs/index.html#omni.isaac.core.physics_context.PhysicsContext.set_gpu_total_aggregate_pairs_capacity
-        self.sim.physx.gpu_found_lost_aggregate_pairs_count = 1048576  # 2^20
-        self.sim.physx.gpu_max_rigid_contact_count = 1048576  # 2^20
-        self.sim.physx.gpu_max_rigid_patch_count = 327680  # 5 * 2^16
-        self.sim.physx.gpu_found_lost_patch_count = 524288  # 2^19
+
+        # assign a default physx material to all scene geometries
+        # we can also do this per-asset in the scene definition
+        self.sim.physx = PhysxCfg(
+            solver_type=1,  # TGS
+            max_position_iteration_count=192,
+            max_velocity_iteration_count=1,
+            bounce_threshold_velocity=0.2,
+            friction_offset_threshold=0.01,
+            friction_correlation_distance=0.00625,
+            # increase buffers to prevent overflow errors
+            gpu_max_rigid_contact_count=2**23,
+            gpu_max_rigid_patch_count=2**23,
+            gpu_max_num_partitions=8,
+            gpu_collision_stack_size=640000,
+            # set default material properties
+            # default_material=RigidBodyMaterialCfg(
+            #     static_friction=1.0,
+            #     dynamic_friction=1.0,
+            #     restitution=0.0,
+            # ),
+        )

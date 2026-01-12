@@ -23,18 +23,22 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def contact_observation(
+def joint_effort_observation(
     env: ManagerBasedRLEnv,
     threshold: float,
-    sensor_cfg: SceneEntityCfg = SceneEntityCfg("contact_left_left_finger"),
+    asset_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    """Binary contact indicator from the specified contact sensor."""
-    contact_sensor = env.scene.sensors[sensor_cfg.name]
-    net_forces = contact_sensor.data.net_forces_w_history
-    contact_mag = torch.norm(net_forces, dim=-1)
-    contact_mag = torch.max(contact_mag, dim=2)[0].max(dim=1)[0]
+    """Binary indicator for high joint effort on specified joints, implying contact."""
+    # Get effort data for all joints from the articulation data
+    efforts = env.scene[asset_cfg.name].data.computed_torque
+    # Get indices for the joints we care about
+    joint_indices = env.scene[asset_cfg.name].find_joints(asset_cfg.joint_names)[0]
+    # Select the efforts for our finger joints
+    finger_efforts = efforts[:, joint_indices]
+    # Check if the average absolute effort is above the threshold
+    avg_abs_effort = torch.mean(torch.abs(finger_efforts), dim=1)
     # unsqueeze to make it a 1D tensor (shape: [num_envs, 1])
-    return (contact_mag > threshold).to(torch.float).unsqueeze(-1)
+    return (avg_abs_effort > threshold).to(torch.float).unsqueeze(-1)
 
 
 def object_obs(

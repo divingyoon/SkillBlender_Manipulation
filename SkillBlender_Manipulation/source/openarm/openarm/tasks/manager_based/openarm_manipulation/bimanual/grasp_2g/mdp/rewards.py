@@ -97,32 +97,30 @@ def object_is_held(
 ) -> torch.Tensor:
     """Reward for holding the object above a minimal height for a certain duration."""
     object: RigidObject = env.scene[object_cfg.name]
-    
+
     if not hasattr(env, "hold_counter"):
         env.hold_counter = torch.zeros(env.num_envs, device=env.device)
 
     is_lifted = object.data.root_pos_w[:, 2] > minimal_height
-    
+
     env.hold_counter = torch.where(
         is_lifted,
         env.hold_counter + env.step_dt,
         torch.zeros_like(env.hold_counter),
     )
-    
+
     return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
 
 
-def contact_reward(
+def joint_effort_reward(
     env: ManagerBasedRLEnv,
     threshold: float,
-    sensor_cfg: SceneEntityCfg,
+    asset_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    """Reward for making contact with the specified sensor above a threshold."""
-    contact_sensor = env.scene.sensors[sensor_cfg.name]
-    net_forces = contact_sensor.data.net_forces_w_history
-    # compute the norm of the force vector
-    contact_mag = torch.norm(net_forces, dim=-1)
-    # max over history and bodies
-    contact_mag = torch.max(contact_mag, dim=2)[0].max(dim=1)[0]
-    # reward is 1 if contact is above threshold, 0 otherwise
-    return torch.where(contact_mag > threshold, 1.0, 0.0)
+    """Reward for high joint effort on specified joints, implying contact."""
+    efforts = env.scene[asset_cfg.name].data.computed_torque
+    joint_indices = env.scene[asset_cfg.name].find_joints(asset_cfg.joint_names)[0]
+    finger_efforts = efforts[:, joint_indices]
+    avg_abs_effort = torch.mean(torch.abs(finger_efforts), dim=1)
+    return torch.where(avg_abs_effort > threshold, 1.0, 0.0)
+

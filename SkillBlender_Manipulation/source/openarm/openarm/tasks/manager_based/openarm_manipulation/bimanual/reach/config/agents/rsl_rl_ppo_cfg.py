@@ -24,7 +24,7 @@ from isaaclab.utils import configclass
 @configclass
 class OpenArmReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 20000
+    max_iterations = 10000
     save_interval = 100
     experiment_name = "openarm_bi_reach"
     run_name = ""

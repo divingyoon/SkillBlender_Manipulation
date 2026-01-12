@@ -24,7 +24,7 @@ from isaaclab.utils import configclass
 @configclass
 class OpenArmGraspPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
-    max_iterations = 550
+    max_iterations = 10000
     save_interval = 50
     experiment_name = "openarm_bi_grasp_unidex"
     run_name = ""

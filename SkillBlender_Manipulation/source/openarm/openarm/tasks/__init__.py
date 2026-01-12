@@ -24,5 +24,6 @@ _BLACKLIST_PKGS = ["utils", ".mdp"]
 import_packages(__name__, _BLACKLIST_PKGS)
 
 # Explicitly import the new 'approach' task config to ensure registration
+import openarm.tasks.manager_based.openarm_manipulation.bimanual.reach.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.approach.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp.config

@@ -122,7 +122,7 @@ Replace `<TASK_NAME>` and `<POLICY_NAME>` with one of the following available ta
 | Reach target position   | `Isaac-Reach-OpenArm-v0`       | `rsl_rl`, `rl_games`, `skrl`        | <img src="video/openarm-reach-demo.gif" width="400"/>          |
 | Lift a cube             | `Isaac-Lift-Cube-OpenArm-v0`   | `rsl_rl`, `rl_games`, `skrl` | <img src="video/openarm-lift-demo.gif" width="400"/>           |
 | Open a cabinet's drawer | `Isaac-Open-Drawer-OpenArm-v0` | `rsl_rl`, `rl_games`, `skrl`        | <img src="video/openarm-drawer-demo.gif" width="400"/>         |
-| Reach target position (Bimanual)  | `Isaac-Reach-OpenArm-Bi-v0`    | `rsl_rl`, `rl_games`, `skrl`        | <img src="video/openarm-bi-reach-demo.gif" width="400"/>          |
+| Reach target position (Bimanual)  | `Isaac-Reach-OpenArm-Bi-v1`    | `rsl_rl`, `rl_games`, `skrl`        | <img src="video/openarm-bi-reach-demo.gif" width="400"/>          |
 
 ### Training Model
 

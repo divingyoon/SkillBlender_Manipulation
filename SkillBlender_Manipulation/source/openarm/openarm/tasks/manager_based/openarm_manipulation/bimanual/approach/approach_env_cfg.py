@@ -15,9 +15,8 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
-from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+import isaaclab.envs.mdp as base_mdp
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
@@ -29,7 +28,6 @@ from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
@@ -262,108 +260,80 @@ class RewardsCfg:
 
     left_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "std": 0.1,
+            "std": 0.05,
             "command_name": "left_ee_pose",
         },
     )
 
     right_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.2,
+        weight=0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "std": 0.1,
+            "std": 0.05,
             "command_name": "right_ee_pose",
         },
     )
 
     left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.gated_orientation_z_axis_error,
-        weight=-0.05,
+        func=mdp.orientation_z_axis_error,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
-            "pos_on": 0.02,
-            "pos_off": 0.06,
-            "min_scale": 0.0,
         },
     )
 
     right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.gated_orientation_z_axis_error,
-        weight=-0.05,
+        func=mdp.orientation_z_axis_error,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "right_ee_pose",
-            "pos_on": 0.02,
-            "pos_off": 0.06,
-            "min_scale": 0.0,
         },
     )
-    left_end_effector_x_axis_tracking = RewTerm(
-        func=mdp.gated_orientation_x_axis_error,
-        weight=-0.05,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "left_ee_pose",
-            "pos_on": 0.02,
-            "pos_off": 0.06,
-            "min_scale": 0.0,
-        },
-    )
-    right_end_effector_x_axis_tracking = RewTerm(
-        func=mdp.gated_orientation_x_axis_error,
-        weight=-0.05,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "right_ee_pose",
-            "pos_on": 0.02,
-            "pos_off": 0.06,
-            "min_scale": 0.0,
-        },
-    )
+    # left_end_effector_x_axis_tracking = RewTerm(
+    #     func=mdp.orientation_x_axis_error,
+    #     weight=-0.1,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+    #         "command_name": "left_ee_pose",
+    #     },
+    # )
+    # right_end_effector_x_axis_tracking = RewTerm(
+    #     func=mdp.orientation_x_axis_error,
+    #     weight=-0.1,
+    #     params={
+    #         "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+    #         "command_name": "right_ee_pose",
+    #     },
+    # )
 
     # action penalty
     action_rate = RewTerm(
-        func=mdp.gated_action_rate_l2,
-        weight=-0.002,
-        params={
-            "left_command_name": "left_ee_pose",
-            "right_command_name": "right_ee_pose",
-            "pos_on": 0.006,
-            "pos_off": 0.015,
-            "ori_on": 0.02,
-            "ori_off": 0.06,
-            "min_scale": 0.05,
-            "robot_cfg": SceneEntityCfg("robot"),
-            "left_ee_cfg": SceneEntityCfg("robot", body_names=["ll_dg_ee"]),
-            "right_ee_cfg": SceneEntityCfg("robot", body_names=["rl_dg_ee"]),
-        },
+        func=base_mdp.action_rate_l2,
+        weight=-0.01,
     )
     near_goal_joint_vel = RewTerm(
-        func=mdp.gated_bimanual_joint_vel_l2,
+        func=mdp.near_goal_joint_vel_l2,
         weight=-0.005,
         params={
             "left_command_name": "left_ee_pose",
             "right_command_name": "right_ee_pose",
-            "pos_on": 0.006,
-            "pos_off": 0.015,
-            "ori_on": 0.02,
-            "ori_off": 0.06,
-            "min_scale": 0.0,
+            "pos_threshold": 0.01,
+            "ori_threshold": 0.1,
             "asset_cfg": SceneEntityCfg("robot"),
             "left_ee_cfg": SceneEntityCfg("robot", body_names=["ll_dg_ee"]),
             "right_ee_cfg": SceneEntityCfg("robot", body_names=["rl_dg_ee"]),
         },
     )
     left_joint_vel = RewTerm(
-        func=mdp.gated_joint_vel_l2,
+        func=base_mdp.joint_vel_l2,
         weight=-0.0001,
         params={
-            "command_name": "left_ee_pose",
             "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint1",
                                                                 "openarm_left_joint2",
                                                                 "openarm_left_joint3",
@@ -372,19 +342,12 @@ class RewardsCfg:
                                                                 "openarm_left_joint6",
                                                                 "openarm_left_joint7",
                                                               ]),
-            "ee_cfg": SceneEntityCfg("robot", body_names=["ll_dg_ee"]),
-            "pos_on": 0.008,
-            "pos_off": 0.02,
-            "ori_on": 0.02,
-            "ori_off": 0.07,
-            "min_scale": 0.0,
         },
     )
     right_joint_vel = RewTerm(
-        func=mdp.gated_joint_vel_l2,
+        func=base_mdp.joint_vel_l2,
         weight=-0.0001,
         params={
-            "command_name": "right_ee_pose",
             "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint1",
                                                                 "openarm_right_joint2",
                                                                 "openarm_right_joint3",
@@ -393,12 +356,6 @@ class RewardsCfg:
                                                                 "openarm_right_joint6",
                                                                 "openarm_right_joint7"
                                                               ]),
-            "ee_cfg": SceneEntityCfg("robot", body_names=["rl_dg_ee"]),
-            "pos_on": 0.008,
-            "pos_off": 0.02,
-            "ori_on": 0.02,
-            "ori_off": 0.07,
-            "min_scale": 0.0,
         },
     )
     left_hand_joint_deviation = RewTerm(
@@ -444,12 +401,12 @@ class RewardsCfg:
         },
     )
     left_hand_joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
+        func=base_mdp.joint_vel_l2,
         weight=-0.00005,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["lj_dg_.*"])},
     )
     right_hand_joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
+        func=base_mdp.joint_vel_l2,
         weight=-0.00005,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["rj_dg_.*"])},
     )
@@ -478,51 +435,13 @@ class TerminationsCfg:
 @configclass
 class CurriculumCfg:
     """Curriculum terms for the MDP."""
-
-    action_rate = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": -0.01, "num_steps": 8000},
-    )
-
-    left_end_effector_orientation_tracking = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_end_effector_orientation_tracking", "weight": -0.35, "num_steps": 4500},
-    )
-
-    right_end_effector_orientation_tracking = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_end_effector_orientation_tracking", "weight": -0.35, "num_steps": 4500},
-    )
-
-    left_end_effector_x_axis_tracking = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_end_effector_x_axis_tracking", "weight": -0.35, "num_steps": 4500},
-    )
-
-    right_end_effector_x_axis_tracking = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_end_effector_x_axis_tracking", "weight": -0.35, "num_steps": 4500},
-    )
-
-    near_goal_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "near_goal_joint_vel", "weight": -0.02, "num_steps": 8000},
-    )
-
-    left_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_joint_vel", "weight": -0.0003, "num_steps": 8000},
-    )
-
-    right_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_joint_vel", "weight": -0.0003, "num_steps": 8000},
-    )
+    # No curriculum terms to restore previous behavior
+    pass
 
 
 ##
 # Environment configuration 
-##16384 20480
+##16384 20480 4096 8192 
 
 
 @configclass
@@ -530,7 +449,7 @@ class ApproachEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the approach end-effector pose tracking environment."""
 
     # Scene settings
-    scene: ApproachSceneCfg = ApproachSceneCfg(num_envs=20480, env_spacing=2.5)
+    scene: ApproachSceneCfg = ApproachSceneCfg(num_envs=8192, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

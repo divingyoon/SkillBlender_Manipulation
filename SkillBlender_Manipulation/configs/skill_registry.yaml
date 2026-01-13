@@ -5,6 +5,7 @@
 skills:
   openarm_bi_reach:
     experiment_name: "openarm_bi_reach"
+    log_root: "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_reach"
     load_run: "latest"
     checkpoint: "latest"
     command_dim: 14
@@ -15,6 +16,17 @@ skills:
 
   openarm_bi_approach:
     experiment_name: "openarm_bi_approach"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_bi_grasp_2g:
+    experiment_name: "openarm_bi_grasp_2g"
+    log_root: "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_grasp_2g"
     load_run: "latest"
     checkpoint: "latest"
     command_dim: 14

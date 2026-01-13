@@ -15,8 +15,6 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
-from isaaclab.sim import PhysxCfg
-#from isaaclab.sim.schemas.schemas_cfg import RigidBodyMaterialCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
@@ -27,7 +25,6 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -37,17 +34,13 @@ from . import mdp
 
 
 @configclass
-class Grasp2gSceneCfg(InteractiveSceneCfg):
-    """Scene with a bimanual robot, table, and a cube to be grasped."""
+class PickAndPlaceBlendingSceneCfg(InteractiveSceneCfg):
+    """Scene with a bimanual robot, table, and a cube for handover."""
 
-    # robots
     robot: ArticulationCfg = MISSING
 
-    # target object
     object: RigidObjectCfg = MISSING
-    object2: RigidObjectCfg = MISSING
 
-    # table
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
         init_state=AssetBaseCfg.InitialStateCfg(pos=[0.0, 0.25, 0.0], rot=[0.707, 0, 0, 0.707]),
@@ -56,14 +49,12 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # ground plane
     ground = AssetBaseCfg(
         prim_path="/World/GroundPlane",
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
         spawn=GroundPlaneCfg(),
     )
 
-    # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
@@ -261,24 +252,11 @@ class EventCfg:
         params={
             "pose_range": {
                 "x": (-0.1, 0.0),
-                "y": (-0.05, 0.05), 
+                "y": (-0.05, 0.05),
                 "z": (0.0, 0.0),
-            },#left object
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
-        },
-    )
-    reset_object2_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {
-                "x": (0.0, 0.1),
-                "y": (-0.05, 0.05), 
-                "z": (0.0, 0.0),
-            },#right object
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object2"),
         },
     )
 
@@ -295,7 +273,7 @@ class RewardsCfg:
     right_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object2")},
+        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
     )
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
@@ -305,23 +283,27 @@ class RewardsCfg:
     right_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
         weight=10.0,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
     )
-
-    left_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")})
-    
+    left_lift_reward = RewTerm(
+        func=mdp.object_is_lifted,
+        weight=5.0,
+        params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")},
+    )
     left_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
+        weight=10.0,
+        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object")},
     )
-
-    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")})
-    
-    right_hold_reward = RewTerm(
-        func=mdp.object_is_held,
+    handover_reward = RewTerm(
+        func=mdp.handover_success,
+        weight=10.0,
+        params={"eef_link_name_right": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
+    )
+    place_reward = RewTerm(
+        func=mdp.object_at_target,
         weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
+        params={"target_pos": (0.2, -0.2, 0.05), "object_cfg": SceneEntityCfg("object")},
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
@@ -385,10 +367,10 @@ class TerminationsCfg:
 
 
 @configclass
-class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the bimanual grasping environment."""
+class PickAndPlaceBlendingEnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the bimanual pick-and-place blending environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: PickAndPlaceBlendingSceneCfg = PickAndPlaceBlendingSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -404,25 +386,3 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-
-        # assign a default physx material to all scene geometries
-        # we can also do this per-asset in the scene definition
-        self.sim.physx = PhysxCfg(
-            solver_type=1,  # TGS
-            max_position_iteration_count=192,
-            max_velocity_iteration_count=1,
-            bounce_threshold_velocity=0.2,
-            friction_offset_threshold=0.01,
-            friction_correlation_distance=0.00625,
-            # increase buffers to prevent overflow errors
-            gpu_max_rigid_contact_count=2**23,
-            gpu_max_rigid_patch_count=2**23,
-            gpu_max_num_partitions=8,
-            gpu_collision_stack_size=640000,
-            # set default material properties
-            # default_material=RigidBodyMaterialCfg(
-            #     static_friction=1.0,
-            #     dynamic_friction=1.0,
-            #     restitution=0.0,
-            # ),
-        )

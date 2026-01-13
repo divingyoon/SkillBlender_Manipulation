@@ -20,11 +20,11 @@ from sbm.skill_registry import load_skill_registry
 
 
 @configclass
-class OpenArmGrasp2gHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class OpenArmPickAndPlaceBlendingHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 20000
     save_interval = 100
-    experiment_name = "openarm_bi_grasp_2g_hier"
+    experiment_name = "openarm_bi_pick_and_place_blending_hier"
     run_name = ""
     resume = False
     empirical_normalization = False
@@ -35,12 +35,9 @@ class OpenArmGrasp2gHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
-        # Filter registry to only include skills compatible with this task.
-        skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_approach", "openarm_bi_grasp"]),
+        skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_grasp_2g"]),
         frame_stack=1,
-        # Grasp-2g currently has no command term; update if commands are added.
         command_dim=14,
-        # Set command_slice=[start, end] to insert commands in observations if needed.
         command_slice=[36, 50],
         num_dofs=None,
     )

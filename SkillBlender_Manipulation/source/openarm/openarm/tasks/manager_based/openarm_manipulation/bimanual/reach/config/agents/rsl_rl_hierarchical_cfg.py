@@ -39,7 +39,7 @@ class OpenArmReachHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_approach"]),
         frame_stack=1,
         command_dim=14,
-        command_slice=[28, 42],
+        command_slice=[36, 50],
         num_dofs=None,
     )
     algorithm = RslRlPpoAlgorithmCfg(

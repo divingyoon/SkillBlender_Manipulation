@@ -17,7 +17,7 @@ from dataclasses import MISSING
 import isaaclab.sim as sim_utils
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
-from isaaclab.assets import ArticulationCfg, AssetBaseCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
 from isaaclab.managers import CurriculumTermCfg as CurrTerm
@@ -54,6 +54,10 @@ class ReachSceneCfg(InteractiveSceneCfg):
 
     # robots
     robot: ArticulationCfg = MISSING
+
+    # target objects (unused in reach reward, kept for obs compatibility)
+    object: RigidObjectCfg = MISSING
+    object2: RigidObjectCfg = MISSING
 
     # lights
     light = AssetBaseCfg(
@@ -205,12 +209,22 @@ class ObservationsCfg:
         right_pose_command = ObsTerm(
             func=mdp.generated_commands, params={"command_name": "right_ee_pose"}
         )
-        left_actions = ObsTerm(func=mdp.last_action,
-                params={
-                "action_name": "left_arm_action"})
-        right_actions = ObsTerm(func=mdp.last_action,
-                params={
-                "action_name": "right_arm_action"})
+        object = ObsTerm(
+            func=mdp.object_obs,
+            params={
+                "left_eef_link_name": MISSING,
+                "right_eef_link_name": MISSING,
+            },
+        )
+        object2 = ObsTerm(
+            func=mdp.object2_obs,
+            params={
+                "left_eef_link_name": MISSING,
+                "right_eef_link_name": MISSING,
+            },
+        )
+        left_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
+        right_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         left_hand_actions = ObsTerm(
             func=mdp.last_action, params={"action_name": "left_hand_action"}
         )
@@ -230,12 +244,42 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
+    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+
     reset_robot_joints = EventTerm(
         func=mdp.reset_joints_by_scale,
         mode="reset",
         params={
             "position_range": (0.5, 1.5),
             "velocity_range": (0.0, 0.0),
+        },
+    )
+
+    reset_object_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {
+                "x": (-0.1, 0.0),
+                "y": (-0.05, 0.05),
+                "z": (0.0, 0.0),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("object"),
+        },
+    )
+
+    reset_object2_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {
+                "x": (0.0, 0.1),
+                "y": (-0.05, 0.05),
+                "z": (0.0, 0.0),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("object2"),
         },
     )
 

@@ -12,37 +12,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
-from isaaclab.utils import configclass
+from isaaclab_rl.rsl_rl import (
+    RslRlOnPolicyRunnerCfg,
+    RslRlPpoActorCriticCfg,
+    RslRlPpoAlgorithmCfg,
+)
 
-from sbm.rl import SbmHierarchicalActorCriticCfg
-from sbm.skill_registry import load_skill_registry
+from isaaclab.utils import configclass
 
 
 @configclass
-class OpenArmGrasp2gHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class OpenArmPickAndPlaceBlendingPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 20000
     save_interval = 100
-    experiment_name = "openarm_bi_grasp_2g_hier"
+    experiment_name = "openarm_bi_pick_and_place_blending"
     run_name = ""
     resume = False
     empirical_normalization = False
-    policy = SbmHierarchicalActorCriticCfg(
+    policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
-        # Filter registry to only include skills compatible with this task.
-        skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_approach", "openarm_bi_grasp"]),
-        frame_stack=1,
-        # Grasp-2g currently has no command term; update if commands are added.
-        command_dim=14,
-        # Set command_slice=[start, end] to insert commands in observations if needed.
-        command_slice=[36, 50],
-        num_dofs=None,
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=2.0,

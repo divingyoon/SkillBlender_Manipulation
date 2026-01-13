@@ -169,6 +169,10 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             use_default_offset=True,
         )
 
+        # override command generator body
+        self.commands.left_ee_pose.body_name = "openarm_left_hand"
+        self.commands.right_ee_pose.body_name = "openarm_right_hand"
+
         self.observations.policy.object.params["left_eef_link_name"] = "openarm_left_hand"
         self.observations.policy.object.params["right_eef_link_name"] = "openarm_right_hand"
         self.observations.policy.object2.params["left_eef_link_name"] = "openarm_left_hand"

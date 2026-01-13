@@ -34,12 +34,18 @@ from __future__ import annotations
 import os
 import re
 from copy import deepcopy
+import inspect
 
 import torch
 import torch.nn as nn
 from torch.distributions import Normal
 
 from rsl_rl.modules import ActorCritic
+
+try:
+    from tensordict import TensorDict
+except ImportError:  # pragma: no cover - tensordict may be absent in some envs
+    TensorDict = None
 
 
 class ActorCriticHierarchical(nn.Module):
@@ -64,11 +70,26 @@ class ActorCriticHierarchical(nn.Module):
         critic_hidden_dims = critic_hidden_dims or [256, 256, 256]
 
         activation_fn = get_activation(activation)
-        self.device = kwargs.get("device", "cpu")
+        self.device = kwargs.get("device")
         self.frame_stack = kwargs.get("frame_stack")
         self.command_dim = kwargs.get("command_dim")
         self.num_dofs = kwargs.get("num_dofs")
         self.command_slice = kwargs.get("command_slice")
+        self.obs_groups = None
+
+        if TensorDict is not None and isinstance(num_actor_obs, TensorDict):
+            obs = num_actor_obs
+            obs_groups = num_critic_obs
+            if not isinstance(obs_groups, dict):
+                raise ValueError("obs_groups must be provided when observations are a TensorDict.")
+            self.obs_groups = obs_groups
+            num_actor_obs = sum(obs[group].shape[-1] for group in obs_groups["policy"])
+            num_critic_obs = sum(obs[group].shape[-1] for group in obs_groups["critic"])
+            if self.device is None:
+                self.device = str(obs.device)
+
+        if self.device is None or str(self.device).lower() == "none":
+            self.device = "cpu"
 
         if self.frame_stack is None or self.command_dim is None:
             raise ValueError("frame_stack and command_dim must be provided in policy kwargs.")
@@ -119,6 +140,7 @@ class ActorCriticHierarchical(nn.Module):
                 action_dim = self.num_dofs or policy[-1].out_features
             else:
                 policy, action_dim = self._load_policy_from_checkpoint(name, value)
+            policy = policy.to(self.device)
 
             if self.num_dofs is None:
                 self.num_dofs = action_dim
@@ -145,14 +167,22 @@ class ActorCriticHierarchical(nn.Module):
         policy_kwargs.setdefault("critic_hidden_dims", critic_hidden)
         policy_kwargs.setdefault("activation", skill_cfg.get("activation", "elu"))
         policy_kwargs.setdefault("init_noise_std", skill_cfg.get("init_noise_std", 1.0))
+        if any(key.startswith("actor_obs_normalizer.") for key in state_dict):
+            policy_kwargs.setdefault("actor_obs_normalization", True)
+        if any(key.startswith("critic_obs_normalizer.") for key in state_dict):
+            policy_kwargs.setdefault("critic_obs_normalization", True)
+        if "log_std" in state_dict:
+            policy_kwargs.setdefault("noise_std_type", "log")
 
-        policy = ActorCritic(
+        if self.device is None:
+            self.device = "cpu"
+        policy = _build_actor_critic(
             actor_obs_dim,
             critic_obs_dim,
             action_dim,
-            obs_context_len=1,
-            **policy_kwargs,
-        ).to(self.device)
+            policy_kwargs,
+            self.device,
+        )
         policy.load_state_dict(state_dict)
         _freeze_module(policy)
         return policy.actor, action_dim
@@ -213,6 +243,9 @@ class ActorCriticHierarchical(nn.Module):
         return start, end
 
     def _actor(self, observations):
+        obs_device = observations.device
+        if obs_device is not None and str(obs_device) != str(self.device):
+            self._move_policies_to_device(obs_device)
         raw_mean = self.actor(observations)
         input_to_low = raw_mean[:, : -(self.num_skills * self.num_dofs)]
         mask_to_low = raw_mean[:, -(self.num_skills * self.num_dofs) :]
@@ -234,16 +267,22 @@ class ActorCriticHierarchical(nn.Module):
                 cmd_slice,
                 low_high=self.low_high_list[i],
             )
-            mean = self.policy_list[i](cmd_obs) * masks[:, i]
+            if hasattr(cmd_obs, "is_inference") and cmd_obs.is_inference():
+                cmd_obs = cmd_obs.clone()
+            with torch.no_grad():
+                low_action = self.policy_list[i](cmd_obs)
+            mean = low_action * masks[:, i]
             means.append(mean)
         actions_mean = sum(means)
         return {"actions_mean": actions_mean, "masks": masks}
 
     def update_distribution(self, observations):
+        observations = self._get_actor_obs(observations)
         mean = self._actor(observations)["actions_mean"]
         self.distribution = Normal(mean, mean * 0.0 + self.std)
 
     def act(self, observations, **kwargs):
+        observations = self._get_actor_obs(observations)
         if self.obs_context_len != 1:
             observations = observations[..., -1, :]
         self.update_distribution(observations)
@@ -253,19 +292,53 @@ class ActorCriticHierarchical(nn.Module):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
     def act_inference(self, observations):
+        observations = self._get_actor_obs(observations)
         if self.obs_context_len != 1:
             observations = observations[..., -1, :]
         return self._actor(observations)["actions_mean"]
 
     def act_inference_hrl(self, observations):
+        observations = self._get_actor_obs(observations)
         if self.obs_context_len != 1:
             observations = observations[..., -1, :]
         return self._actor(observations)
 
     def evaluate(self, critic_observations, **kwargs):
+        critic_observations = self._get_critic_obs(critic_observations)
         if self.obs_context_len != 1:
             critic_observations = critic_observations[..., -1, :]
         return self.critic(critic_observations)
+
+    def update_normalization(self, observations):
+        observations = self._get_actor_obs(observations)
+        if hasattr(self, "actor_obs_normalizer"):
+            self.actor_obs_normalizer.update(observations)
+        if hasattr(self, "critic_obs_normalizer"):
+            critic_obs = self._get_critic_obs(observations)
+            self.critic_obs_normalizer.update(critic_obs)
+
+    def _move_policies_to_device(self, device):
+        self.device = device
+        for idx, policy in enumerate(self.policy_list):
+            policy_device = next(policy.parameters()).device
+            if policy_device != device:
+                self.policy_list[idx] = policy.to(device)
+
+    def _get_actor_obs(self, observations):
+        if self.obs_groups is None:
+            return observations
+        if TensorDict is not None and isinstance(observations, TensorDict):
+            obs_list = [observations[group] for group in self.obs_groups["policy"]]
+            return torch.cat(obs_list, dim=-1)
+        return observations
+
+    def _get_critic_obs(self, observations):
+        if self.obs_groups is None:
+            return observations
+        if TensorDict is not None and isinstance(observations, TensorDict):
+            obs_list = [observations[group] for group in self.obs_groups["critic"]]
+            return torch.cat(obs_list, dim=-1)
+        return observations
 
 
 def _freeze_module(module: nn.Module):
@@ -375,6 +448,35 @@ def _infer_mlp_dims(state_dict: dict, prefix: str):
     hidden_dims = [w.shape[0] for w in weights[:-1]]
     output_dim = weights[-1].shape[0]
     return input_dim, hidden_dims, output_dim
+
+
+def _build_actor_critic(
+    actor_obs_dim: int,
+    critic_obs_dim: int,
+    action_dim: int,
+    policy_kwargs: dict,
+    device: str,
+):
+    sig = inspect.signature(ActorCritic.__init__)
+    params = list(sig.parameters.values())
+    if len(params) > 1 and params[1].name == "obs":
+        from tensordict import TensorDict
+
+        obs = TensorDict(
+            {
+                "policy": torch.zeros(1, actor_obs_dim),
+                "critic": torch.zeros(1, critic_obs_dim),
+            },
+            batch_size=[1],
+        )
+        obs_groups = {"policy": ["policy"], "critic": ["critic"]}
+        model = ActorCritic(obs, obs_groups, action_dim, **policy_kwargs)
+    else:
+        model = ActorCritic(actor_obs_dim, critic_obs_dim, action_dim, obs_context_len=1, **policy_kwargs)
+
+    if device is not None and str(device).lower() != "none":
+        return model.to(device)
+    return model
 
 
 def get_activation(act_name):

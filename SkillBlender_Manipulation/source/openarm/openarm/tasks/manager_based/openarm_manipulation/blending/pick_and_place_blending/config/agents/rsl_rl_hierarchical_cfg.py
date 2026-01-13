@@ -21,8 +21,8 @@ from sbm.skill_registry import load_skill_registry
 
 @configclass
 class OpenArmPickAndPlaceBlendingHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 24
-    max_iterations = 20000
+    num_steps_per_env = 16
+    max_iterations = 10000
     save_interval = 100
     experiment_name = "openarm_bi_pick_and_place_blending_hier"
     run_name = ""
@@ -46,8 +46,8 @@ class OpenArmPickAndPlaceBlendingHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg
         use_clipped_value_loss=True,
         clip_param=0.2,
         entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=10,
+        num_learning_epochs=4,
+        num_mini_batches=16,
         learning_rate=5.0e-4,
         schedule="adaptive",
         gamma=0.99,

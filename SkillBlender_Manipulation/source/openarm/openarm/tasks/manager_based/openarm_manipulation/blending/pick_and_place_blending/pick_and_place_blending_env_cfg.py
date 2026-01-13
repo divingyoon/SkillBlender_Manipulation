@@ -15,6 +15,7 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
+from isaaclab.sim import PhysxCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
@@ -370,7 +371,7 @@ class TerminationsCfg:
 class PickAndPlaceBlendingEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pick-and-place blending environment."""
 
-    scene: PickAndPlaceBlendingSceneCfg = PickAndPlaceBlendingSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: PickAndPlaceBlendingSceneCfg = PickAndPlaceBlendingSceneCfg(num_envs=20480, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -386,3 +387,16 @@ class PickAndPlaceBlendingEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
+        self.sim.physx = PhysxCfg(
+            solver_type=1,  # TGS
+            max_position_iteration_count=192,
+            max_velocity_iteration_count=1,
+            bounce_threshold_velocity=0.2,
+            friction_offset_threshold=0.01,
+            friction_correlation_distance=0.00625,
+            # increase buffers to prevent overflow errors
+            gpu_max_rigid_contact_count=2**23,
+            gpu_max_rigid_patch_count=2**23,
+            gpu_max_num_partitions=8,
+            gpu_collision_stack_size=640000,
+        )

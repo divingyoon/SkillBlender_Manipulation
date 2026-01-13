@@ -27,7 +27,7 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-from isaaclab.sensors import ContactSensorCfg
+
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -198,15 +198,6 @@ class ObservationsCfg:
         right_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         left_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
         right_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
-        # finger joint efforts
-        left_hand_effort = ObsTerm(
-            func=mdp.joint_effort_observation,
-            params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-        )
-        right_hand_effort = ObsTerm(
-            func=mdp.joint_effort_observation,
-            params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-        )
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -219,6 +210,16 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
+    filter_left_right_collisions = EventTerm(
+        func=mdp.filter_left_right_arm_collisions,
+        mode="startup",
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "left_path_substring": "openarm_left_",
+            "right_path_substring": "openarm_right_",
+        },
+    )
+
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
     reset_object_position = EventTerm(
@@ -226,10 +227,10 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (-0.05, 0.05),
-                "y": (-0.05, 0.05),
+                "x": (-0.1, 0.0),
+                "y": (-0.05, 0.05), 
                 "z": (0.0, 0.0),
-            },
+            },#left object
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
         },
@@ -239,10 +240,10 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (-0.05, 0.05),
-                "y": (-0.05, 0.05),
+                "x": (0.0, 0.1),
+                "y": (-0.05, 0.05), 
                 "z": (0.0, 0.0),
-            },
+            },#right object
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object2"),
         },
@@ -253,49 +254,41 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # Finger effort rewards
-    left_hand_effort_reward = RewTerm(
-        func=mdp.joint_effort_reward,
-        weight=5.0,
-        params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-    )
-    right_hand_effort_reward = RewTerm(
-        func=mdp.joint_effort_reward,
-        weight=5.0,
-        params={"threshold": 2.5, "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-    )
-
     left_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING},
+        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
     )
     right_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING},
+        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object2")},
     )
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
         weight=10.0,
-        params={"eef_link_name": "openarm_left_hand"},
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
         weight=10.0,
-        params={"eef_link_name": "openarm_right_hand"},
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
-    lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05})
-    hold_reward = RewTerm(
+
+    left_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")})
+    
+    left_hold_reward = RewTerm(
         func=mdp.object_is_held,
         weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0},
+        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
     )
-    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05})
+
+    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")})
+    
     right_hold_reward = RewTerm(
         func=mdp.object_is_held,
         weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0},
+        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
@@ -362,7 +355,7 @@ class TerminationsCfg:
 class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual grasping environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=8192, env_spacing=2.5)
+    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

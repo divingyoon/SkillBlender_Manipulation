@@ -17,6 +17,8 @@ from isaaclab.assets import ArticulationCfg, RigidObjectCfg
 import isaaclab.sim as sim_utils
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG
+from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
@@ -35,7 +37,7 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             prim_path="{ENV_REGEX_NS}/Robot",
             spawn=sim_utils.UsdFileCfg(
                 usd_path=f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/openarm_bimanual.usd",
-                activate_contact_sensors=True,
+                activate_contact_sensors=False,
                 rigid_props=sim_utils.RigidBodyPropertiesCfg(
                     disable_gravity=True,
                     max_depenetration_velocity=5.0,
@@ -93,7 +95,7 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
 
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -110,7 +112,7 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
 
         self.scene.object2 = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object2",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
                 scale=(0.8, 0.8, 0.8),
@@ -174,6 +176,38 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
 
         self.rewards.left_eef_to_object_distance.params["eef_link_name"] = "openarm_left_hand"
         self.rewards.right_eef_to_object_distance.params["eef_link_name"] = "openarm_right_hand"
+        
+        # add frame transformer for visualization
+        marker_cfg = FRAME_MARKER_CFG.copy()
+        marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
+        
+        # Left hand marker: shows transform from Object1 to Left TCP
+        marker_cfg.prim_path = "/Visuals/LeftFrameTransformer"
+        self.scene.left_ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Object",
+            debug_vis=True,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_left_ee_tcp",
+                    name="left_end_effector",
+                ),
+            ],
+        )
+
+        # Right hand marker: shows transform from Object2 to Right TCP
+        marker_cfg.prim_path = "/Visuals/RightFrameTransformer"
+        self.scene.right_ee_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Object2",
+            debug_vis=True,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_right_ee_tcp",
+                    name="right_end_effector",
+                ),
+            ],
+        )
 
 
 @configclass

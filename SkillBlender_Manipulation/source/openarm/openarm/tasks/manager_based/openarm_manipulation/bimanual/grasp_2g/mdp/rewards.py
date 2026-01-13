@@ -112,15 +112,3 @@ def object_is_held(
     return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
 
 
-def joint_effort_reward(
-    env: ManagerBasedRLEnv,
-    threshold: float,
-    asset_cfg: SceneEntityCfg,
-) -> torch.Tensor:
-    """Reward for high joint effort on specified joints, implying contact."""
-    efforts = env.scene[asset_cfg.name].data.computed_torque
-    joint_indices = env.scene[asset_cfg.name].find_joints(asset_cfg.joint_names)[0]
-    finger_efforts = efforts[:, joint_indices]
-    avg_abs_effort = torch.mean(torch.abs(finger_efforts), dim=1)
-    return torch.where(avg_abs_effort > threshold, 1.0, 0.0)
-

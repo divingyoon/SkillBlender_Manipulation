@@ -22,25 +22,6 @@ from isaaclab.managers import SceneEntityCfg
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
-
-def joint_effort_observation(
-    env: ManagerBasedRLEnv,
-    threshold: float,
-    asset_cfg: SceneEntityCfg,
-) -> torch.Tensor:
-    """Binary indicator for high joint effort on specified joints, implying contact."""
-    # Get effort data for all joints from the articulation data
-    efforts = env.scene[asset_cfg.name].data.computed_torque
-    # Get indices for the joints we care about
-    joint_indices = env.scene[asset_cfg.name].find_joints(asset_cfg.joint_names)[0]
-    # Select the efforts for our finger joints
-    finger_efforts = efforts[:, joint_indices]
-    # Check if the average absolute effort is above the threshold
-    avg_abs_effort = torch.mean(torch.abs(finger_efforts), dim=1)
-    # unsqueeze to make it a 1D tensor (shape: [num_envs, 1])
-    return (avg_abs_effort > threshold).to(torch.float).unsqueeze(-1)
-
-
 def object_obs(
     env: ManagerBasedRLEnv,
     left_eef_link_name: str,

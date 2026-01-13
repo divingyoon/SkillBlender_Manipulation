@@ -210,16 +210,6 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
-    filter_left_right_collisions = EventTerm(
-        func=mdp.filter_left_right_arm_collisions,
-        mode="startup",
-        params={
-            "asset_cfg": SceneEntityCfg("robot"),
-            "left_path_substring": "openarm_left_",
-            "right_path_substring": "openarm_right_",
-        },
-    )
-
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
     reset_object_position = EventTerm(

@@ -15,6 +15,7 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
+from isaaclab.sim import PhysxCfg
 from isaaclab.actuators import ImplicitActuatorCfg
 from isaaclab.assets.articulation import ArticulationCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
@@ -84,9 +85,9 @@ class CommandsCfg:
             pos_x=(0.15, 0.3),
             pos_y=(0.15, 0.25),
             pos_z=(0.3, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(math.pi / 2, math.pi / 2),
-            yaw=(-math.pi / 2, -math.pi / 2),
+            roll=(-math.pi / 4, math.pi / 4),
+            pitch=(math.pi / 4, 3 * math.pi / 4),
+            yaw=(-math.pi, math.pi),
         ),
     )
 
@@ -99,9 +100,9 @@ class CommandsCfg:
             pos_x=(0.15, 0.3),
             pos_y=(-0.25, -0.15),
             pos_z=(0.3, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(math.pi / 2, math.pi / 2),
-            yaw=(math.pi / 2, math.pi / 2),
+            roll=(-math.pi / 4, math.pi / 4),
+            pitch=(math.pi / 4, 3 * math.pi / 4),
+            yaw=(-math.pi, math.pi),
         ),
     )
 
@@ -291,7 +292,7 @@ class RewardsCfg:
     # task terms
     left_end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
-        weight=-0.25,
+        weight=-0.3,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
@@ -300,7 +301,7 @@ class RewardsCfg:
 
     right_end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
-        weight=-0.25,
+        weight=-0.3,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "right_ee_pose",
@@ -309,7 +310,7 @@ class RewardsCfg:
 
     left_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.2,
+        weight=0.1,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "std": 0.1,
@@ -319,7 +320,7 @@ class RewardsCfg:
 
     right_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.2,
+        weight=0.1,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "std": 0.1,
@@ -328,8 +329,8 @@ class RewardsCfg:
     )
 
     left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.orientation_z_axis_error,
-        weight=-0.2,
+        func=mdp.any_axis_orientation_error,
+        weight=-0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
@@ -337,8 +338,8 @@ class RewardsCfg:
     )
 
     right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.orientation_z_axis_error,
-        weight=-0.2,
+        func=mdp.any_axis_orientation_error,
+        weight=-0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "right_ee_pose",
@@ -428,7 +429,7 @@ class ReachEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the reach end-effector pose tracking environment."""
 
     # Scene settings
-    scene: ReachSceneCfg = ReachSceneCfg(num_envs=8192, env_spacing=2.5)
+    scene: ReachSceneCfg = ReachSceneCfg(num_envs=2048, env_spacing=2.5)
     # Basic settings
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
@@ -448,3 +449,16 @@ class ReachEnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.eye = (3.5, 3.5, 3.5)
         # simulation settings
         self.sim.dt = 1.0 / 60.0
+        self.sim.physx = PhysxCfg(
+            solver_type=1,  # TGS
+            max_position_iteration_count=192,
+            max_velocity_iteration_count=1,
+            bounce_threshold_velocity=0.2,
+            friction_offset_threshold=0.01,
+            friction_correlation_distance=0.00625,
+            # increase buffers to prevent overflow errors
+            gpu_max_rigid_contact_count=2**23,
+            gpu_max_rigid_patch_count=2**23,
+            gpu_max_num_partitions=8,
+            gpu_collision_stack_size=640000,
+        )

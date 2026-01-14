@@ -36,6 +36,16 @@ parser.add_argument("--task", type=str, default=None, help="Name of the task.")
 parser.add_argument(
     "--agent", type=str, default="rsl_rl_cfg_entry_point", help="Name of the RL agent configuration entry point."
 )
+parser.add_argument(
+    "--blend_vis",
+    action="store_true",
+    default=False,
+    help="Visualize skill blending weights as colored spheres on joints (GUI only).",
+)
+parser.add_argument("--blend_vis_env", type=int, default=0, help="Environment index to visualize.")
+parser.add_argument("--blend_vis_bins", type=int, default=11, help="Number of color bins for blending weights.")
+parser.add_argument("--blend_vis_radius", type=float, default=0.025, help="Sphere radius for blend visualization.")
+parser.add_argument("--blend_vis_opacity", type=float, default=0.4, help="Sphere opacity for blend visualization.")
 parser.add_argument("--seed", type=int, default=None, help="Seed used for the environment")
 parser.add_argument(
     "--use_pretrained_checkpoint",
@@ -71,6 +81,7 @@ from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
 from sbm.rl import register_rsl_rl
 
+import isaaclab.sim as sim_utils
 from isaaclab.envs import (
     DirectMARLEnv,
     DirectMARLEnvCfg,
@@ -84,6 +95,8 @@ from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkp
 
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 
+from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
+
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
@@ -93,6 +106,69 @@ import openarm.tasks  # noqa: F401
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 register_rsl_rl()
+
+
+def _unwrap_actions(action):
+    if isinstance(action, dict):
+        for key in ("actions", "action", "actions_mean", "policy"):
+            if key in action:
+                return _unwrap_actions(action[key])
+        if len(action) == 1:
+            return _unwrap_actions(next(iter(action.values())))
+    if isinstance(action, (tuple, list)) and len(action) == 1:
+        return _unwrap_actions(action[0])
+    return action
+
+
+def _create_blend_markers(num_bins: int, radius: float, opacity: float) -> VisualizationMarkers:
+    markers = {}
+    steps = max(num_bins - 1, 1)
+    for idx in range(num_bins):
+        t = idx / steps
+        color = (1.0 - t, 0.0, t)
+        markers[f"blend_{idx:02d}"] = sim_utils.SphereCfg(
+            radius=radius,
+            visual_material=sim_utils.PreviewSurfaceCfg(diffuse_color=color, opacity=opacity),
+        )
+    cfg = VisualizationMarkersCfg(prim_path="/World/Visuals/SkillBlendWeights", markers=markers)
+    return VisualizationMarkers(cfg)
+
+
+def _get_action_joint_names(env) -> list[str]:
+    joint_names: list[str] = []
+    for term in env.unwrapped.action_manager._terms.values():
+        if hasattr(term, "_joint_names"):
+            joint_names.extend(term._joint_names)
+    return joint_names
+
+
+def _map_joint_names_to_body_indices(body_names: list[str], joint_names: list[str]) -> list[int]:
+    body_indices: list[int] = []
+    for joint_name in joint_names:
+        candidates = [
+            joint_name.replace("finger_joint", "finger_link"),
+            joint_name.replace("_joint", "_link"),
+            joint_name.replace("joint", "link"),
+            joint_name.replace("_joint", ""),
+            joint_name.replace("joint", ""),
+        ]
+        body_idx = None
+        for candidate in candidates:
+            if candidate in body_names:
+                body_idx = body_names.index(candidate)
+                break
+        if body_idx is None:
+            for candidate in candidates:
+                for body_idx, body_name in enumerate(body_names):
+                    if body_name.startswith(candidate):
+                        break
+                else:
+                    continue
+                break
+            else:
+                body_idx = 0
+        body_indices.append(body_idx)
+    return body_indices
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -182,6 +258,29 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     else:
         normalizer = None
 
+    blend_vis_enabled = (
+        args_cli.blend_vis
+        and not args_cli.headless
+        and hasattr(policy_nn, "act_inference_hrl")
+        and hasattr(policy_nn, "skill_names")
+    )
+    if blend_vis_enabled:
+        blend_markers = _create_blend_markers(
+            num_bins=args_cli.blend_vis_bins,
+            radius=args_cli.blend_vis_radius,
+            opacity=args_cli.blend_vis_opacity,
+        )
+        joint_names = _get_action_joint_names(env)
+        body_names = env.unwrapped.scene["robot"].data.body_names
+        body_indices = _map_joint_names_to_body_indices(body_names, joint_names)
+        num_bins = args_cli.blend_vis_bins
+        env_index = min(max(args_cli.blend_vis_env, 0), env.unwrapped.num_envs - 1)
+    else:
+        blend_markers = None
+        body_indices = None
+        num_bins = None
+        env_index = None
+
     # export policy to onnx/jit
     export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
     export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
@@ -199,8 +298,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         with torch.inference_mode():
             # agent stepping
             actions = policy(obs)
+            actions = _unwrap_actions(actions)
+            masks = None
+            if blend_vis_enabled:
+                output = policy_nn.act_inference_hrl(obs)
+                masks = output.get("masks")
             # env stepping
             obs, _, _, _ = env.step(actions)
+            if blend_vis_enabled and masks is not None:
+                robot = env.unwrapped.scene["robot"]
+                positions = robot.data.body_pos_w[env_index, body_indices]
+                weights = masks[env_index]
+                if weights.shape[0] >= 2:
+                    blend_ratio = weights[1].clamp(0.0, 1.0)
+                else:
+                    blend_ratio = weights[0].clamp(0.0, 1.0)
+                marker_indices = (blend_ratio * (num_bins - 1)).round().to(dtype=torch.int64)
+                blend_markers.visualize(
+                    translations=positions.detach().cpu(),
+                    marker_indices=marker_indices.detach().cpu(),
+                )
         if args_cli.video:
             timestep += 1
             # Exit the play loop after recording one video

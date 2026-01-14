@@ -256,6 +256,14 @@ class ActorCriticHierarchical(nn.Module):
         masks = torch.stack(masks, dim=1)
         masks = torch.softmax(masks, dim=1)
 
+        # Print skill weights for the first environment
+        if self.training is False: # Only print during inference/play
+            with torch.no_grad():
+                weights = masks[0, :, 0].detach().cpu().numpy()
+                skill_weights = {name: f"{weight:.3f}" for name, weight in zip(self.skill_names, weights)}
+                print(f"Active Skills (Env 0): {skill_weights}", end="\\r")
+
+
         means = []
         command_offset = 0
         for i in range(self.num_skills):
@@ -295,7 +303,7 @@ class ActorCriticHierarchical(nn.Module):
         observations = self._get_actor_obs(observations)
         if self.obs_context_len != 1:
             observations = observations[..., -1, :]
-        return self._actor(observations)["actions_mean"]
+        return self._actor(observations)
 
     def act_inference_hrl(self, observations):
         observations = self._get_actor_obs(observations)

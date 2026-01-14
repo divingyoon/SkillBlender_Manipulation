@@ -71,8 +71,7 @@ def grasp_reward(
     # reward is high when the gripper is closing and the distance is small
     close_action = torch.mean(hand_action, dim=1) > 0
     reward = torch.where(
-        (eef_dist < 0.1) & close_action,
-        1.0,
+        (eef_dist < 0.1) & close_action,        1.0,
         0.0,
     )
 

@@ -92,3 +92,50 @@ def orientation_z_axis_error(env: ManagerBasedRLEnv, command_name: str, asset_cf
     des_z = quat_apply(des_quat_w, z_axis)
     cos_sim = torch.sum(curr_z * des_z, dim=1)
     return 1.0 - cos_sim
+
+
+def any_axis_orientation_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
+    """Penalize if none of the body's principal axes align with the desired principal axes.
+
+    The function computes the alignment between the corresponding principal axes (X, Y, Z) of the
+    current end-effector orientation and the desired orientation. It takes the maximum absolute
+    dot product across the three axes. The error is 1.0 minus this maximum alignment, meaning
+    a lower error is achieved if at least one principal axis is well-aligned, regardless of direction.
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+
+    # obtain the desired and current orientations in world frame
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]
+
+    # Define standard basis vectors
+    x_axis_base = torch.tensor([1.0, 0.0, 0.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    y_axis_base = torch.tensor([0.0, 1.0, 0.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    z_axis_base = torch.tensor([0.0, 0.0, 1.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+
+    # Repeat for all environments
+    x_axis_base = x_axis_base.repeat(curr_quat_w.shape[0], 1)
+    y_axis_base = y_axis_base.repeat(curr_quat_w.shape[0], 1)
+    z_axis_base = z_axis_base.repeat(curr_quat_w.shape[0], 1)
+
+    # Apply quaternions to get rotated basis vectors
+    curr_x = quat_apply(curr_quat_w, x_axis_base)
+    curr_y = quat_apply(curr_quat_w, y_axis_base)
+    curr_z = quat_apply(curr_quat_w, z_axis_base)
+
+    des_x = quat_apply(des_quat_w, x_axis_base)
+    des_y = quat_apply(des_quat_w, y_axis_base)
+    des_z = quat_apply(des_quat_w, z_axis_base)
+
+    # Calculate absolute dot products for corresponding axes
+    align_xx = torch.abs(torch.sum(curr_x * des_x, dim=1))
+    align_yy = torch.abs(torch.sum(curr_y * des_y, dim=1))
+    align_zz = torch.abs(torch.sum(curr_z * des_z, dim=1))
+
+    # Take the maximum alignment across the three axes
+    max_alignment = torch.max(torch.max(align_xx, align_yy), align_zz)
+
+    # The error is 1.0 minus the maximum alignment
+    return 1.0 - max_alignment

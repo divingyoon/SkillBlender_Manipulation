@@ -22,7 +22,7 @@ from isaaclab.utils.io import load_yaml
 def load_skill_registry(path: str | None = None, include: list[str] | None = None) -> dict:
     """Load skill registry and optionally filter by skill names."""
     if path is None:
-        path = os.environ.get("SBM_SKILL_REGISTRY", os.path.join(os.getcwd(), "configs", "skill_registry.yaml"))
+        path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "configs", "skill_registry.yaml"))
 
     data = load_yaml(path)
     skills = data.get("skills", {})

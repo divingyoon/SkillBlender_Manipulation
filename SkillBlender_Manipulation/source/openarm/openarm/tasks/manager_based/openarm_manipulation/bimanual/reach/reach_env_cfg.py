@@ -215,6 +215,7 @@ class ObservationsCfg:
             params={
                 "left_eef_link_name": MISSING,
                 "right_eef_link_name": MISSING,
+                "command_name": "left_ee_pose",
             },
         )
         object2 = ObsTerm(
@@ -222,6 +223,7 @@ class ObservationsCfg:
             params={
                 "left_eef_link_name": MISSING,
                 "right_eef_link_name": MISSING,
+                "command_name": "right_ee_pose",
             },
         )
         left_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
@@ -328,6 +330,26 @@ class RewardsCfg:
         },
     )
 
+    left_end_effector_position_success = RewTerm(
+        func=mdp.position_command_within_tolerance,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "tolerance": 0.02,
+            "command_name": "left_ee_pose",
+        },
+    )
+
+    right_end_effector_position_success = RewTerm(
+        func=mdp.position_command_within_tolerance,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "tolerance": 0.02,
+            "command_name": "right_ee_pose",
+        },
+    )
+
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.any_axis_orientation_error,
         weight=-0.25,
@@ -342,6 +364,26 @@ class RewardsCfg:
         weight=-0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "command_name": "right_ee_pose",
+        },
+    )
+
+    left_end_effector_orientation_success = RewTerm(
+        func=mdp.orientation_within_tolerance,
+        weight=0.2,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "tolerance_deg": 5.0,
+            "command_name": "left_ee_pose",
+        },
+    )
+
+    right_end_effector_orientation_success = RewTerm(
+        func=mdp.orientation_within_tolerance,
+        weight=0.2,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "tolerance_deg": 5.0,
             "command_name": "right_ee_pose",
         },
     )

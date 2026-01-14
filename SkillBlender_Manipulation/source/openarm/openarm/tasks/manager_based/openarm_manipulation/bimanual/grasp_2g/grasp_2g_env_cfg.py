@@ -74,34 +74,20 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_ee_pose = mdp.UniformPoseCommandCfg(
+    left_ee_pose = mdp.ObjectPoseCommandCfg(
         asset_name="robot",
-        body_name=MISSING,
-        resampling_time_range=(4.0, 4.0),
-        debug_vis=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.15, 0.3),
-            pos_y=(0.15, 0.25),
-            pos_z=(0.3, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(1.5707963267948966, 1.5707963267948966),
-            yaw=(-1.5707963267948966, -1.5707963267948966),
-        ),
+        asset_cfg=SceneEntityCfg("object"),
+        pre_grasp_offset=(0.0, 0.0, 0.03),
+        hold_offset=(0.0, 0.0, 0.03),
+        lift_threshold_z=1.0,
     )
 
-    right_ee_pose = mdp.UniformPoseCommandCfg(
+    right_ee_pose = mdp.ObjectPoseCommandCfg(
         asset_name="robot",
-        body_name=MISSING,
-        resampling_time_range=(4.0, 4.0),
-        debug_vis=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.15, 0.3),
-            pos_y=(-0.25, -0.15),
-            pos_z=(0.3, 0.5),
-            roll=(0.0, 0.0),
-            pitch=(1.5707963267948966, 1.5707963267948966),
-            yaw=(1.5707963267948966, 1.5707963267948966),
-        ),
+        asset_cfg=SceneEntityCfg("object2"),
+        pre_grasp_offset=(0.0, 0.0, 0.03),
+        hold_offset=(0.0, 0.0, 0.03),
+        lift_threshold_z=1.0,
     )
 
 
@@ -290,12 +276,12 @@ class RewardsCfg:
     left_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
+        params={"std": 0.15, "eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object2")},
+        params={"std": 0.15, "eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
@@ -308,19 +294,19 @@ class RewardsCfg:
         params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
 
-    left_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")})
+    left_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=0.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")})
     
     left_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=20.0,
+        weight=0.0,
         params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
     )
 
-    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=5.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")})
+    right_lift_reward = RewTerm(func=mdp.object_is_lifted, weight=0.0, params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")})
     
     right_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=20.0,
+        weight=0.0,
         params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)

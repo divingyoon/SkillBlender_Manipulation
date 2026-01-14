@@ -105,10 +105,14 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
         self.rewards.left_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
         self.rewards.left_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_left_hand"]
         self.rewards.left_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
+        self.rewards.left_end_effector_position_success.params["asset_cfg"].body_names = ["openarm_left_hand"]
+        self.rewards.left_end_effector_orientation_success.params["asset_cfg"].body_names = ["openarm_left_hand"]
 
         self.rewards.right_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
         self.rewards.right_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_right_hand"]
         self.rewards.right_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
+        self.rewards.right_end_effector_position_success.params["asset_cfg"].body_names = ["openarm_right_hand"]
+        self.rewards.right_end_effector_orientation_success.params["asset_cfg"].body_names = ["openarm_right_hand"]
 
         # override actions
         self.actions.left_arm_action = mdp.JointPositionActionCfg(

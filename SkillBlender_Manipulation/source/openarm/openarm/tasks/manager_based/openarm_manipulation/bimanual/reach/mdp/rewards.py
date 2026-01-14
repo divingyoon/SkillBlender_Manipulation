@@ -20,6 +20,7 @@ from typing import TYPE_CHECKING
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, quat_error_magnitude, quat_mul
+import math
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -58,6 +59,19 @@ def position_command_error_tanh(
     curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]  # type: ignore
     distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
     return 1 - torch.tanh(distance / std)
+
+
+def position_command_within_tolerance(
+    env: ManagerBasedRLEnv, tolerance: float, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward when position error is within a tolerance (in meters)."""
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(asset.data.root_pos_w, asset.data.root_quat_w, des_pos_b)
+    curr_pos_w = asset.data.body_pos_w[:, asset_cfg.body_ids[0]]  # type: ignore
+    distance = torch.norm(curr_pos_w - des_pos_w, dim=1)
+    return (distance <= tolerance).to(distance.dtype)
 
 
 def orientation_command_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
@@ -139,3 +153,17 @@ def any_axis_orientation_error(env: ManagerBasedRLEnv, command_name: str, asset_
 
     # The error is 1.0 minus the maximum alignment
     return 1.0 - max_alignment
+
+
+def orientation_within_tolerance(
+    env: ManagerBasedRLEnv, tolerance_deg: float, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward when orientation error is within a tolerance (in degrees)."""
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]  # type: ignore
+    error = quat_error_magnitude(curr_quat_w, des_quat_w)
+    tol = math.radians(tolerance_deg)
+    return (error <= tol).to(error.dtype)

@@ -54,22 +54,26 @@ def grasp_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
     """Reward for grasping the object with a single hand."""
-    object: RigidObject = env.scene[object_cfg.name]
-    
     # distance between eef and object
     eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
 
     # determine which hand is being used
     if "left" in eef_link_name:
-        hand_action = env.action_manager.get_term("left_hand_action").raw_actions
+        hand_term = env.action_manager.get_term("left_hand_action")
     elif "right" in eef_link_name:
-        hand_action = env.action_manager.get_term("right_hand_action").raw_actions
+        hand_term = env.action_manager.get_term("right_hand_action")
     else:
         # should not happen
         return torch.zeros_like(eef_dist)
-    
+
+    hand_action = hand_term.processed_actions
+    if isinstance(hand_term._offset, torch.Tensor):
+        default_pos = hand_term._offset.mean(dim=1)
+    else:
+        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
+    close_action = torch.mean(hand_action, dim=1) < (default_pos - 0.005)
+
     # reward is high when the gripper is closing and the distance is small
-    close_action = torch.mean(hand_action, dim=1) > 0
     reward = torch.where(
         (eef_dist < 0.1) & close_action,        1.0,
         0.0,
@@ -109,5 +113,4 @@ def object_is_held(
     )
 
     return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
-
 

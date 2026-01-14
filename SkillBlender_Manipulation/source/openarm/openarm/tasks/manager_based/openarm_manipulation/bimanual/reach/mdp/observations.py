@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 import torch
 
+from isaaclab.utils.math import combine_frame_transforms
+
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
@@ -26,6 +28,7 @@ def object_obs(
     env: ManagerBasedRLEnv,
     left_eef_link_name: str,
     right_eef_link_name: str,
+    command_name: str | None = None,
 ) -> torch.Tensor:
     """Object observations in env frame with relative vectors to both end effectors."""
     body_pos_w = env.scene["robot"].data.body_pos_w
@@ -34,8 +37,19 @@ def object_obs(
     left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
     right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
 
-    object_pos = env.scene["object"].data.root_pos_w - env.scene.env_origins
-    object_quat = env.scene["object"].data.root_quat_w
+    if command_name is not None:
+        command = env.command_manager.get_command(command_name)
+        des_pos_b = command[:, :3]
+        des_quat_b = command[:, 3:7]
+        robot = env.scene["robot"]
+        des_pos_w, des_quat_w = combine_frame_transforms(
+            robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
+        )
+        object_pos = des_pos_w - env.scene.env_origins
+        object_quat = des_quat_w
+    else:
+        object_pos = env.scene["object"].data.root_pos_w - env.scene.env_origins
+        object_quat = env.scene["object"].data.root_quat_w
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
@@ -55,6 +69,7 @@ def object2_obs(
     env: ManagerBasedRLEnv,
     left_eef_link_name: str,
     right_eef_link_name: str,
+    command_name: str | None = None,
 ) -> torch.Tensor:
     """Second object observation for compatibility with grasp_2g."""
     body_pos_w = env.scene["robot"].data.body_pos_w
@@ -63,8 +78,19 @@ def object2_obs(
     left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
     right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
 
-    object_pos = env.scene["object2"].data.root_pos_w - env.scene.env_origins
-    object_quat = env.scene["object2"].data.root_quat_w
+    if command_name is not None:
+        command = env.command_manager.get_command(command_name)
+        des_pos_b = command[:, :3]
+        des_quat_b = command[:, 3:7]
+        robot = env.scene["robot"]
+        des_pos_w, des_quat_w = combine_frame_transforms(
+            robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
+        )
+        object_pos = des_pos_w - env.scene.env_origins
+        object_quat = des_quat_w
+    else:
+        object_pos = env.scene["object2"].data.root_pos_w - env.scene.env_origins
+        object_quat = env.scene["object2"].data.root_quat_w
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos

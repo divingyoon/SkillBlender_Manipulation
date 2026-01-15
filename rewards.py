@@ -58,11 +58,24 @@ def grasp_reward(
 
     This function provides a smoother shaping signal than the previous binary
     reward. It combines two components:
-    - Proximity component: encourages the end effector to approach the object.
-    - Closure component: encourages the gripper fingers to close relative to
-      their nominal open position.
+
+    - **Proximity component**: Encourages the end effector to approach the object.
+      The proximity factor linearly decays from 1 when the end‑effector is at the
+      object, to 0 when the distance exceeds 0.2 m. This choice of scale is
+      heuristic but provides a meaningful gradient for typical table‑top tasks.
+
+    - **Closure component**: Encourages the gripper fingers to close relative to
+      their nominal open position. We compute the average commanded finger position
+      and compare it to the default (open) position. A positive value indicates
+      the fingers are closing. This term is normalised to the range [0, 1] to
+      prevent excessively large rewards.
+
+    The final reward is the product of the proximity and closure components.
+    This encourages the gripper to close as it approaches the object, rather than
+    oscillate or remain open. If the end effector is far from the object or the
+    fingers are not closing, the reward smoothly drops toward zero.
     """
-    # distance between end-effector and object
+    # distance between end‑effector and object
     eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
 
     # identify which hand is being used to access the appropriate action term
@@ -77,19 +90,19 @@ def grasp_reward(
     # processed_actions has shape (num_envs, num_gripper_joints); take mean across joints
     hand_action = hand_term.processed_actions  # current commanded positions
 
-    # Determine default (open) finger position.
+    # Determine default (open) finger position. The hand_term._offset can be a
+    # scalar or a tensor specifying desired default positions for each joint.
     if isinstance(hand_term._offset, torch.Tensor):
         default_pos = hand_term._offset.mean(dim=1)
     else:
         default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
 
-    # Compute closure amount: positive when fingers are closing relative to default.
+    # Compute closure amount: positive when fingers are closing relative to default
+    # We normalise by the default to ensure the value lies in [0, 1].
     mean_action = hand_action.mean(dim=1)
-    closure_amount = torch.clamp(
-        (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
-    )
+    closure_amount = torch.clamp((default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0)
 
-    # Proximity factor: linear decay with distance. Reward is non-zero only within 0.2 m.
+    # Proximity factor: linear decay with distance. Reward is non‑zero only within 0.2 m.
     proximity = torch.clamp(1.0 - (eef_dist / 0.2), min=0.0, max=1.0)
 
     # Final reward is product of proximity and closure amount.
@@ -127,3 +140,4 @@ def object_is_held(
     )
 
     return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
+

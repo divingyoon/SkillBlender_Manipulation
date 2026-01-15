@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Find Best Reward (IsaacLab)",
+      "type": "python",
+      "request": "launch",
+      "program": "/home/user/rl_ws/find_best_reward.py",
+      "python": "/home/user/rl_ws/IsaacLab/_isaac_sim/python.sh",
+      "console": "integratedTerminal"
+    }
+  ]
+}

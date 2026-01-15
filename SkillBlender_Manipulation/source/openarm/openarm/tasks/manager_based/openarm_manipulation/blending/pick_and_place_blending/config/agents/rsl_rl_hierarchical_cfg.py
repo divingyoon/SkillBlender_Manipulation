@@ -21,15 +21,15 @@ from sbm.skill_registry import load_skill_registry
 
 @configclass
 class OpenArmPickAndPlaceBlendingHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 16
+    num_steps_per_env = 32
     max_iterations = 10000
     save_interval = 100
     experiment_name = "openarm_bi_pick_and_place_blending_hier"
     run_name = ""
     resume = False
-    empirical_normalization = False
+    empirical_normalization = True
     policy = SbmHierarchicalActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.5,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
         actor_hidden_dims=[512, 256, 128],
@@ -42,16 +42,16 @@ class OpenArmPickAndPlaceBlendingHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg
         num_dofs=None,
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        value_loss_coef=2.0,
+        value_loss_coef=0.5,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=4,
-        num_mini_batches=16,
-        learning_rate=5.0e-4,
+        entropy_coef=0.02,
+        num_learning_epochs=8,
+        num_mini_batches=8,
+        learning_rate=1.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.01,
+        desired_kl=0.02,
         max_grad_norm=1.0,
     )

@@ -78,16 +78,16 @@ class CommandsCfg:
         asset_name="robot",
         asset_cfg=SceneEntityCfg("object"),
         pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
+        hold_offset=(0.0, 0.0, 0.03),
+        lift_threshold_z=1.0,
     )
 
     right_ee_pose = mdp.ObjectPoseCommandCfg(
         asset_name="robot",
         asset_cfg=SceneEntityCfg("object2"),
         pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
+        hold_offset=(0.0, 0.0, 0.03),
+        lift_threshold_z=1.0,
     )
 
 
@@ -273,51 +273,62 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    # Encourage the end‑effectors to approach their respective objects. Increasing
+    # the weight from 1.0 to 1.5 provides a stronger shaping signal early in the
+    # episode, as suggested in recent RL grasping studies, where distance
+    # penalties guide exploration towards the object【436971596585734†L826-L845】【436971596585734†L880-L883】.
     left_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
-        weight=1.0,
+        weight=1.5,
         params={"std": 0.15, "eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
-        weight=1.0,
+        weight=1.5,
         params={"std": 0.15, "eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
+    # Grasp reward now uses a continuous formulation. Reduce weight from 10.0 to 5.0
+    # to balance with increased distance shaping and avoid reward dominance.
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=10.0,
+        weight=5.0,
         params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=10.0,
+        weight=5.0,
         params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
 
+    # Reward for lifting the object above minimal height. Assign a small positive
+    # weight to encourage the policy to not only grasp but also raise the cube.
     left_lift_reward = RewTerm(
         func=mdp.object_is_lifted,
-        weight=5.0,
+        weight=1.0,
         params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")},
     )
     
+    # Reward for holding the object for a specified duration. This term provides
+    # sparse feedback once a stable grasp has been achieved. Assign a modest
+    # weight to incentivise sustained lifting without dominating earlier shaping.
     left_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object")},
+        weight=2.0,
+        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
     )
 
     right_lift_reward = RewTerm(
         func=mdp.object_is_lifted,
-        weight=5.0,
+        weight=1.0,
         params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")},
     )
     
     right_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object2")},
+        weight=2.0,
+        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,

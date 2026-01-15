@@ -200,3 +200,138 @@ def bead_in_target_reward(
     target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
     dist = torch.norm(bead_pos - target_pos, p=2, dim=-1)
     return torch.where(dist <= radius, 1.0, 0.0)
+
+
+def _cup_is_held(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    hold_duration: float,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    if not hasattr(env, "cup_hold_counters"):
+        env.cup_hold_counters = {}
+    name = object_cfg.name
+    if name not in env.cup_hold_counters:
+        env.cup_hold_counters[name] = torch.zeros(env.num_envs, device=env.device)
+
+    obj: RigidObject = env.scene[name]
+    is_lifted = obj.data.root_pos_w[:, 2] > minimal_height
+    env.cup_hold_counters[name] = torch.where(
+        is_lifted,
+        env.cup_hold_counters[name] + env.step_dt,
+        torch.zeros_like(env.cup_hold_counters[name]),
+    )
+    return torch.where(env.cup_hold_counters[name] > hold_duration, 1.0, 0.0)
+
+
+def _update_pour_phase(
+    env: ManagerBasedRLEnv,
+    min_height: float = 0.15,
+    hold_duration: float = 5.0,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+) -> torch.Tensor:
+    if not hasattr(env, "pour_phase"):
+        env.pour_phase = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
+
+    left_grasp = grasp_reward(env, "openarm_left_ee_tcp", SceneEntityCfg("object")) > 0.5
+    right_grasp = grasp_reward(env, "openarm_right_ee_tcp", SceneEntityCfg("object2")) > 0.5
+    grasp_ok = left_grasp & right_grasp
+
+    left_lift = object_is_lifted(env, min_height, SceneEntityCfg("object")) > 0.5
+    right_lift = object_is_lifted(env, min_height, SceneEntityCfg("object2")) > 0.5
+    lift_ok = left_lift & right_lift
+
+    left_hold = _cup_is_held(env, min_height, hold_duration, SceneEntityCfg("object")) > 0.5
+    right_hold = _cup_is_held(env, min_height, hold_duration, SceneEntityCfg("object2")) > 0.5
+    hold_ok = left_hold & right_hold
+
+    align_xy = cup_xy_alignment(env, "object", "object2")
+    align_z = cup_z_alignment(env, "object", "object2")
+    align_ok = (align_xy > align_xy_threshold) & (align_z > align_z_threshold)
+
+    phase = env.pour_phase
+    phase = torch.where((phase == 0) & grasp_ok, torch.tensor(1, device=env.device), phase)
+    phase = torch.where((phase == 1) & lift_ok, torch.tensor(2, device=env.device), phase)
+    phase = torch.where((phase == 2) & hold_ok, torch.tensor(3, device=env.device), phase)
+    phase = torch.where((phase == 3) & align_ok, torch.tensor(4, device=env.device), phase)
+    env.pour_phase = phase
+    if not hasattr(env, "_phase_print_last"):
+        env._phase_print_last = torch.full((env.num_envs,), -1, device=env.device, dtype=torch.long)
+    if hasattr(env, "common_step_counter") and env.common_step_counter % 100 == 0:
+        if env._phase_print_last[0].item() != phase[0].item():
+            print(f"[INFO] Pour phase (env0): {int(phase[0].item())}")
+            env._phase_print_last[0] = phase[0]
+    return phase
+
+
+def phase_grasp_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = grasp_reward(env, eef_link_name, object_cfg)
+    return reward * (phase == 0)
+
+
+def phase_lift_reward(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = object_is_lifted(env, minimal_height, object_cfg)
+    return reward * (phase == 1)
+
+
+def phase_hold_reward(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    hold_duration: float,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = _cup_is_held(env, minimal_height, hold_duration, object_cfg)
+    return reward * (phase == 2)
+
+
+def phase_cup_xy_alignment(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = cup_xy_alignment(env, source_name, target_name)
+    return reward * (phase == 3)
+
+
+def phase_cup_z_alignment(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = cup_z_alignment(env, source_name, target_name)
+    return reward * (phase == 3)
+
+
+def phase_cup_tilt_reward(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = cup_tilt_reward(env, source_name, target_name)
+    return reward * (phase == 3)
+
+
+def phase_bead_in_target(
+    env: ManagerBasedRLEnv,
+    bead_name: str,
+    target_name: str,
+    radius: float = 0.1,
+) -> torch.Tensor:
+    phase = _update_pour_phase(env)
+    reward = bead_in_target_reward(env, bead_name, target_name, radius)
+    return reward * (phase >= 4)

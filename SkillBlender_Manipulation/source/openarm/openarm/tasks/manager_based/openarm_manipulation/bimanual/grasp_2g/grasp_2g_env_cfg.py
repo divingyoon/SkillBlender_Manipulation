@@ -274,41 +274,150 @@ class RewardsCfg:
     """Reward terms for the MDP."""
 
     left_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
+        func=mdp.phase_eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object")},
+        params={
+            "std": 0.15,
+            "eef_link_name": "openarm_left_ee_tcp",
+            "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [5.0, 2.0, 1.0, 1.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
     )
     right_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
+        func=mdp.phase_eef_to_object_distance,
         weight=1.0,
-        params={"std": 0.15, "eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2")},
+        params={
+            "std": 0.15,
+            "eef_link_name": "openarm_right_ee_tcp",
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [5.0, 2.0, 1.0, 1.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+    left_eef_to_object_orientation = RewTerm(
+        func=mdp.phase_eef_to_object_orientation,
+        weight=0.5,
+        params={
+            "std": 1.0,
+            "eef_link_name": "openarm_left_ee_tcp",
+            "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [2.0, 1.0, 0.5, 0.5],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+    right_eef_to_object_orientation = RewTerm(
+        func=mdp.phase_eef_to_object_orientation,
+        weight=0.5,
+        params={
+            "std": 1.0,
+            "eef_link_name": "openarm_right_ee_tcp",
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [2.0, 1.0, 0.5, 0.5],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
     )
     left_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
-        weight=10.0,
-        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object")},
+        func=mdp.phase_grasp_reward,
+        weight=1.0,
+        params={
+            "eef_link_name": "openarm_left_ee_tcp",
+            "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [1.0, 8.0, 4.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
     )
     right_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
-        weight=10.0,
-        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2")},
+        func=mdp.phase_grasp_reward,
+        weight=1.0,
+        params={
+            "eef_link_name": "openarm_right_ee_tcp",
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [1.0, 8.0, 4.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
+        },
     )
 
     left_lift_reward = RewTerm(
-        func=mdp.object_is_lifted_gated,
-        weight=5.0,
+        func=mdp.phase_lift_reward,
+        weight=1.0,
         params={
             "minimal_height": 0.1,
             "eef_link_name": "openarm_left_ee_tcp",
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [0.0, 0.0, 6.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
         },
     )
     
     left_hold_reward = RewTerm(
-        func=mdp.object_is_held_gated,
-        weight=5.0,
+        func=mdp.phase_hold_reward,
+        weight=1.0,
         params={
             "minimal_height": 0.1,
             "hold_duration": 2.0,
@@ -316,24 +425,46 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [0.0, 0.0, 0.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
         },
     )
 
     right_lift_reward = RewTerm(
-        func=mdp.object_is_lifted_gated,
-        weight=5.0,
+        func=mdp.phase_lift_reward,
+        weight=1.0,
         params={
             "minimal_height": 0.1,
             "eef_link_name": "openarm_right_ee_tcp",
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [0.0, 0.0, 6.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
         },
     )
     
     right_hold_reward = RewTerm(
-        func=mdp.object_is_held_gated,
-        weight=5.0,
+        func=mdp.phase_hold_reward,
+        weight=1.0,
         params={
             "minimal_height": 0.1,
             "hold_duration": 2.0,
@@ -341,6 +472,17 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [0.0, 0.0, 0.0, 4.0],
+            "phase_params": {
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_object_cfg": SceneEntityCfg("object"),
+                "right_object_cfg": SceneEntityCfg("object2"),
+                "reach_radius": 0.05,
+                "close_threshold": 0.6,
+                "minimal_height": 0.1,
+                "hold_duration": 2.0,
+            },
         },
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)

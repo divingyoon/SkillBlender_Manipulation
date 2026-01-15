@@ -309,52 +309,52 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
     left_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
+        func=mdp.phase_grasp_reward,
         weight=3.0,
-        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
+        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object")},
     )
     right_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
+        func=mdp.phase_grasp_reward,
         weight=3.0,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
+        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2")},
     )
     left_lift_reward = RewTerm(
-        func=mdp.object_is_lifted,
+        func=mdp.phase_lift_reward,
         weight=2.0,
-        params={"minimal_height": 0.12, "object_cfg": SceneEntityCfg("object")},
+        params={"minimal_height": 0.15, "object_cfg": SceneEntityCfg("object")},
     )
     right_lift_reward = RewTerm(
-        func=mdp.object_is_lifted,
+        func=mdp.phase_lift_reward,
         weight=2.0,
-        params={"minimal_height": 0.12, "object_cfg": SceneEntityCfg("object2")},
+        params={"minimal_height": 0.15, "object_cfg": SceneEntityCfg("object2")},
     )
     left_hold_reward = RewTerm(
-        func=mdp.object_is_held,
+        func=mdp.phase_hold_reward,
         weight=5.0,
-        params={"minimal_height": 0.12, "hold_duration": 1.0, "object_cfg": SceneEntityCfg("object")},
+        params={"minimal_height": 0.15, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
     )
     right_hold_reward = RewTerm(
-        func=mdp.object_is_held,
+        func=mdp.phase_hold_reward,
         weight=5.0,
-        params={"minimal_height": 0.12, "hold_duration": 1.0, "object_cfg": SceneEntityCfg("object2")},
+        params={"minimal_height": 0.15, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
     )
     cup_xy_alignment = RewTerm(
-        func=mdp.cup_xy_alignment,
+        func=mdp.phase_cup_xy_alignment,
         weight=1.0,
         params={"source_name": "object", "target_name": "object2"},
     )
     cup_z_alignment = RewTerm(
-        func=mdp.cup_z_alignment,
+        func=mdp.phase_cup_z_alignment,
         weight=1.0,
         params={"source_name": "object", "target_name": "object2"},
     )
     cup_tilt_reward = RewTerm(
-        func=mdp.cup_tilt_reward,
+        func=mdp.phase_cup_tilt_reward,
         weight=1.0,
         params={"source_name": "object", "target_name": "object2"},
     )
     bead_in_target = RewTerm(
-        func=mdp.bead_in_target_reward,
+        func=mdp.phase_bead_in_target,
         weight=5.0,
         params={"bead_name": "bead", "target_name": "object2", "radius": 0.1},
     )

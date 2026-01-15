@@ -21,7 +21,7 @@ gym.register(
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.pouring_env_cfg:PouringEnvCfg",
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:PouringEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PouringPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": (
             f"{agents.__name__}.rsl_rl_hierarchical_cfg:PouringHierarchicalPPORunnerCfg"
@@ -34,7 +34,7 @@ gym.register(
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.pouring_env_cfg:PouringEnvCfg_PLAY",
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:PouringEnvCfg_PLAY",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PouringPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": (
             f"{agents.__name__}.rsl_rl_hierarchical_cfg:PouringHierarchicalPPORunnerCfg"

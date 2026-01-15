@@ -16,7 +16,6 @@ from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
 from isaaclab.sim import PhysxCfg
-#from isaaclab.sim.schemas.schemas_cfg import RigidBodyMaterialCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
@@ -27,7 +26,6 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
@@ -37,17 +35,15 @@ from . import mdp
 
 
 @configclass
-class Grasp2gSceneCfg(InteractiveSceneCfg):
-    """Scene with a bimanual robot, table, and a cube to be grasped."""
+class PouringSceneCfg(InteractiveSceneCfg):
+    """Scene with a bimanual robot, table, and a cube for handover."""
 
-    # robots
     robot: ArticulationCfg = MISSING
 
-    # target object
     object: RigidObjectCfg = MISSING
     object2: RigidObjectCfg = MISSING
+    bead: RigidObjectCfg = MISSING
 
-    # table
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
         init_state=AssetBaseCfg.InitialStateCfg(pos=[0.0, 0.25, 0.0], rot=[0.707, 0, 0, 0.707]),
@@ -56,14 +52,12 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
         ),
     )
 
-    # ground plane
     ground = AssetBaseCfg(
         prim_path="/World/GroundPlane",
         init_state=AssetBaseCfg.InitialStateCfg(pos=(0.0, 0.0, -1.05)),
         spawn=GroundPlaneCfg(),
     )
 
-    # lights
     light = AssetBaseCfg(
         prim_path="/World/light",
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
@@ -74,20 +68,34 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_ee_pose = mdp.ObjectPoseCommandCfg(
+    left_ee_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        asset_cfg=SceneEntityCfg("object"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.03),
-        lift_threshold_z=1.0,
+        body_name=MISSING,
+        resampling_time_range=(4.0, 4.0),
+        debug_vis=False,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.15, 0.3),
+            pos_y=(0.15, 0.25),
+            pos_z=(0.3, 0.5),
+            roll=(0.0, 0.0),
+            pitch=(1.5707963267948966, 1.5707963267948966),
+            yaw=(-1.5707963267948966, -1.5707963267948966),
+        ),
     )
 
-    right_ee_pose = mdp.ObjectPoseCommandCfg(
+    right_ee_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        asset_cfg=SceneEntityCfg("object2"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.03),
-        lift_threshold_z=1.0,
+        body_name=MISSING,
+        resampling_time_range=(4.0, 4.0),
+        debug_vis=False,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.15, 0.3),
+            pos_y=(-0.25, -0.15),
+            pos_z=(0.3, 0.5),
+            roll=(0.0, 0.0),
+            pitch=(1.5707963267948966, 1.5707963267948966),
+            yaw=(1.5707963267948966, 1.5707963267948966),
+        ),
     )
 
 
@@ -234,6 +242,25 @@ class ObservationsCfg:
 
     policy: PolicyCfg = PolicyCfg()
 
+    @configclass
+    class HighLevelCfg(ObsGroup):
+        """Additional observations for high-level pouring policy."""
+
+        cup_pair = ObsTerm(
+            func=mdp.cup_pair_obs,
+            params={"source_name": "object", "target_name": "object2"},
+        )
+        bead = ObsTerm(
+            func=mdp.bead_obs,
+            params={"bead_name": "bead", "target_name": "object2", "source_name": "object"},
+        )
+
+        def __post_init__(self):
+            self.enable_corruption = True
+            self.concatenate_terms = True
+
+    high_level: HighLevelCfg = HighLevelCfg()
+
 
 @configclass
 class EventCfg:
@@ -249,7 +276,7 @@ class EventCfg:
                 "x": (-0.1, 0.0),
                 "y": (-0.05, 0.05), 
                 "z": (0.0, 0.0),
-            },#left object
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
         },
@@ -260,11 +287,24 @@ class EventCfg:
         params={
             "pose_range": {
                 "x": (0.0, 0.1),
-                "y": (-0.05, 0.05), 
+                "y": (-0.05, 0.05),
                 "z": (0.0, 0.0),
-            },#right object
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object2"),
+        },
+    )
+    reset_bead_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {
+                "x": (-0.1, 0.0),
+                "y": (-0.05, 0.05),
+                "z": (0.1, 0.1),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("bead"),
         },
     )
 
@@ -273,60 +313,65 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    # Encourage the end‑effectors to approach their respective objects. Increasing
-    # the weight from 1.0 to 1.5 provides a stronger shaping signal early in the
-    # episode, as suggested in recent RL grasping studies, where distance
-    # penalties guide exploration towards the object【436971596585734†L826-L845】【436971596585734†L880-L883】.
     left_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
-        weight=1.5,
-        params={"std": 0.15, "eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
+        weight=1.0,
+        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
     )
     right_eef_to_object_distance = RewTerm(
         func=mdp.eef_to_object_distance,
-        weight=1.5,
-        params={"std": 0.15, "eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
+        weight=1.0,
+        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
     )
-    # Grasp reward now uses a continuous formulation. Reduce weight from 10.0 to 5.0
-    # to balance with increased distance shaping and avoid reward dominance.
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=5.0,
+        weight=10.0,
         params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=5.0,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
+        weight=10.0,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
     )
-
-    # Reward for lifting the object above minimal height. Assign a small positive
-    # weight to encourage the policy to not only grasp but also raise the cube.
     left_lift_reward = RewTerm(
         func=mdp.object_is_lifted,
-        weight=1.0,
+        weight=5.0,
         params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")},
     )
-    
-    # Reward for holding the object for a specified duration. This term provides
-    # sparse feedback once a stable grasp has been achieved. Assign a modest
-    # weight to incentivise sustained lifting without dominating earlier shaping.
     left_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=2.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object")},
+        weight=10.0,
+        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object")},
     )
-
-    right_lift_reward = RewTerm(
-        func=mdp.object_is_lifted,
+    handover_reward = RewTerm(
+        func=mdp.handover_success,
+        weight=10.0,
+        params={"eef_link_name_right": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
+    )
+    place_reward = RewTerm(
+        func=mdp.object_at_target,
+        weight=20.0,
+        params={"target_pos": (0.2, -0.2, 0.05), "object_cfg": SceneEntityCfg("object")},
+    )
+    cup_xy_alignment = RewTerm(
+        func=mdp.cup_xy_alignment,
         weight=1.0,
-        params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")},
+        params={"source_name": "object", "target_name": "object2"},
     )
-    
-    right_hold_reward = RewTerm(
-        func=mdp.object_is_held,
-        weight=2.0,
-        params={"minimal_height": 0.05, "hold_duration": 5.0, "object_cfg": SceneEntityCfg("object2")},
+    cup_z_alignment = RewTerm(
+        func=mdp.cup_z_alignment,
+        weight=1.0,
+        params={"source_name": "object", "target_name": "object2"},
+    )
+    cup_tilt_reward = RewTerm(
+        func=mdp.cup_tilt_reward,
+        weight=1.0,
+        params={"source_name": "object", "target_name": "object2"},
+    )
+    bead_in_target = RewTerm(
+        func=mdp.bead_in_target_reward,
+        weight=5.0,
+        params={"bead_name": "bead", "target_name": "object2", "radius": 0.1},
     )
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
@@ -390,10 +435,10 @@ class TerminationsCfg:
 
 
 @configclass
-class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the bimanual grasping environment."""
+class PouringBaseEnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the bimanual pouring blending environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: PouringSceneCfg = PouringSceneCfg(num_envs=20480, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -409,9 +454,6 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-
-        # assign a default physx material to all scene geometries
-        # we can also do this per-asset in the scene definition
         self.sim.physx = PhysxCfg(
             solver_type=1,  # TGS
             max_position_iteration_count=192,
@@ -424,10 +466,4 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
             gpu_max_rigid_patch_count=2**23,
             gpu_max_num_partitions=8,
             gpu_collision_stack_size=640000,
-            # set default material properties
-            # default_material=RigidBodyMaterialCfg(
-            #     static_friction=1.0,
-            #     dynamic_friction=1.0,
-            #     restitution=0.0,
-            # ),
         )

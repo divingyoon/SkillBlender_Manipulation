@@ -30,3 +30,4 @@ class SbmHierarchicalActorCriticCfg(RslRlPpoActorCriticCfg):
     command_dim: int = MISSING
     command_slice: list[int] | None = None
     num_dofs: int | None = None
+    low_level_obs_groups: list[str] | None = None

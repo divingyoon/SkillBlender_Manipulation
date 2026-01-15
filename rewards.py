@@ -24,7 +24,17 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def _object_eef_distance(
+def object_is_lifted(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward for lifting the object above a minimal height."""
+    object: RigidObject = env.scene[object_cfg.name]
+    return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
+
+
+def object_eef_distance(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
@@ -37,107 +47,89 @@ def _object_eef_distance(
     return torch.norm(object_pos - eef_pos, dim=1)
 
 
-def eef_to_object_distance(
+def object_eef_distance_tanh(
     env: ManagerBasedRLEnv,
     std: float,
     eef_link_name: str,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
     """Reward the end-effector being close to the object using tanh-kernel."""
-    distance = _object_eef_distance(env, eef_link_name, object_cfg)
+    distance = object_eef_distance(env, eef_link_name, object_cfg)
+    return 1 - torch.tanh(distance / std)
+
+# -----------------------------------------------------------------------------
+# Additional reward helpers for pick-and-place tasks
+#
+# The functions below extend the existing reward library with helpers specific
+# to multi-stage pick-and-place problems. They enable dense guidance for final
+# object placement and discourage unnatural bimanual interactions.
+
+def object_target_distance_tanh(
+    env: ManagerBasedRLEnv,
+    std: float,
+    target_pos: list[float],
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward for the object being near a target position using a tanh-kernel.
+
+    The reward is close to 1 when the object is at the desired target position and
+    decays smoothly as the distance increases. A larger standard deviation `std`
+    results in a slower decay. `target_pos` should be a 3D position in world
+    coordinates (x, y, z) representing the desired placement location on the table.
+
+    Args:
+        env: The RL environment instance.
+        std: Standard deviation controlling the decay of the tanh-kernel.
+        target_pos: A list of three floats specifying the target position.
+        object_cfg: Scene entity configuration for the manipulated object.
+
+    Returns:
+        A tensor of shape (num_envs,) with values in [0, 1] representing the
+        proximity reward to the target location.
+    """
+    object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    # Convert the target position to a tensor on the correct device/dtype
+    target = torch.tensor(target_pos, device=object_pos.device, dtype=object_pos.dtype)
+    # Compute Euclidean distance between each object's position and the target
+    distance = torch.norm(object_pos - target, dim=1)
     return 1 - torch.tanh(distance / std)
 
 
-def grasp_reward(
+def hand_proximity_penalty(
     env: ManagerBasedRLEnv,
-    eef_link_name: str,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    threshold: float,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    penalty: float = 1.0,
 ) -> torch.Tensor:
+    """Penalty applied when the end-effectors of two hands are too close.
+
+    This helper returns a negative reward when the distance between the specified
+    left and right end-effectors falls below the given threshold. It is
+    designed to discourage unnatural hand-to-hand transfers by penalizing
+    configurations where the hands overlap excessively. The penalty scales with
+    the provided `penalty` weight.
+
+    Args:
+        env: The RL environment instance.
+        threshold: Minimum allowed distance between the two hands before a penalty
+            is applied (in meters).
+        left_eef_link_name: Name of the left hand's end-effector link.
+        right_eef_link_name: Name of the right hand's end-effector link.
+        penalty: Magnitude of the penalty applied when hands are too close.
+
+    Returns:
+        A tensor of shape (num_envs,) containing negative penalties (or zero if
+        no penalty) for each environment.
     """
-    Continuous reward encouraging the end effector to close onto the object.
-
-    This function provides a smoother shaping signal than the previous binary
-    reward. It combines two components:
-
-    - **Proximity component**: Encourages the end effector to approach the object.
-      The proximity factor linearly decays from 1 when the end‑effector is at the
-      object, to 0 when the distance exceeds 0.2 m. This choice of scale is
-      heuristic but provides a meaningful gradient for typical table‑top tasks.
-
-    - **Closure component**: Encourages the gripper fingers to close relative to
-      their nominal open position. We compute the average commanded finger position
-      and compare it to the default (open) position. A positive value indicates
-      the fingers are closing. This term is normalised to the range [0, 1] to
-      prevent excessively large rewards.
-
-    The final reward is the product of the proximity and closure components.
-    This encourages the gripper to close as it approaches the object, rather than
-    oscillate or remain open. If the end effector is far from the object or the
-    fingers are not closing, the reward smoothly drops toward zero.
-    """
-    # distance between end‑effector and object
-    eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
-
-    # identify which hand is being used to access the appropriate action term
-    if "left" in eef_link_name:
-        hand_term = env.action_manager.get_term("left_hand_action")
-    elif "right" in eef_link_name:
-        hand_term = env.action_manager.get_term("right_hand_action")
-    else:
-        # fallback: no reward if the link does not correspond to a hand
-        return torch.zeros_like(eef_dist)
-
-    # processed_actions has shape (num_envs, num_gripper_joints); take mean across joints
-    hand_action = hand_term.processed_actions  # current commanded positions
-
-    # Determine default (open) finger position. The hand_term._offset can be a
-    # scalar or a tensor specifying desired default positions for each joint.
-    if isinstance(hand_term._offset, torch.Tensor):
-        default_pos = hand_term._offset.mean(dim=1)
-    else:
-        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
-
-    # Compute closure amount: positive when fingers are closing relative to default
-    # We normalise by the default to ensure the value lies in [0, 1].
-    mean_action = hand_action.mean(dim=1)
-    closure_amount = torch.clamp((default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0)
-
-    # Proximity factor: linear decay with distance. Reward is non‑zero only within 0.2 m.
-    proximity = torch.clamp(1.0 - (eef_dist / 0.2), min=0.0, max=1.0)
-
-    # Final reward is product of proximity and closure amount.
-    return proximity * closure_amount
-
-
-def object_is_lifted(
-    env: ManagerBasedRLEnv,
-    minimal_height: float,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """Reward for lifting the object above a minimal height."""
-    object: RigidObject = env.scene[object_cfg.name]
-    return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
-
-
-def object_is_held(
-    env: ManagerBasedRLEnv,
-    minimal_height: float,
-    hold_duration: float,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
-) -> torch.Tensor:
-    """Reward for holding the object above a minimal height for a certain duration."""
-    object: RigidObject = env.scene[object_cfg.name]
-
-    if not hasattr(env, "hold_counter"):
-        env.hold_counter = torch.zeros(env.num_envs, device=env.device)
-
-    is_lifted = object.data.root_pos_w[:, 2] > minimal_height
-
-    env.hold_counter = torch.where(
-        is_lifted,
-        env.hold_counter + env.step_dt,
-        torch.zeros_like(env.hold_counter),
-    )
-
-    return torch.where(env.hold_counter > hold_duration, 1.0, 0.0)
-
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    body_names = env.scene["robot"].data.body_names
+    # Resolve indices for the specified end-effectors
+    left_idx = body_names.index(left_eef_link_name)
+    right_idx = body_names.index(right_eef_link_name)
+    # Compute positions relative to environment origins
+    left_pos = body_pos_w[:, left_idx] - env.scene.env_origins
+    right_pos = body_pos_w[:, right_idx] - env.scene.env_origins
+    dist = torch.norm(left_pos - right_pos, dim=1)
+    # Apply penalty where hands are too close
+    return torch.where(dist < threshold, -penalty * torch.ones_like(dist), torch.zeros_like(dist))

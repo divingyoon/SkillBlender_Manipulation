@@ -89,11 +89,15 @@ def grasp_reward(
         (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
     )
 
-    # Proximity factor: linear decay with distance. Reward is non-zero only within 0.2 m.
-    proximity = torch.clamp(1.0 - (eef_dist / 0.2), min=0.0, max=1.0)
+    # Proximity factor: linear decay with distance. Reward is non-zero only within 0.05 m.
+    reach_radius = 0.05
+    proximity = torch.clamp(1.0 - (eef_dist / reach_radius), min=0.0, max=1.0)
 
-    # Final reward is product of proximity and closure amount.
-    return proximity * closure_amount
+    # Penalize closing when too far from the object.
+    far_penalty = torch.where(eef_dist > reach_radius, -closure_amount, 0.0)
+
+    # Final reward combines proximity-aligned closing and far-distance penalty.
+    return proximity * closure_amount + far_penalty
 
 
 def object_is_lifted(

@@ -75,6 +75,7 @@ class ActorCriticHierarchical(nn.Module):
         self.command_dim = kwargs.get("command_dim")
         self.num_dofs = kwargs.get("num_dofs")
         self.command_slice = kwargs.get("command_slice")
+        self.low_level_obs_groups = kwargs.get("low_level_obs_groups")
         self.obs_groups = None
 
         if TensorDict is not None and isinstance(num_actor_obs, TensorDict):
@@ -242,7 +243,7 @@ class ActorCriticHierarchical(nn.Module):
             )
         return start, end
 
-    def _actor(self, observations):
+    def _actor(self, observations, low_level_obs=None):
         obs_device = observations.device
         if obs_device is not None and str(obs_device) != str(self.device):
             self._move_policies_to_device(obs_device)
@@ -264,6 +265,7 @@ class ActorCriticHierarchical(nn.Module):
                 print(f"Active Skills (Env 0): {skill_weights}", end="\\r")
 
 
+        base_obs = low_level_obs if low_level_obs is not None else observations
         means = []
         command_offset = 0
         for i in range(self.num_skills):
@@ -271,7 +273,7 @@ class ActorCriticHierarchical(nn.Module):
             cmd_slice = input_to_low[:, command_offset : command_offset + curr_command_dim]
             command_offset += curr_command_dim
             cmd_obs = self._replace_observations(
-                observations,
+                base_obs,
                 cmd_slice,
                 low_high=self.low_high_list[i],
             )
@@ -285,14 +287,16 @@ class ActorCriticHierarchical(nn.Module):
         return {"actions_mean": actions_mean, "masks": masks}
 
     def update_distribution(self, observations):
-        observations = self._get_actor_obs(observations)
-        mean = self._actor(observations)["actions_mean"]
+        actor_obs = self._get_actor_obs(observations)
+        low_obs = self._get_low_level_obs(observations)
+        if self.obs_context_len != 1:
+            actor_obs = actor_obs[..., -1, :]
+            if low_obs is not None:
+                low_obs = low_obs[..., -1, :]
+        mean = self._actor(actor_obs, low_level_obs=low_obs)["actions_mean"]
         self.distribution = Normal(mean, mean * 0.0 + self.std)
 
     def act(self, observations, **kwargs):
-        observations = self._get_actor_obs(observations)
-        if self.obs_context_len != 1:
-            observations = observations[..., -1, :]
         self.update_distribution(observations)
         return self.distribution.sample()
 
@@ -300,16 +304,22 @@ class ActorCriticHierarchical(nn.Module):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
     def act_inference(self, observations):
-        observations = self._get_actor_obs(observations)
+        actor_obs = self._get_actor_obs(observations)
+        low_obs = self._get_low_level_obs(observations)
         if self.obs_context_len != 1:
-            observations = observations[..., -1, :]
-        return self._actor(observations)
+            actor_obs = actor_obs[..., -1, :]
+            if low_obs is not None:
+                low_obs = low_obs[..., -1, :]
+        return self._actor(actor_obs, low_level_obs=low_obs)
 
     def act_inference_hrl(self, observations):
-        observations = self._get_actor_obs(observations)
+        actor_obs = self._get_actor_obs(observations)
+        low_obs = self._get_low_level_obs(observations)
         if self.obs_context_len != 1:
-            observations = observations[..., -1, :]
-        return self._actor(observations)
+            actor_obs = actor_obs[..., -1, :]
+            if low_obs is not None:
+                low_obs = low_obs[..., -1, :]
+        return self._actor(actor_obs, low_level_obs=low_obs)
 
     def evaluate(self, critic_observations, **kwargs):
         critic_observations = self._get_critic_obs(critic_observations)
@@ -345,6 +355,14 @@ class ActorCriticHierarchical(nn.Module):
             return observations
         if TensorDict is not None and isinstance(observations, TensorDict):
             obs_list = [observations[group] for group in self.obs_groups["critic"]]
+            return torch.cat(obs_list, dim=-1)
+        return observations
+
+    def _get_low_level_obs(self, observations):
+        if self.low_level_obs_groups is None:
+            return self._get_actor_obs(observations)
+        if TensorDict is not None and isinstance(observations, TensorDict):
+            obs_list = [observations[group] for group in self.low_level_obs_groups]
             return torch.cat(obs_list, dim=-1)
         return observations
 

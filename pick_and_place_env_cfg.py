@@ -15,8 +15,6 @@
 from dataclasses import MISSING
 
 import isaaclab.sim as sim_utils
-from isaaclab.sim import PhysxCfg
-#from isaaclab.sim.schemas.schemas_cfg import RigidBodyMaterialCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
@@ -27,30 +25,32 @@ from isaaclab.managers import RewardTermCfg as RewTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.managers import TerminationTermCfg as DoneTerm
 from isaaclab.scene import InteractiveSceneCfg
-
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
+# Import additional reward helpers from the local rewards module. These functions
+# provide dense guidance for object placement and penalize unnatural bimanual
+# interactions.
+from .rewards import object_target_distance_tanh, hand_proximity_penalty
 
 
 @configclass
-class Grasp2gSceneCfg(InteractiveSceneCfg):
-    """Scene with a bimanual robot, table, and a cube to be grasped."""
+class PickAndPlaceSceneCfg(InteractiveSceneCfg):
+    """Scene with a bimanual robot, table, and pick-and-place object."""
 
     # robots
     robot: ArticulationCfg = MISSING
 
     # target object
     object: RigidObjectCfg = MISSING
-    object2: RigidObjectCfg = MISSING
 
     # table
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
-        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.0, 0.25, 0.0], rot=[0.707, 0, 0, 0.707]),
+        init_state=AssetBaseCfg.InitialStateCfg(pos=[0.5, 0.0, 0.0], rot=[0.707, 0, 0, 0.707]),
         spawn=UsdFileCfg(
             usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Mounts/SeattleLabTable/table_instanceable.usd"
         ),
@@ -67,27 +67,6 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
     light = AssetBaseCfg(
         prim_path="/World/light",
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
-    )
-
-
-@configclass
-class CommandsCfg:
-    """Command terms for the MDP."""
-
-    left_ee_pose = mdp.ObjectPoseCommandCfg(
-        asset_name="robot",
-        asset_cfg=SceneEntityCfg("object"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
-    )
-
-    right_ee_pose = mdp.ObjectPoseCommandCfg(
-        asset_name="robot",
-        asset_cfg=SceneEntityCfg("object2"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
     )
 
 
@@ -183,41 +162,26 @@ class ObservationsCfg:
         )
         left_hand_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["lj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
         right_hand_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["rj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
         left_hand_joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["lj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
         right_hand_joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["rj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "left_ee_pose"},
-        )
-        right_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "right_ee_pose"},
         )
         object = ObsTerm(
             func=mdp.object_obs,
-            params={
-                "left_eef_link_name": MISSING,
-                "right_eef_link_name": MISSING,
-            },
-        )
-        object2 = ObsTerm(
-            func=mdp.object2_obs,
             params={
                 "left_eef_link_name": MISSING,
                 "right_eef_link_name": MISSING,
@@ -246,25 +210,12 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (-0.1, 0.0),
-                "y": (-0.05, 0.05), 
+                "x": (-0.05, 0.05),
+                "y": (-0.05, 0.05),
                 "z": (0.0, 0.0),
-            },#left object
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
-        },
-    )
-    reset_object2_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {
-                "x": (0.0, 0.1),
-                "y": (-0.05, 0.05), 
-                "z": (0.0, 0.0),
-            },#right object
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object2"),
         },
     )
 
@@ -273,51 +224,55 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    left_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
-        weight=1.0,
-        params={"std": 0.15, "eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
+    # Encourage the left hand to approach the object early on. Lower weight than
+    # the right-hand distance to allow the policy to transition toward the
+    # handover phase once the object is lifted.
+    left_object_distance = RewTerm(
+        func=mdp.object_eef_distance_tanh,
+        weight=0.5,
+        params={"std": 0.15, "eef_link_name": MISSING},
     )
-    right_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
-        weight=1.0,
-        params={"std": 0.15, "eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
+    # Encourage the right hand to approach the object for the handover after it
+    # has been lifted. A higher weight biases the policy toward bringing the
+    # second hand close during the handover phase.
+    right_object_distance = RewTerm(
+        func=mdp.object_eef_distance_tanh,
+        weight=2.0,
+        params={"std": 0.15, "eef_link_name": MISSING},
     )
-    left_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
-        weight=10.0,
-        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
-    )
-    right_grasp_reward = RewTerm(
-        func=mdp.grasp_reward,
-        weight=10.0,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
-    )
-
-    left_lift_reward = RewTerm(
+    # Reward for lifting the object to a sufficient height to clear the table and
+    # enable a safe handover. The minimal height is increased from 0.05 to 0.15.
+    object_lifted = RewTerm(
         func=mdp.object_is_lifted,
         weight=5.0,
-        params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")},
-    )
-    
-    left_hold_reward = RewTerm(
-        func=mdp.object_is_held,
-        weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object")},
+        params={"minimal_height": 0.15},
     )
 
-    right_lift_reward = RewTerm(
-        func=mdp.object_is_lifted,
+    # Reward the object being close to its final target location on the table.
+    # `target_pos` defines the desired placement position in world coordinates.
+    object_target_distance = RewTerm(
+        func=object_target_distance_tanh,
         weight=5.0,
-        params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object2")},
+        params={"std": 0.15, "target_pos": [0.5, 0.0, 0.01]},
     )
-    
-    right_hold_reward = RewTerm(
-        func=mdp.object_is_held,
-        weight=20.0,
-        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object2")},
+
+    # Penalty to discourage the two hands from occupying the same space. When
+    # the distance between the end-effectors drops below `threshold`, the
+    # penalty function returns a negative value. `penalty` scales the magnitude
+    # of that penalty. The names of the end-effector links are provided at
+    # runtime by the environment using MISSING placeholders.
+    hand_proximity = RewTerm(
+        func=hand_proximity_penalty,
+        weight=1.0,
+        params={
+            "threshold": 0.1,
+            "left_eef_link_name": MISSING,
+            "right_eef_link_name": MISSING,
+            "penalty": 1.0,
+        },
     )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
+
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.01)
     left_joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,
@@ -357,12 +312,12 @@ class RewardsCfg:
     left_hand_joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.00005,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["lj_dg_.*"])},
     )
     right_hand_joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.00005,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["rj_dg_.*"])},
     )
 
 
@@ -374,26 +329,22 @@ class TerminationsCfg:
 
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": -0.5, "asset_cfg": SceneEntityCfg("object")},
-    )
-    object2_dropping = DoneTerm(
-        func=mdp.root_height_below_minimum,
-        params={"minimum_height": -0.5, "asset_cfg": SceneEntityCfg("object2")},
+        params={"minimum_height": 0.0, "asset_cfg": SceneEntityCfg("object")},
     )
 
 
 @configclass
-class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the bimanual grasping environment."""
+class PickAndPlaceEnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the bimanual pick-and-place environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: PickAndPlaceSceneCfg = PickAndPlaceSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
 
-    commands: CommandsCfg = CommandsCfg()
+    commands = None
     curriculum = None
 
     def __post_init__(self):
@@ -402,25 +353,3 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-
-        # assign a default physx material to all scene geometries
-        # we can also do this per-asset in the scene definition
-        self.sim.physx = PhysxCfg(
-            solver_type=1,  # TGS
-            max_position_iteration_count=192,
-            max_velocity_iteration_count=1,
-            bounce_threshold_velocity=0.2,
-            friction_offset_threshold=0.01,
-            friction_correlation_distance=0.00625,
-            # increase buffers to prevent overflow errors
-            gpu_max_rigid_contact_count=2**23,
-            gpu_max_rigid_patch_count=2**23,
-            gpu_max_num_partitions=8,
-            gpu_collision_stack_size=640000,
-            # set default material properties
-            # default_material=RigidBodyMaterialCfg(
-            #     static_friction=1.0,
-            #     dynamic_friction=1.0,
-            #     restitution=0.0,
-            # ),
-        )

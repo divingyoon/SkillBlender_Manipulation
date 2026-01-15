@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import quat_error_magnitude
+from isaaclab.utils.math import quat_apply, quat_error_magnitude
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -49,6 +49,44 @@ def _object_eef_orientation_error(
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     eef_quat = body_quat_w[:, eef_idx]
     return quat_error_magnitude(eef_quat, object_quat)
+
+
+def _object_eef_any_axis_alignment(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Maximum absolute alignment between any EE axis and any object axis."""
+    object_quat = env.scene[object_cfg.name].data.root_quat_w
+    body_quat_w = env.scene["robot"].data.body_quat_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    eef_quat = body_quat_w[:, eef_idx]
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=env.device)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device)
+    x_axis = x_axis.repeat(env.num_envs, 1)
+    y_axis = y_axis.repeat(env.num_envs, 1)
+    z_axis = z_axis.repeat(env.num_envs, 1)
+
+    eef_axes = [
+        quat_apply(eef_quat, x_axis),
+        quat_apply(eef_quat, y_axis),
+        quat_apply(eef_quat, z_axis),
+    ]
+    obj_axes = [
+        quat_apply(object_quat, x_axis),
+        quat_apply(object_quat, y_axis),
+        quat_apply(object_quat, z_axis),
+    ]
+
+    max_align = torch.zeros(env.num_envs, device=env.device)
+    for eef_axis in eef_axes:
+        for obj_axis in obj_axes:
+            align = torch.abs(torch.sum(eef_axis * obj_axis, dim=1))
+            max_align = torch.maximum(max_align, align)
+
+    return max_align
 
 
 def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
@@ -95,8 +133,9 @@ def eef_to_object_orientation(
     eef_link_name: str,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    """Reward the end-effector aligning with the object orientation (loose tanh-kernel)."""
-    error = _object_eef_orientation_error(env, eef_link_name, object_cfg)
+    """Reward the end-effector aligning with any object axis (loose tanh-kernel)."""
+    max_align = _object_eef_any_axis_alignment(env, eef_link_name, object_cfg)
+    error = 1.0 - max_align
     return 1 - torch.tanh(error / std)
 
 
@@ -330,6 +369,23 @@ def phase_grasp_reward(
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 
+def gripper_open_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
+    """Reward keeping the gripper open (low closure amount)."""
+    closure_amount = _hand_closure_amount(env, eef_link_name)
+    return 1.0 - closure_amount
+
+
+def phase_gripper_open_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_grasp2g_phase(env, **phase_params)
+    reward = gripper_open_reward(env, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
 def phase_lift_reward(
     env: ManagerBasedRLEnv,
     minimal_height: float,
@@ -363,3 +419,14 @@ def phase_hold_reward(
         env, minimal_height, hold_duration, eef_link_name, reach_radius, close_threshold, object_cfg
     )
     return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def joints_near_zero(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    threshold: float,
+) -> torch.Tensor:
+    """Terminate when specified joints are near zero (abs < threshold)."""
+    asset: RigidObject = env.scene[asset_cfg.name]
+    q = asset.data.joint_pos[:, asset_cfg.joint_ids]
+    return (torch.abs(q) < threshold).all(dim=1)

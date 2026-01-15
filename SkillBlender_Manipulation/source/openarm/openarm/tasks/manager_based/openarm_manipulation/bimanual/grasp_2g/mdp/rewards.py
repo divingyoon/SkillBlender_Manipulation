@@ -325,8 +325,7 @@ def _update_grasp2g_phase(
     hold_ok = left_hold & right_hold
 
     phase = torch.where((phase == 0) & grasp_ok, torch.tensor(1, device=env.device), phase)
-    phase = torch.where((phase == 1) & lift_ok, torch.tensor(2, device=env.device), phase)
-    phase = torch.where((phase == 2) & hold_ok, torch.tensor(3, device=env.device), phase)
+    phase = torch.where((phase == 1) & hold_ok, torch.tensor(2, device=env.device), phase)
     env.grasp2g_phase = phase
     return phase
 

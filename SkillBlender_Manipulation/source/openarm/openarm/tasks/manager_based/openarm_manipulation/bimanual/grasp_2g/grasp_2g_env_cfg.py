@@ -280,7 +280,7 @@ class RewardsCfg:
             "std": 0.15,
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [5.0, 0.0, 0.0, 0.0],
+            "phase_weights": [5.0, 0.0, 0.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -300,7 +300,7 @@ class RewardsCfg:
             "std": 0.15,
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [5.0, 0.0, 0.0, 0.0],
+            "phase_weights": [5.0, 0.0, 0.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -320,7 +320,7 @@ class RewardsCfg:
             "std": 0.5,
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [2.0, 1.0, 0.5, 0.5],
+            "phase_weights": [2.0, 1.0, 0.5],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -340,7 +340,7 @@ class RewardsCfg:
             "std": 0.5,
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [2.0, 1.0, 0.5, 0.5],
+            "phase_weights": [2.0, 1.0, 0.5],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -358,7 +358,7 @@ class RewardsCfg:
         weight=1.0,
         params={
             "eef_link_name": "openarm_left_ee_tcp",
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_weights": [1.0, 0.0, 0.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -376,7 +376,7 @@ class RewardsCfg:
         weight=1.0,
         params={
             "eef_link_name": "openarm_right_ee_tcp",
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_weights": [1.0, 0.0, 0.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -395,7 +395,7 @@ class RewardsCfg:
         params={
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 8.0, 4.0, 4.0],
+            "phase_weights": [0.0, 8.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -414,7 +414,7 @@ class RewardsCfg:
         params={
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 8.0, 4.0, 4.0],
+            "phase_weights": [0.0, 8.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -437,7 +437,7 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.0, 6.0, 4.0],
+            "phase_weights": [0.0, 6.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -461,7 +461,7 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.0, 0.0, 4.0],
+            "phase_weights": [0.0, 0.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -484,7 +484,7 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.0, 6.0, 4.0],
+            "phase_weights": [0.0, 6.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
@@ -508,7 +508,7 @@ class RewardsCfg:
             "reach_radius": 0.05,
             "close_threshold": 0.6,
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.0, 0.0, 4.0],
+            "phase_weights": [0.0, 0.0, 4.0],
             "phase_params": {
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",

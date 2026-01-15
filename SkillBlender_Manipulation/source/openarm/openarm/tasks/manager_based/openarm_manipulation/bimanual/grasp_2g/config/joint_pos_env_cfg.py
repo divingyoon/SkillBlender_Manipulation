@@ -178,8 +178,8 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
         self.observations.policy.object2.params["left_eef_link_name"] = "openarm_left_hand"
         self.observations.policy.object2.params["right_eef_link_name"] = "openarm_right_hand"
 
-        self.rewards.left_eef_to_object_distance.params["eef_link_name"] = "openarm_left_hand"
-        self.rewards.right_eef_to_object_distance.params["eef_link_name"] = "openarm_right_hand"
+        self.rewards.left_eef_to_object_distance.params["eef_link_name"] = "openarm_left_ee_tcp"
+        self.rewards.right_eef_to_object_distance.params["eef_link_name"] = "openarm_right_ee_tcp"
         
         # add frame transformer for visualization
         marker_cfg = FRAME_MARKER_CFG.copy()

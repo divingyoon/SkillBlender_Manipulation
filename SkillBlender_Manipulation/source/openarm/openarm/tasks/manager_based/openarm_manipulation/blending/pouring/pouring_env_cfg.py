@@ -295,16 +295,12 @@ class EventCfg:
         },
     )
     reset_bead_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_bead_in_cup,
         mode="reset",
         params={
-            "pose_range": {
-                "x": (-0.1, 0.0),
-                "y": (-0.05, 0.05),
-                "z": (0.1, 0.1),
-            },
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("bead"),
+            "cup_name": "object",
+            "bead_name": "bead",
+            "offset": (0.0, 0.0, 0.05),
         },
     )
 
@@ -312,46 +308,35 @@ class EventCfg:
 @configclass
 class RewardsCfg:
     """Reward terms for the MDP."""
-
-    left_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
-        weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
-    )
-    right_eef_to_object_distance = RewTerm(
-        func=mdp.eef_to_object_distance,
-        weight=1.0,
-        params={"std": 0.15, "eef_link_name": MISSING, "object_cfg": SceneEntityCfg("object")},
-    )
     left_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=10.0,
+        weight=3.0,
         params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object")},
     )
     right_grasp_reward = RewTerm(
         func=mdp.grasp_reward,
-        weight=10.0,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
+        weight=3.0,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2")},
     )
     left_lift_reward = RewTerm(
         func=mdp.object_is_lifted,
-        weight=5.0,
-        params={"minimal_height": 0.05, "object_cfg": SceneEntityCfg("object")},
+        weight=2.0,
+        params={"minimal_height": 0.12, "object_cfg": SceneEntityCfg("object")},
+    )
+    right_lift_reward = RewTerm(
+        func=mdp.object_is_lifted,
+        weight=2.0,
+        params={"minimal_height": 0.12, "object_cfg": SceneEntityCfg("object2")},
     )
     left_hold_reward = RewTerm(
         func=mdp.object_is_held,
-        weight=10.0,
-        params={"minimal_height": 0.05, "hold_duration": 2.0, "object_cfg": SceneEntityCfg("object")},
+        weight=5.0,
+        params={"minimal_height": 0.12, "hold_duration": 1.0, "object_cfg": SceneEntityCfg("object")},
     )
-    handover_reward = RewTerm(
-        func=mdp.handover_success,
-        weight=10.0,
-        params={"eef_link_name_right": "openarm_right_hand", "object_cfg": SceneEntityCfg("object")},
-    )
-    place_reward = RewTerm(
-        func=mdp.object_at_target,
-        weight=20.0,
-        params={"target_pos": (0.2, -0.2, 0.05), "object_cfg": SceneEntityCfg("object")},
+    right_hold_reward = RewTerm(
+        func=mdp.object_is_held,
+        weight=5.0,
+        params={"minimal_height": 0.12, "hold_duration": 1.0, "object_cfg": SceneEntityCfg("object2")},
     )
     cup_xy_alignment = RewTerm(
         func=mdp.cup_xy_alignment,

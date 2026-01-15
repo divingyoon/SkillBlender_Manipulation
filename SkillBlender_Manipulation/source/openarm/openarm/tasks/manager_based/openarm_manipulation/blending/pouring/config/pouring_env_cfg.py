@@ -91,8 +91,14 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             soft_joint_pos_limit_factor=1.0,
         )
 
-        cup_usd = "/home/user/humble_ws/src/piper_isaac_sim/piper_description/urdf/cup.usd"
-        bead_usd = "/home/user/humble_ws/src/piper_isaac_sim/piper_description/urdf/bead.usd"
+        cup_usd = (
+            "/home/user/rl_ws/SkillBlender_Manipulation/source/openarm/openarm/tasks/"
+            "manager_based/openarm_manipulation/usds/openarm_bimanual/cup.usd"
+        )
+        bead_usd = (
+            "/home/user/rl_ws/SkillBlender_Manipulation/source/openarm/openarm/tasks/"
+            "manager_based/openarm_manipulation/usds/openarm_bimanual/bead.usd"
+        )
 
         self.scene.object = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Object",
@@ -123,7 +129,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
                     max_angular_velocity=100.0,
                     max_linear_velocity=100.0,
                     max_depenetration_velocity=5.0,
-                    disable_gravity=True,
+                    disable_gravity=False,
                 ),
             ),
         )

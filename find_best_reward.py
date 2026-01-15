@@ -10,7 +10,7 @@ import sys
 from typing import Iterable
 
 # Set default log directory here if you do not want to use env vars.
-LOG_DIR = "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_grasp_2g/2026-01-15_13-35-04"
+LOG_DIR = "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_grasp_2g/2026-01-15_19-16-19"
 
 
 def _parse_step(name: str) -> int | None:

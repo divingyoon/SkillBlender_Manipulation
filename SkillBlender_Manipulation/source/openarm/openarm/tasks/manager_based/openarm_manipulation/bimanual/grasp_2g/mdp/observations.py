@@ -42,6 +42,10 @@ def object_obs(
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
+    # mask cross-hand info to avoid symmetric policies
+    right_eef_to_object = torch.zeros_like(right_eef_to_object)
+    # add a left-hand token without changing dimension
+    right_eef_to_object[:, 0] = 1.0
 
     return torch.cat(
         (
@@ -101,6 +105,10 @@ def object2_obs(
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
+    # mask cross-hand info to avoid symmetric policies
+    left_eef_to_object = torch.zeros_like(left_eef_to_object)
+    # add a right-hand token without changing dimension
+    left_eef_to_object[:, 0] = -1.0
 
     return torch.cat(
         (

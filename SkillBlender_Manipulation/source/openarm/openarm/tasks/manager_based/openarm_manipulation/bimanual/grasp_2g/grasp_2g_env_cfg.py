@@ -200,13 +200,39 @@ class RewardsCfg:
     )
 
     left_lifting_object = RewTerm(
-        func=mdp.object_is_lifted,
-        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("object")},
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "align_threshold": 0.996,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
         weight=15.0,
     )
     right_lifting_object = RewTerm(
-        func=mdp.object_is_lifted,
-        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("object2")},
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "align_threshold": 0.996,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
         weight=15.0,
     )
 

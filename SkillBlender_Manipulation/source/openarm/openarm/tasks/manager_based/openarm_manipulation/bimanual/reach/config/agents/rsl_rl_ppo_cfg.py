@@ -22,7 +22,7 @@ from isaaclab.utils import configclass
 
 
 @configclass
-class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class OpenArmReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
@@ -54,3 +54,4 @@ class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         max_grad_norm=1.0,
         normalize_advantage_per_mini_batch=True,
     )
+

@@ -117,124 +117,23 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
 
-        left_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_left_joint1",
-                        "openarm_left_joint2",
-                        "openarm_left_joint3",
-                        "openarm_left_joint4",
-                        "openarm_left_joint5",
-                        "openarm_left_joint6",
-                        "openarm_left_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        object_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object")},
         )
-        right_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_right_joint1",
-                        "openarm_right_joint2",
-                        "openarm_right_joint3",
-                        "openarm_right_joint4",
-                        "openarm_right_joint5",
-                        "openarm_right_joint6",
-                        "openarm_right_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        object2_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object2")},
         )
-        left_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_left_joint1",
-                        "openarm_left_joint2",
-                        "openarm_left_joint3",
-                        "openarm_left_joint4",
-                        "openarm_left_joint5",
-                        "openarm_left_joint6",
-                        "openarm_left_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        target_object_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "left_ee_pose"}
         )
-        right_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_right_joint1",
-                        "openarm_right_joint2",
-                        "openarm_right_joint3",
-                        "openarm_right_joint4",
-                        "openarm_right_joint5",
-                        "openarm_right_joint6",
-                        "openarm_right_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        target_object2_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "right_ee_pose"}
         )
-        left_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "left_ee_pose"},
-        )
-        right_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "right_ee_pose"},
-        )
-        object = ObsTerm(
-            func=mdp.object_obs,
-            params={
-                "left_eef_link_name": MISSING,
-                "right_eef_link_name": MISSING,
-            },
-        )
-        object2 = ObsTerm(
-            func=mdp.object2_obs,
-            params={
-                "left_eef_link_name": MISSING,
-                "right_eef_link_name": MISSING,
-            },
-        )
-        left_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
-        right_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
-        left_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
-        right_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
+        actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
             self.enable_corruption = True

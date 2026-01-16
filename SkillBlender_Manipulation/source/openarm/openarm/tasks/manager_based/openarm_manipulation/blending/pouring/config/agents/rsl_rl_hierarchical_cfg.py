@@ -39,7 +39,7 @@ class PouringHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_grasp_2g"]),
         frame_stack=1,
         command_dim=14,
-        command_slice=[36, 50],
+        command_slice=[42, 56],
         low_level_obs_groups=["policy"],
         num_dofs=None,
     )

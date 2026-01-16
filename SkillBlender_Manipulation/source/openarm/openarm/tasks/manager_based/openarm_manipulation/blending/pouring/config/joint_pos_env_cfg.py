@@ -196,14 +196,6 @@ class PouringEnvCfg(PouringBaseEnvCfg):
         self.commands.left_ee_pose.body_name = "openarm_left_ee_tcp"
         self.commands.right_ee_pose.body_name = "openarm_right_ee_tcp"
 
-        self.observations.policy.object.params["left_eef_link_name"] = "openarm_left_ee_tcp"
-        self.observations.policy.object.params["right_eef_link_name"] = "openarm_right_ee_tcp"
-        self.observations.policy.object2.params["left_eef_link_name"] = "openarm_left_ee_tcp"
-        self.observations.policy.object2.params["right_eef_link_name"] = "openarm_right_ee_tcp"
-
-        self.rewards.left_eef_to_object_distance.params["eef_link_name"] = "openarm_left_ee_tcp"
-        self.rewards.right_eef_to_object_distance.params["eef_link_name"] = "openarm_right_ee_tcp"
-
 
 @configclass
 class PouringEnvCfg_PLAY(PouringEnvCfg):

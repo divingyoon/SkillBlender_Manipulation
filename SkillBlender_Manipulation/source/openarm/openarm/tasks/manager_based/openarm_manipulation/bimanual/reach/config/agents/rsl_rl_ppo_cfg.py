@@ -26,7 +26,7 @@ class OpenArmReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
-    experiment_name = "openarm_bi_grasp_2g"
+    experiment_name = "openarm_bi_reach"
     run_name = ""
     resume = False
     empirical_normalization = True
@@ -54,4 +54,3 @@ class OpenArmReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         max_grad_norm=1.0,
         normalize_advantage_per_mini_batch=True,
     )
-

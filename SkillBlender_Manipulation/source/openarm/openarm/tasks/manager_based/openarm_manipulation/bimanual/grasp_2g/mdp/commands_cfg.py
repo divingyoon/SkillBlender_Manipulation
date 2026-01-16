@@ -19,6 +19,7 @@ from isaaclab.utils import configclass
 from isaaclab.managers import CommandTermCfg, SceneEntityCfg
 
 from .object_pose_command import ObjectPoseCommand
+from .world_pose_command import WorldPoseCommand
 
 @configclass
 class ObjectPoseCommandCfg(CommandTermCfg):
@@ -47,3 +48,30 @@ class ObjectPoseCommandCfg(CommandTermCfg):
         self.command_dim = 7
         # Link the implementation class.
         self.class_type = ObjectPoseCommand
+
+
+@configclass
+class WorldPoseCommandCfg(CommandTermCfg):
+    """Configuration for the world-frame pose command generator."""
+
+    asset_name: str = MISSING
+    resampling_time_range: tuple[float, float] = (4.0, 4.0)
+    make_quat_unique: bool = False
+
+    @configclass
+    class Ranges:
+        """Uniform distribution ranges for the pose commands (world frame)."""
+
+        pos_x: tuple[float, float] = MISSING
+        pos_y: tuple[float, float] = MISSING
+        pos_z: tuple[float, float] = MISSING
+        roll: tuple[float, float] = MISSING
+        pitch: tuple[float, float] = MISSING
+        yaw: tuple[float, float] = MISSING
+
+    ranges: Ranges = MISSING
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.command_dim = 7
+        self.class_type = WorldPoseCommand

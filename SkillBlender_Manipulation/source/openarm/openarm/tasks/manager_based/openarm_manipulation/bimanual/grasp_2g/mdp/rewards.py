@@ -165,6 +165,27 @@ def object_goal_distance(
     return (object.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
+def object_goal_distance_with_ee(
+    env: ManagerBasedRLEnv,
+    std: float,
+    minimal_height: float,
+    command_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+    reach_std: float = 0.1,
+) -> torch.Tensor:
+    """Reward goal tracking only when the designated EE stays near the object."""
+    goal_reward = object_goal_distance(
+        env,
+        std=std,
+        minimal_height=minimal_height,
+        command_name=command_name,
+        object_cfg=object_cfg,
+    )
+    ee_reward = object_ee_distance(env, std=reach_std, object_cfg=object_cfg, ee_frame_cfg=ee_frame_cfg)
+    return goal_reward * ee_reward
+
+
 def eef_to_object_orientation(
     env: ManagerBasedRLEnv,
     std: float,

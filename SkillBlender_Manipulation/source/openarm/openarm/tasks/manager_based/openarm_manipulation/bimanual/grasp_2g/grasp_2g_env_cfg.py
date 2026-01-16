@@ -76,34 +76,35 @@ class CommandsCfg:
     """Command terms for the MDP."""
 
     left_object_pose = mdp.UniformPoseCommandCfg(
-        asset_name="robot",
-        body_name=MISSING,
-        resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.3, 0.5),
-            pos_y=(0.0, 0.3),
-            pos_z=(0.3, 0.70),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
-        ),
-    )
+          asset_name="robot",
+          body_name=MISSING,
+          resampling_time_range=(5.0, 5.0),
+          debug_vis=True,
+          ranges=mdp.UniformPoseCommandCfg.Ranges(
+              pos_x=(0.3, 0.5),
+              pos_y=(0.0, 0.3),
+              pos_z=(0.3, 0.70),
+              roll=(0.0, 0.0),
+              pitch=(0.0, 0.0),
+              yaw=(0.0, 0.0),
+          ),
+      )
 
     right_object_pose = mdp.UniformPoseCommandCfg(
-        asset_name="robot",
-        body_name=MISSING,
-        resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
-        ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.3, 0.5),
-            pos_y=(-0.3, 0.0),
-            pos_z=(0.3, 0.70),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
-        ),
-    )
+          asset_name="robot",
+          body_name=MISSING,
+          resampling_time_range=(5.0, 5.0),
+          debug_vis=True,
+          ranges=mdp.UniformPoseCommandCfg.Ranges(
+              pos_x=(0.3, 0.5),
+              pos_y=(-0.3, 0.0),
+              pos_z=(0.3, 0.70),
+              roll=(0.0, 0.0),
+              pitch=(0.0, 0.0),
+              yaw=(0.0, 0.0),
+          ),
+      )
+
 
 
 @configclass
@@ -210,24 +211,52 @@ class RewardsCfg:
     )
 
     left_object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "left_object_pose", "object_cfg": SceneEntityCfg("object")},
+        func=mdp.object_goal_distance_with_ee,
+        params={
+            "std": 0.3,
+            "minimal_height": 0.04,
+            "command_name": "left_object_pose",
+            "object_cfg": SceneEntityCfg("object"),
+            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+            "reach_std": 0.1,
+        },
         weight=16.0,
     )
     right_object_goal_tracking = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "right_object_pose", "object_cfg": SceneEntityCfg("object2")},
+        func=mdp.object_goal_distance_with_ee,
+        params={
+            "std": 0.3,
+            "minimal_height": 0.04,
+            "command_name": "right_object_pose",
+            "object_cfg": SceneEntityCfg("object2"),
+            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+            "reach_std": 0.1,
+        },
         weight=16.0,
     )
 
     left_object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "left_object_pose", "object_cfg": SceneEntityCfg("object")},
+        func=mdp.object_goal_distance_with_ee,
+        params={
+            "std": 0.05,
+            "minimal_height": 0.04,
+            "command_name": "left_object_pose",
+            "object_cfg": SceneEntityCfg("object"),
+            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+            "reach_std": 0.1,
+        },
         weight=5.0,
     )
     right_object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "right_object_pose", "object_cfg": SceneEntityCfg("object2")},
+        func=mdp.object_goal_distance_with_ee,
+        params={
+            "std": 0.05,
+            "minimal_height": 0.04,
+            "command_name": "right_object_pose",
+            "object_cfg": SceneEntityCfg("object2"),
+            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+            "reach_std": 0.1,
+        },
         weight=5.0,
     )
 

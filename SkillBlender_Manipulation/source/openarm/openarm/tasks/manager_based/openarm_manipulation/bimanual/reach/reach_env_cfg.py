@@ -126,114 +126,23 @@ class ObservationsCfg:
         """Observations for policy group."""
 
         # observation terms (order preserved)
-        left_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint1",
-                                                                    "openarm_left_joint2",
-                                                                    "openarm_left_joint3",
-                                                                    "openarm_left_joint4",
-                                                                    "openarm_left_joint5",
-                                                                    "openarm_left_joint6",
-                                                                    "openarm_left_joint7",
-                                                                  ])
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
+        object_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object")},
         )
-
-        right_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint1",
-                                                                    "openarm_right_joint2",
-                                                                    "openarm_right_joint3",
-                                                                    "openarm_right_joint4",
-                                                                    "openarm_right_joint5",
-                                                                    "openarm_right_joint6",
-                                                                    "openarm_right_joint7"
-                                                                  ])
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        object2_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object2")},
         )
-
-        left_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint1",
-                                                                    "openarm_left_joint2",
-                                                                    "openarm_left_joint3",
-                                                                    "openarm_left_joint4",
-                                                                    "openarm_left_joint5",
-                                                                    "openarm_left_joint6",
-                                                                    "openarm_left_joint7",
-                                                                  ])
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint1",
-                                                                    "openarm_right_joint2",
-                                                                    "openarm_right_joint3",
-                                                                    "openarm_right_joint4",
-                                                                    "openarm_right_joint5",
-                                                                    "openarm_right_joint6",
-                                                                    "openarm_right_joint7"
-                                                                  ])
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_pose_command = ObsTerm(
+        target_object_position = ObsTerm(
             func=mdp.generated_commands, params={"command_name": "left_ee_pose"}
         )
-        right_pose_command = ObsTerm(
+        target_object2_position = ObsTerm(
             func=mdp.generated_commands, params={"command_name": "right_ee_pose"}
         )
-        object = ObsTerm(
-            func=mdp.object_obs,
-            params={
-                "left_eef_link_name": MISSING,
-                "right_eef_link_name": MISSING,
-                "command_name": "left_ee_pose",
-            },
-        )
-        object2 = ObsTerm(
-            func=mdp.object2_obs,
-            params={
-                "left_eef_link_name": MISSING,
-                "right_eef_link_name": MISSING,
-                "command_name": "right_ee_pose",
-            },
-        )
-        left_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
-        right_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
-        left_hand_actions = ObsTerm(
-            func=mdp.last_action, params={"action_name": "left_hand_action"}
-        )
-        right_hand_actions = ObsTerm(
-            func=mdp.last_action, params={"action_name": "right_hand_action"}
-        )
+        actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -294,7 +203,7 @@ class RewardsCfg:
     # task terms
     left_end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
-        weight=-0.3,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
@@ -303,7 +212,7 @@ class RewardsCfg:
 
     right_end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error,
-        weight=-0.3,
+        weight=-0.2,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "right_ee_pose",
@@ -330,29 +239,9 @@ class RewardsCfg:
         },
     )
 
-    left_end_effector_position_success = RewTerm(
-        func=mdp.position_command_within_tolerance,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "tolerance": 0.02,
-            "command_name": "left_ee_pose",
-        },
-    )
-
-    right_end_effector_position_success = RewTerm(
-        func=mdp.position_command_within_tolerance,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "tolerance": 0.02,
-            "command_name": "right_ee_pose",
-        },
-    )
-
     left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.any_axis_orientation_error,
-        weight=-0.25,
+        func=mdp.orientation_command_error,
+        weight=-0.1,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "command_name": "left_ee_pose",
@@ -360,69 +249,20 @@ class RewardsCfg:
     )
 
     right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.any_axis_orientation_error,
-        weight=-0.25,
+        func=mdp.orientation_command_error,
+        weight=-0.1,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "right_ee_pose",
-        },
-    )
-
-    left_end_effector_orientation_success = RewTerm(
-        func=mdp.orientation_within_tolerance,
-        weight=0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "tolerance_deg": 5.0,
-            "command_name": "left_ee_pose",
-        },
-    )
-
-    right_end_effector_orientation_success = RewTerm(
-        func=mdp.orientation_within_tolerance,
-        weight=0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "tolerance_deg": 5.0,
             "command_name": "right_ee_pose",
         },
     )
 
     # action penalty
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
-    left_joint_vel = RewTerm(
+    joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint1",
-                                                                    "openarm_left_joint2",
-                                                                    "openarm_left_joint3",
-                                                                    "openarm_left_joint4",
-                                                                    "openarm_left_joint5",
-                                                                    "openarm_left_joint6",
-                                                                    "openarm_left_joint7",
-                                                                  ])},
-    )
-    right_joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.0001,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint1",
-                                                                    "openarm_right_joint2",
-                                                                    "openarm_right_joint3",
-                                                                    "openarm_right_joint4",
-                                                                    "openarm_right_joint5",
-                                                                    "openarm_right_joint6",
-                                                                    "openarm_right_joint7"
-                                                                  ])},
-    )
-    left_hand_joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.00005,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-    )
-    right_hand_joint_vel = RewTerm(
-        func=mdp.joint_vel_l2,
-        weight=-0.00005,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
 
@@ -442,22 +282,9 @@ class CurriculumCfg:
         params={"term_name": "action_rate", "weight": -0.005, "num_steps": 4500},
     )
 
-    left_joint_vel = CurrTerm(
+    joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "left_joint_vel", "weight": -0.001, "num_steps": 4500},
-    )
-
-    right_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_joint_vel", "weight": -0.001, "num_steps": 4500},
-    )
-    left_hand_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_hand_joint_vel", "weight": -0.001, "num_steps": 4500},
-    )
-    right_hand_joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_hand_joint_vel", "weight": -0.001, "num_steps": 4500},
+        params={"term_name": "joint_vel", "weight": -0.001, "num_steps": 4500},
     )
 
 

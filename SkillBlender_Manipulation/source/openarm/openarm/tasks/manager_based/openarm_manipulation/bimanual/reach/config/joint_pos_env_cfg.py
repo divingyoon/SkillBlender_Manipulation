@@ -102,17 +102,13 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
         )
 
         # override rewards
-        self.rewards.left_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.left_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.left_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.left_end_effector_position_success.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.left_end_effector_orientation_success.params["asset_cfg"].body_names = ["openarm_left_hand"]
+        self.rewards.left_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_left_ee_tcp"]
+        self.rewards.left_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_left_ee_tcp"]
+        self.rewards.left_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_left_ee_tcp"]
 
-        self.rewards.right_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
-        self.rewards.right_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_right_hand"]
-        self.rewards.right_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
-        self.rewards.right_end_effector_position_success.params["asset_cfg"].body_names = ["openarm_right_hand"]
-        self.rewards.right_end_effector_orientation_success.params["asset_cfg"].body_names = ["openarm_right_hand"]
+        self.rewards.right_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_right_ee_tcp"]
+        self.rewards.right_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_right_ee_tcp"]
+        self.rewards.right_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_right_ee_tcp"]
 
         # override actions
         self.actions.left_arm_action = mdp.JointPositionActionCfg(
@@ -161,11 +157,6 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
         # end-effector is along z-direction
         self.commands.left_ee_pose.body_name = "openarm_left_ee_tcp"
         self.commands.right_ee_pose.body_name = "openarm_right_ee_tcp"
-
-        self.observations.policy.object.params["left_eef_link_name"] = "openarm_left_ee_tcp"
-        self.observations.policy.object.params["right_eef_link_name"] = "openarm_right_ee_tcp"
-        self.observations.policy.object2.params["left_eef_link_name"] = "openarm_left_ee_tcp"
-        self.observations.policy.object2.params["right_eef_link_name"] = "openarm_right_ee_tcp"
 
 
 @configclass

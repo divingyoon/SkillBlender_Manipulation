@@ -20,6 +20,7 @@ from isaaclab.sim import PhysxCfg
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 from isaaclab.envs import ManagerBasedRLEnvCfg
 from isaaclab.managers import ActionTermCfg as ActionTerm
+from isaaclab.managers import CurriculumTermCfg as CurrTerm
 from isaaclab.managers import EventTermCfg as EventTerm
 from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
@@ -31,7 +32,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
-from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+# from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
 
@@ -74,20 +75,34 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_ee_pose = mdp.ObjectPoseCommandCfg(
+    left_object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        asset_cfg=SceneEntityCfg("object"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
+        body_name=MISSING,
+        resampling_time_range=(5.0, 5.0),
+        debug_vis=True,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.2, 0.4),
+            pos_y=(-0.2, 0.2),
+            pos_z=(0.15, 0.4),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
     )
 
-    right_ee_pose = mdp.ObjectPoseCommandCfg(
+    right_object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
-        asset_cfg=SceneEntityCfg("object2"),
-        pre_grasp_offset=(0.0, 0.0, 0.03),
-        hold_offset=(0.0, 0.0, 0.10),
-        lift_threshold_z=0.05,
+        body_name=MISSING,
+        resampling_time_range=(5.0, 5.0),
+        debug_vis=True,
+        ranges=mdp.UniformPoseCommandCfg.Ranges(
+            pos_x=(0.2, 0.4),
+            pos_y=(-0.2, 0.2),
+            pos_z=(0.15, 0.4),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
     )
 
 
@@ -109,120 +124,23 @@ class ObservationsCfg:
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
 
-        left_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_left_joint1",
-                        "openarm_left_joint2",
-                        "openarm_left_joint3",
-                        "openarm_left_joint4",
-                        "openarm_left_joint5",
-                        "openarm_left_joint6",
-                        "openarm_left_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        object_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object")},
         )
-        right_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_right_joint1",
-                        "openarm_right_joint2",
-                        "openarm_right_joint3",
-                        "openarm_right_joint4",
-                        "openarm_right_joint5",
-                        "openarm_right_joint6",
-                        "openarm_right_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        object2_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object2")},
         )
-        left_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_left_joint1",
-                        "openarm_left_joint2",
-                        "openarm_left_joint3",
-                        "openarm_left_joint4",
-                        "openarm_left_joint5",
-                        "openarm_left_joint6",
-                        "openarm_left_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        target_object_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "left_object_pose"}
         )
-        right_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={
-                "asset_cfg": SceneEntityCfg(
-                    "robot",
-                    joint_names=[
-                        "openarm_right_joint1",
-                        "openarm_right_joint2",
-                        "openarm_right_joint3",
-                        "openarm_right_joint4",
-                        "openarm_right_joint5",
-                        "openarm_right_joint6",
-                        "openarm_right_joint7",
-                    ],
-                )
-            },
-            noise=Unoise(n_min=-0.01, n_max=0.01),
+        target_object2_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "right_object_pose"}
         )
-        left_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_pos = ObsTerm(
-            func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        right_hand_joint_vel = ObsTerm(
-            func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"])},
-            noise=Unoise(n_min=-0.01, n_max=0.01),
-        )
-        left_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "left_ee_pose"},
-        )
-        right_pose_command = ObsTerm(
-            func=mdp.generated_commands,
-            params={"command_name": "right_ee_pose"},
-        )
-        object = ObsTerm(
-            func=mdp.object_obs,
-            params={
-            },
-        )
-        object2 = ObsTerm(
-            func=mdp.object2_obs,
-            params={
-            },
-        )
-        left_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
-        right_arm_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
-        left_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
-        right_hand_actions = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
+        actions = ObsTerm(func=mdp.last_action)
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -269,426 +187,57 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    left_eef_to_object_distance = RewTerm(
-        func=mdp.phase_eef_to_object_distance,
+    left_reaching_object = RewTerm(
+        func=mdp.object_ee_distance,
+        params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
         weight=1.0,
-        params={
-            "std": 0.15,
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [5.0, 2.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
     )
-    right_eef_to_object_distance = RewTerm(
-        func=mdp.phase_eef_to_object_distance,
+    right_reaching_object = RewTerm(
+        func=mdp.object_ee_distance,
+        params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
         weight=1.0,
-        params={
-            "std": 0.15,
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [5.0, 2.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
     )
-    left_eef_to_object_orientation = RewTerm(
-        func=mdp.phase_eef_to_object_orientation,
-        weight=0.3,
-        params={
-            "std": 0.5,
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [2.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
+
+    left_lifting_object = RewTerm(
+        func=mdp.object_is_lifted,
+        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("object")},
+        weight=15.0,
     )
-    right_eef_to_object_orientation = RewTerm(
-        func=mdp.phase_eef_to_object_orientation,
-        weight=0.3,
-        params={
-            "std": 0.5,
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [2.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
+    right_lifting_object = RewTerm(
+        func=mdp.object_is_lifted,
+        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("object2")},
+        weight=15.0,
     )
-    left_gripper_open_reward = RewTerm(
-        func=mdp.phase_gripper_open_reward,
-        weight=1.0,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
+
+    left_object_goal_tracking = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "left_object_pose", "object_cfg": SceneEntityCfg("object")},
+        weight=16.0,
     )
-    left_reach_preclose_reward = RewTerm(
-        func=mdp.phase_reach_preclose_reward,
-        weight=1.0,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
+    right_object_goal_tracking = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "right_object_pose", "object_cfg": SceneEntityCfg("object2")},
+        weight=16.0,
     )
-    right_gripper_open_reward = RewTerm(
-        func=mdp.phase_gripper_open_reward,
-        weight=1.0,
-        params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    right_reach_preclose_reward = RewTerm(
-        func=mdp.phase_reach_preclose_reward,
-        weight=1.0,
-        params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    left_grasp_reward = RewTerm(
-        func=mdp.phase_grasp_reward,
+
+    left_object_goal_tracking_fine_grained = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "left_object_pose", "object_cfg": SceneEntityCfg("object")},
         weight=5.0,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 8.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
     )
-    right_grasp_reward = RewTerm(
-        func=mdp.phase_grasp_reward,
+    right_object_goal_tracking_fine_grained = RewTerm(
+        func=mdp.object_goal_distance,
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "right_object_pose", "object_cfg": SceneEntityCfg("object2")},
         weight=5.0,
-        params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 8.0, 0.0, 0.0],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
     )
 
-    left_lift_reward = RewTerm(
-        func=mdp.phase_lift_reward,
-        weight=1.0,
-        params={
-            "lift_height": 0.08,
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.0, 6.0, 4.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    
-    left_hold_reward = RewTerm(
-        func=mdp.phase_hold_reward,
-        weight=1.0,
-        params={
-            "lift_height": 0.08,
-            "hold_duration": 2.0,
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.0, 0.0, 4.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
-    right_lift_reward = RewTerm(
-        func=mdp.phase_lift_reward,
-        weight=1.0,
-        params={
-            "lift_height": 0.08,
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.0, 6.0, 4.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
+    joint_vel = RewTerm(
+        func=mdp.joint_vel_l2,
+        weight=-1e-4,
+        params={"asset_cfg": SceneEntityCfg("robot")},
     )
-    
-    right_hold_reward = RewTerm(
-        func=mdp.phase_hold_reward,
-        weight=1.0,
-        params={
-            "lift_height": 0.08,
-            "hold_duration": 2.0,
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.0, 0.0, 4.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
-    left_joint_vel = RewTerm(
-        func=mdp.phase_joint_vel_l2,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    "openarm_left_joint1",
-                    "openarm_left_joint2",
-                    "openarm_left_joint3",
-                    "openarm_left_joint4",
-                    "openarm_left_joint5",
-                    "openarm_left_joint6",
-                    "openarm_left_joint7",
-                ],
-            ),
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [-2e-05, -2e-05, -5e-05, -0.0002],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    right_joint_vel = RewTerm(
-        func=mdp.phase_joint_vel_l2,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg(
-                "robot",
-                joint_names=[
-                    "openarm_right_joint1",
-                    "openarm_right_joint2",
-                    "openarm_right_joint3",
-                    "openarm_right_joint4",
-                    "openarm_right_joint5",
-                    "openarm_right_joint6",
-                    "openarm_right_joint7",
-                ],
-            ),
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [-2e-05, -2e-05, -5e-05, -0.0002],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    left_hand_joint_vel = RewTerm(
-        func=mdp.phase_joint_vel_l2,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_finger_joint.*"]),
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [-2e-05, -2e-05, -5e-05, -0.0002],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    right_hand_joint_vel = RewTerm(
-        func=mdp.phase_joint_vel_l2,
-        weight=1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_finger_joint.*"]),
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [-2e-05, -2e-05, -5e-05, -0.0002],
-            "phase_params": {
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "left_object_cfg": SceneEntityCfg("object"),
-                "right_object_cfg": SceneEntityCfg("object2"),
-                "reach_distance": 0.15,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.6,
-                "lift_height": 0.08,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-
 
 @configclass
 class TerminationsCfg:
@@ -698,20 +247,34 @@ class TerminationsCfg:
 
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": -0.5, "asset_cfg": SceneEntityCfg("object")},
+        params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object")},
     )
     object2_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": -0.5, "asset_cfg": SceneEntityCfg("object2")},
+        params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("object2")},
     )
-    
+
+
+@configclass
+class CurriculumCfg:
+    """Curriculum terms for the MDP."""
+
+    action_rate = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
+    )
+
+    joint_vel = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
+    )
 
 
 @configclass
 class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual grasping environment."""
 
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048*2, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -719,7 +282,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
 
     commands: CommandsCfg = CommandsCfg()
-    curriculum = None
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         self.decimation = 2

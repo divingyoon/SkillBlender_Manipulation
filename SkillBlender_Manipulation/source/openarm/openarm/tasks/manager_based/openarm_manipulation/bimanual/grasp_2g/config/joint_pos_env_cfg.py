@@ -170,26 +170,18 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
         )
 
         # override command generator body
-        self.commands.left_ee_pose.body_name = "openarm_left_hand"
-        self.commands.right_ee_pose.body_name = "openarm_right_hand"
-
-        self.observations.policy.object.params["left_eef_link_name"] = "openarm_left_hand"
-        self.observations.policy.object.params["right_eef_link_name"] = "openarm_right_hand"
-        self.observations.policy.object2.params["left_eef_link_name"] = "openarm_left_hand"
-        self.observations.policy.object2.params["right_eef_link_name"] = "openarm_right_hand"
-
-        self.rewards.left_eef_to_object_distance.params["eef_link_name"] = "openarm_left_ee_tcp"
-        self.rewards.right_eef_to_object_distance.params["eef_link_name"] = "openarm_right_ee_tcp"
+        self.commands.left_object_pose.body_name = "openarm_left_ee_tcp"
+        self.commands.right_object_pose.body_name = "openarm_right_ee_tcp"
         
         # add frame transformer for visualization
         marker_cfg = FRAME_MARKER_CFG.copy()
         marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
         
-        # Left hand marker: shows transform from Object1 to Left TCP
-        marker_cfg.prim_path = "/Visuals/LeftFrameTransformer"
+        # End-effector frame for reach/lift rewards (prim_path must be a rigid body)
+        marker_cfg.prim_path = "/Visuals/LeftEEFrameTransformer"
         self.scene.left_ee_frame = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Object",
-            debug_vis=True,
+            prim_path="{ENV_REGEX_NS}/Robot/openarm_left_hand",
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
@@ -198,12 +190,10 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
                 ),
             ],
         )
-
-        # Right hand marker: shows transform from Object2 to Right TCP
-        marker_cfg.prim_path = "/Visuals/RightFrameTransformer"
+        marker_cfg.prim_path = "/Visuals/RightEEFrameTransformer"
         self.scene.right_ee_frame = FrameTransformerCfg(
-            prim_path="{ENV_REGEX_NS}/Object2",
-            debug_vis=True,
+            prim_path="{ENV_REGEX_NS}/Robot/openarm_right_hand",
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(

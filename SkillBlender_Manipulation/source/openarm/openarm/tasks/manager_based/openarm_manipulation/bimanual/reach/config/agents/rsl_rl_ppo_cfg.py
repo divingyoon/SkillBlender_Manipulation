@@ -22,33 +22,35 @@ from isaaclab.utils import configclass
 
 
 @configclass
-class OpenArmReachPPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
-    experiment_name = "openarm_bi_reach"
+    experiment_name = "openarm_bi_grasp_2g"
     run_name = ""
     resume = False
-    empirical_normalization = False
+    empirical_normalization = True
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
-        actor_hidden_dims=[512, 256, 128],
-        critic_hidden_dims=[512, 256, 128],
+        actor_hidden_dims=[512, 256],
+        critic_hidden_dims=[512, 256],
         activation="elu",
+        noise_std_type="log",
     )
     algorithm = RslRlPpoAlgorithmCfg(
-        value_loss_coef=2.0,
+        value_loss_coef=1.0,
         use_clipped_value_loss=True,
         clip_param=0.2,
-        entropy_coef=0.01,
-        num_learning_epochs=5,
-        num_mini_batches=10,
-        learning_rate=5.0e-4,
+        entropy_coef=0.002,
+        num_learning_epochs=8,
+        num_mini_batches=8,
+        learning_rate=1.0e-3,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,
-        desired_kl=0.01,
+        desired_kl=0.02,
         max_grad_norm=1.0,
+        normalize_advantage_per_mini_batch=True,
     )

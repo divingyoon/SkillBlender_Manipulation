@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
 from isaaclab.envs.mdp import joint_vel_l2
+from isaaclab.sensors import FrameTransformer
+from isaaclab.utils.math import combine_frame_transforms
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, quat_error_magnitude
 
@@ -126,6 +128,41 @@ def eef_to_object_distance(
     """Reward the end-effector being close to the object using tanh-kernel."""
     distance = _object_eef_distance(env, eef_link_name, object_cfg)
     return 1 - torch.tanh(distance / std)
+
+
+def object_ee_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    ee_frame_cfg: SceneEntityCfg = SceneEntityCfg("ee_frame"),
+) -> torch.Tensor:
+    """Reward the agent for reaching the object using tanh-kernel."""
+    object: RigidObject = env.scene[object_cfg.name]
+    ee_frame: FrameTransformer = env.scene[ee_frame_cfg.name]
+    cube_pos_w = object.data.root_pos_w
+    ee_w = ee_frame.data.target_pos_w[..., 0, :]
+    object_ee_distance = torch.norm(cube_pos_w - ee_w, dim=1)
+    return 1 - torch.tanh(object_ee_distance / std)
+
+
+def object_goal_distance(
+    env: ManagerBasedRLEnv,
+    std: float,
+    minimal_height: float,
+    command_name: str,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Reward the agent for tracking the goal pose using tanh-kernel."""
+    robot: RigidObject = env.scene[robot_cfg.name]
+    object: RigidObject = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(
+        robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b
+    )
+    distance = torch.norm(des_pos_w - object.data.root_pos_w, dim=1)
+    return (object.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
 def eef_to_object_orientation(
@@ -482,6 +519,44 @@ def phase_reach_preclose_reward(
         phase_params["hold_duration"],
     )
     reward = reach_preclose_reward(env, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def closed_far_reach_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    close_threshold: float,
+    std: float,
+) -> torch.Tensor:
+    """Encourage moving closer if the gripper is already closed."""
+    eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    closure_amount = _hand_closure_amount(env, eef_link_name)
+    dist_reward = 1 - torch.tanh(eef_dist / std)
+    return torch.where(closure_amount > close_threshold, dist_reward, 0.0)
+
+
+def phase_closed_far_reach_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    close_threshold: float,
+    std: float,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = closed_far_reach_reward(env, eef_link_name, object_cfg, close_threshold, std)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 

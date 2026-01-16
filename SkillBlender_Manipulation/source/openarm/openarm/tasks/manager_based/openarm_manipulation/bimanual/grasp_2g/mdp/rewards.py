@@ -18,6 +18,7 @@ import torch
 from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
+from isaaclab.envs.mdp import joint_vel_l2
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, quat_error_magnitude
 
@@ -155,18 +156,17 @@ def grasp_reward(
     """
     # distance between end-effector and object
     eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
-
     closure_amount = _hand_closure_amount(env, eef_link_name)
 
-    # Proximity factor: linear decay with distance. Reward is non-zero only within 0.05 m.
+    # Sharper shaping: only rewards closing when sufficiently close.
     reach_radius = 0.05
-    proximity = torch.clamp(1.0 - (eef_dist / reach_radius), min=0.0, max=1.0)
+    dist_scale = 0.03
+    close_center = 0.6
+    close_scale = 0.2
+    dist_score = torch.sigmoid((reach_radius - eef_dist) / dist_scale)
+    close_score = torch.sigmoid((closure_amount - close_center) / close_scale)
 
-    # Penalize closing when too far from the object.
-    far_penalty = torch.where(eef_dist > reach_radius, -closure_amount, 0.0)
-
-    # Final reward combines proximity-aligned closing and far-distance penalty.
-    return proximity * closure_amount + far_penalty
+    return dist_score * close_score
 
 
 def object_is_lifted_gated(
@@ -288,41 +288,26 @@ def _phase_weight(phase: torch.Tensor, weights: list[float], device: torch.devic
 
 def _reach_success(
     env: ManagerBasedRLEnv,
-    left_eef_link_name: str,
-    right_eef_link_name: str,
-    left_object_cfg: SceneEntityCfg,
-    right_object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
     reach_distance: float,
     align_threshold: float,
 ) -> torch.Tensor:
-    left_dist = _object_eef_distance(env, left_eef_link_name, left_object_cfg)
-    right_dist = _object_eef_distance(env, right_eef_link_name, right_object_cfg)
-    left_align = _object_eef_any_axis_alignment(env, left_eef_link_name, left_object_cfg)
-    right_align = _object_eef_any_axis_alignment(env, right_eef_link_name, right_object_cfg)
-    return (left_dist < reach_distance) & (right_dist < reach_distance) & (left_align > align_threshold) & (
-        right_align > align_threshold
-    )
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    align = _object_eef_any_axis_alignment(env, eef_link_name, object_cfg)
+    return (dist < reach_distance) & (align > align_threshold)
 
 
 def _grasp_success(
     env: ManagerBasedRLEnv,
-    left_eef_link_name: str,
-    right_eef_link_name: str,
-    left_object_cfg: SceneEntityCfg,
-    right_object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
     grasp_distance: float,
     close_threshold: float,
 ) -> torch.Tensor:
-    left_dist = _object_eef_distance(env, left_eef_link_name, left_object_cfg)
-    right_dist = _object_eef_distance(env, right_eef_link_name, right_object_cfg)
-    left_close = _hand_closure_amount(env, left_eef_link_name)
-    right_close = _hand_closure_amount(env, right_eef_link_name)
-    return (
-        (left_dist < grasp_distance)
-        & (right_dist < grasp_distance)
-        & (left_close > close_threshold)
-        & (right_close > close_threshold)
-    )
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    close = _hand_closure_amount(env, eef_link_name)
+    return (dist < grasp_distance) & (close > close_threshold)
 
 
 def object_lift_progress(
@@ -339,10 +324,8 @@ def object_lift_progress(
 
 def _update_grasp2g_phase(
     env: ManagerBasedRLEnv,
-    left_eef_link_name: str,
-    right_eef_link_name: str,
-    left_object_cfg: SceneEntityCfg,
-    right_object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
     lift_height: float,
     reach_distance: float,
     align_threshold: float,
@@ -351,42 +334,29 @@ def _update_grasp2g_phase(
     hold_duration: float,
 ) -> torch.Tensor:
     """Update phase based on reach -> grasp -> lift conditions."""
-    if not hasattr(env, "grasp2g_phase"):
-        env.grasp2g_phase = torch.zeros(env.num_envs, device=env.device, dtype=torch.long)
+    if "left" in eef_link_name:
+        phase_attr = "grasp2g_phase_left"
+    elif "right" in eef_link_name:
+        phase_attr = "grasp2g_phase_right"
+    else:
+        phase_attr = "grasp2g_phase"
 
-    phase = env.grasp2g_phase
+    if not hasattr(env, phase_attr):
+        setattr(env, phase_attr, torch.zeros(env.num_envs, device=env.device, dtype=torch.long))
+
+    phase = getattr(env, phase_attr)
     if hasattr(env, "reset_buf"):
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
-    reach_ok = _reach_success(
-        env,
-        left_eef_link_name,
-        right_eef_link_name,
-        left_object_cfg,
-        right_object_cfg,
-        reach_distance,
-        align_threshold,
-    )
-    grasp_ok = _grasp_success(
-        env,
-        left_eef_link_name,
-        right_eef_link_name,
-        left_object_cfg,
-        right_object_cfg,
-        grasp_distance,
-        close_threshold,
-    )
-
-    left_obj: RigidObject = env.scene[left_object_cfg.name]
-    right_obj: RigidObject = env.scene[right_object_cfg.name]
-    lift_ok = (left_obj.data.root_pos_w[:, 2] > lift_height) & (
-        right_obj.data.root_pos_w[:, 2] > lift_height
-    )
+    reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
+    grasp_ok = _grasp_success(env, eef_link_name, object_cfg, grasp_distance, close_threshold)
+    obj: RigidObject = env.scene[object_cfg.name]
+    lift_ok = obj.data.root_pos_w[:, 2] > lift_height
 
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
     phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)
     phase = torch.where((phase == 2) & lift_ok, torch.tensor(3, device=env.device), phase)
-    env.grasp2g_phase = phase
+    setattr(env, phase_attr, phase)
     return phase
 
 
@@ -398,7 +368,17 @@ def phase_eef_to_object_distance(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = eef_to_object_distance(env, std, eef_link_name, object_cfg)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
@@ -411,7 +391,17 @@ def phase_eef_to_object_orientation(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = eef_to_object_orientation(env, std, eef_link_name, object_cfg)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
@@ -423,7 +413,17 @@ def phase_grasp_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = grasp_reward(env, eef_link_name, object_cfg)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
@@ -434,14 +434,54 @@ def gripper_open_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Ten
     return 1.0 - closure_amount
 
 
+def reach_preclose_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
+    """Small shaping reward to encourage pre-closing during reach."""
+    closure_amount = _hand_closure_amount(env, eef_link_name)
+    reward = 0.2 * closure_amount - 0.05
+    return torch.clamp(reward, min=-0.05, max=0.15)
+
+
 def phase_gripper_open_reward(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
+    object_cfg: SceneEntityCfg,
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = gripper_open_reward(env, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def phase_reach_preclose_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = reach_preclose_reward(env, eef_link_name)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 
@@ -452,7 +492,17 @@ def phase_lift_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = object_lift_progress(env, lift_height, object_cfg)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
@@ -465,8 +515,41 @@ def phase_hold_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(env, **phase_params)
+    phase = _update_grasp2g_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
     reward = object_is_held_per_object(env, lift_height, hold_duration, object_cfg)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def phase_joint_vel_l2(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = joint_vel_l2(env, asset_cfg)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 

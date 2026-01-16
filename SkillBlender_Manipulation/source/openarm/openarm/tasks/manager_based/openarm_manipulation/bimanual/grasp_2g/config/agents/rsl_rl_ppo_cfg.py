@@ -23,7 +23,7 @@ from isaaclab.utils import configclass
 
 @configclass
 class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 32
+    num_steps_per_env = 16 #32
     max_iterations = 10000
     save_interval = 100
     experiment_name = "openarm_bi_grasp_2g"
@@ -44,9 +44,9 @@ class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         use_clipped_value_loss=True,
         clip_param=0.2,
         entropy_coef=0.02,
-        num_learning_epochs=8,
-        num_mini_batches=8,
-        learning_rate=1.0e-4,
+        num_learning_epochs=4, #8
+        num_mini_batches=16, #8
+        learning_rate=5.0e-4,
         schedule="adaptive",
         gamma=0.99,
         lam=0.95,

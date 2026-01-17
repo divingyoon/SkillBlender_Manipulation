@@ -18,6 +18,14 @@
 
 from isaaclab_tasks.utils import import_packages
 
+# Register SkillBlender custom policies with RSL-RL if available.
+try:
+    from sbm.rl import register_rsl_rl
+
+    register_rsl_rl()
+except ImportError:
+    pass
+
 # The blacklist is used to prevent importing configs from sub-packages
 _BLACKLIST_PKGS = ["utils", ".mdp"]
 # Import all configs in this package
@@ -27,3 +35,4 @@ import_packages(__name__, _BLACKLIST_PKGS)
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.reach.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.approach.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp.config
+import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config

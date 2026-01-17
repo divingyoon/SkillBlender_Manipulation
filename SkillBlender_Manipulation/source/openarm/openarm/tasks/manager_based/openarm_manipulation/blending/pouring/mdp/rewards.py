@@ -182,7 +182,8 @@ def cup_tilt_reward(
     source_quat = env.scene[source_name].data.root_quat_w
     target_vector = target_pos - source_pos
     target_vector = torch.nn.functional.normalize(target_vector, p=2.0, dim=-1)
-    cup_z_axis = quat_apply(source_quat, torch.tensor([0.0, 0.0, 1.0], device=source_pos.device))
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=source_pos.device, dtype=source_pos.dtype).expand_as(source_pos)
+    cup_z_axis = quat_apply(source_quat, z_axis)
     cup_z_axis = torch.nn.functional.normalize(cup_z_axis, p=2.0, dim=-1)
     dot_product = torch.sum(cup_z_axis * target_vector, dim=-1).clamp(-1.0, 1.0)
     theta = torch.acos(dot_product)

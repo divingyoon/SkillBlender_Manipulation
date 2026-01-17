@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 import isaaclab.sim as sim_utils
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
@@ -91,20 +91,18 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             soft_joint_pos_limit_factor=1.0,
         )
 
-        cup_usd = (
-            "/home/user/rl_ws/SkillBlender_Manipulation/source/openarm/openarm/tasks/"
-            "manager_based/openarm_manipulation/usds/openarm_bimanual/cup.usd"
-        )
-        bead_usd = (
-            "/home/user/rl_ws/SkillBlender_Manipulation/source/openarm/openarm/tasks/"
-            "manager_based/openarm_manipulation/usds/openarm_bimanual/bead.usd"
-        )
+        cup_usd = f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/cup.usd"
+        bead_usd = f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/bead.usd"
 
         self.scene.object_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object",
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
                 scale=(1.0, 1.0, 1.0),
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -116,16 +114,20 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             ),
         )
         self.scene.object = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Object/left_cup/left_cup",
+            prim_path="{ENV_REGEX_NS}/Object/cup",
             init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=None,
         )
 
         self.scene.object2_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object2",
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
                 scale=(1.0, 1.0, 1.0),
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
@@ -137,7 +139,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             ),
         )
         self.scene.object2 = RigidObjectCfg(
-            prim_path="{ENV_REGEX_NS}/Object2/left_cup/left_cup",
+            prim_path="{ENV_REGEX_NS}/Object2/cup",
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=None,
         )

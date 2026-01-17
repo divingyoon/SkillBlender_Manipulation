@@ -175,7 +175,7 @@ class EventCfg:
         params={
             "pose_range": {
                 "x": (-0.1, 0.0),
-                "y": (-0.05, 0.05), 
+                "y": (-0.05, 0.05),
                 "z": (0.0, 0.0),
             },
             "velocity_range": {},
@@ -316,7 +316,7 @@ class TerminationsCfg:
 
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
-        params={"minimum_height": 0.00, "asset_cfg": SceneEntityCfg("object")},
+        params={"minimum_height": -0.2, "asset_cfg": SceneEntityCfg("object")},
     )
 
 
@@ -351,5 +351,5 @@ class PouringBaseEnvCfg(ManagerBasedRLEnvCfg):
             gpu_max_rigid_contact_count=2**23,
             gpu_max_rigid_patch_count=2**23,
             gpu_max_num_partitions=8,
-            gpu_collision_stack_size=640000,
+            gpu_collision_stack_size=300_000_000,
         )

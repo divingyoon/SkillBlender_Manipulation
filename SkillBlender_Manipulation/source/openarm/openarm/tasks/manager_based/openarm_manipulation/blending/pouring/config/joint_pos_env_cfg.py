@@ -100,9 +100,8 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             "manager_based/openarm_manipulation/usds/openarm_bimanual/bead.usd"
         )
 
-        self.scene.object = RigidObjectCfg(
+        self.scene.object_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
                 scale=(1.0, 1.0, 1.0),
@@ -116,10 +115,14 @@ class PouringEnvCfg(PouringBaseEnvCfg):
                 ),
             ),
         )
+        self.scene.object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object/left_cup/left_cup",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[-0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            spawn=None,
+        )
 
-        self.scene.object2 = RigidObjectCfg(
+        self.scene.object2_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object2",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
                 scale=(1.0, 1.0, 1.0),
@@ -132,6 +135,11 @@ class PouringEnvCfg(PouringBaseEnvCfg):
                     disable_gravity=False,
                 ),
             ),
+        )
+        self.scene.object2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object2/left_cup/left_cup",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.2, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            spawn=None,
         )
 
         self.scene.bead = RigidObjectCfg(

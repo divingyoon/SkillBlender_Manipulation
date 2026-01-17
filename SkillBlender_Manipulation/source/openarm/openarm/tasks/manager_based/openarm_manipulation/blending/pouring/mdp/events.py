@@ -24,15 +24,12 @@ from isaaclab.utils.math import quat_apply
 
 def reset_bead_in_cup(
     env,
-    env_ids: Sequence[int] | None = None,
+    env_ids: Sequence[int],
     cup_name: str = "object",
     bead_name: str = "bead",
     offset: tuple[float, float, float] = (0.0, 0.0, 0.05),
 ) -> None:
     """Reset bead pose to be inside the source cup."""
-    if env_ids is None:
-        env_ids = torch.arange(env.num_envs, device=env.device)
-
     cup: RigidObject = env.scene[cup_name]
     bead: RigidObject = env.scene[bead_name]
 

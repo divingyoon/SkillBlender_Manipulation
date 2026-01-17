@@ -40,7 +40,9 @@ class PouringSceneCfg(InteractiveSceneCfg):
 
     robot: ArticulationCfg = MISSING
 
+    object_source: AssetBaseCfg = MISSING
     object: RigidObjectCfg = MISSING
+    object2_source: AssetBaseCfg = MISSING
     object2: RigidObjectCfg = MISSING
     bead: RigidObjectCfg = MISSING
 
@@ -322,7 +324,7 @@ class TerminationsCfg:
 class PouringBaseEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pouring blending environment."""
 
-    scene: PouringSceneCfg = PouringSceneCfg(num_envs=20480, env_spacing=2.5)
+    scene: PouringSceneCfg = PouringSceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

@@ -54,6 +54,8 @@ def object_obs(
     left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
     right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
 
+    # Always capture real object position in world frame for logging/debug.
+    real_object_pos_w = env.scene["object"].data.root_pos_w
     if command_name is not None:
         command = env.command_manager.get_command(command_name)
         des_pos_b = command[:, :3]
@@ -84,7 +86,11 @@ def object_obs(
             lvec = left_eef_to_object[env0].detach().cpu().numpy()
             rvec = right_eef_to_object[env0].detach().cpu().numpy()
             opos = object_pos[env0].detach().cpu().numpy()
-            line = f"[OBS object] step={env.common_step_counter} pos={opos} Lvec={lvec} Rvec={rvec}"
+            real_opos_w = real_object_pos_w[env0].detach().cpu().numpy()
+            line = (
+                f"[OBS object] step={env.common_step_counter} pos={opos} "
+                f"Lvec={lvec} Rvec={rvec} object_real_pos_w={real_opos_w}"
+            )
             print(line)
             _append_obs_log(line)
             env._last_obs_log_step = env.common_step_counter
@@ -130,6 +136,8 @@ def object2_obs(
     left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
     right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
 
+    # Always capture real object2 position in world frame for logging/debug.
+    real_object_pos_w = env.scene["object2"].data.root_pos_w
     if command_name is not None:
         command = env.command_manager.get_command(command_name)
         des_pos_b = command[:, :3]
@@ -160,7 +168,11 @@ def object2_obs(
             lvec = left_eef_to_object[env0].detach().cpu().numpy()
             rvec = right_eef_to_object[env0].detach().cpu().numpy()
             opos = object_pos[env0].detach().cpu().numpy()
-            line = f"[OBS object2] step={env.common_step_counter} pos={opos} Lvec={lvec} Rvec={rvec}"
+            real_opos_w = real_object_pos_w[env0].detach().cpu().numpy()
+            line = (
+                f"[OBS object2] step={env.common_step_counter} pos={opos} "
+                f"Lvec={lvec} Rvec={rvec} object2_real_pos_w={real_opos_w}"
+            )
             # Extra right-hand command tracking diagnostics (env0).
             try:
                 cmd = env.command_manager.get_command("right_object_pose")[env0]

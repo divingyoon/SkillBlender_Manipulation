@@ -53,7 +53,7 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PouringPPORunnerCfg",
         "rsl_rl_ppo_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:PouringPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": (
-            f"{agents.__name__}.rsl_rl_hierarchical_cfg:PouringHierarchicalPPORunnerCfg"
+            f"{agents.__name__}.rsl_rl_hierarchical_cfg:PouringHierarchicalGraspOnlyPPORunnerCfg"
         ),
     },
 )

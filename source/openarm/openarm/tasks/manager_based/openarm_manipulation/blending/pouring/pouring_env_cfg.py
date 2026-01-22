@@ -84,7 +84,7 @@ class CommandsCfg:
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
             pos_x=(-0.05, 0.05),
-            pos_y=(-0.05, 0.05),
+            pos_y=(0.05, 0.15),
             pos_z=(0.1, 0.2),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -105,7 +105,7 @@ class CommandsCfg:
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
             pos_x=(-0.05, 0.05),
-            pos_y=(-0.05, 0.05),
+            pos_y=(-0.15, -0.05),
             pos_z=(0.1, 0.2),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -308,12 +308,12 @@ class RewardsCfg:
     left_reaching_object = RewTerm(
         func=grasp2g_mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=1.0,
+        weight=2.0,
     )
     right_reaching_object = RewTerm(
         func=grasp2g_mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=1.0,
+        weight=3.0,
     )
     left_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
@@ -325,7 +325,7 @@ class RewardsCfg:
     )
     right_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
-        weight=-1.0,
+        weight=-0.2,
         params={
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
@@ -333,7 +333,7 @@ class RewardsCfg:
     )
     left_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=1.0,
+        weight=0.2,
         params={
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
@@ -342,7 +342,7 @@ class RewardsCfg:
     )
     right_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=1.0,
+        weight=0.2,
         params={
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),
@@ -360,7 +360,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_left_ee_tcp",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
-                "align_threshold": 0.996,
+                "align_threshold": 0.985,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
@@ -378,7 +378,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_right_ee_tcp",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
-                "align_threshold": 0.996,
+                "align_threshold": 0.985,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,

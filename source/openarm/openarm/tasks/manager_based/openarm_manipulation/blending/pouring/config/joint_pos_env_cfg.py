@@ -174,7 +174,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.2,
+            scale=0.3,
             use_default_offset=True,
         )
 
@@ -189,7 +189,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
                 "openarm_right_joint6",
                 "openarm_right_joint7",
             ],
-            scale=0.2,
+            scale=0.4,
             use_default_offset=True,
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(

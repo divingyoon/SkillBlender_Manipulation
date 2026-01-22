@@ -25,11 +25,11 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
 from .. import mdp
-from ..pouring_env_cfg import PouringBaseEnvCfg
+from ..pouring_env_cfg import Pouring1BaseEnvCfg
 
 
 @configclass
-class PouringEnvCfg(PouringBaseEnvCfg):
+class Pouring1EnvCfg(Pouring1BaseEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
@@ -238,7 +238,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
 
 
 @configclass
-class PouringEnvCfg_RIGHT_ONLY(PouringEnvCfg):
+class Pouring1EnvCfg_RIGHT_ONLY(Pouring1EnvCfg):
     """Right-hand-only variant for debugging reach/goal behavior."""
 
     def __post_init__(self):
@@ -257,7 +257,7 @@ class PouringEnvCfg_RIGHT_ONLY(PouringEnvCfg):
 
 
 @configclass
-class PouringEnvCfg_PLAY(PouringEnvCfg):
+class Pouring1EnvCfg_PLAY(Pouring1EnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50

@@ -37,7 +37,7 @@ from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import m
 
 
 @configclass
-class PouringSceneCfg(InteractiveSceneCfg):
+class Pouring1SceneCfg(InteractiveSceneCfg):
     """Scene with a bimanual robot, table, and a cube for handover."""
 
     robot: ArticulationCfg = MISSING
@@ -174,83 +174,6 @@ class ObservationsCfg:
             self.concatenate_terms = True
 
     policy: PolicyCfg = PolicyCfg()
-
-    @configclass
-    class PolicyLowCfg(ObsGroup):
-        """Observations for low-level skills (legacy shape)."""
-
-        target_object_position = ObsTerm(
-            func=mdp.generated_commands, params={"command_name": "left_object_pose"}
-        )
-        target_object2_position = ObsTerm(
-            func=mdp.generated_commands, params={"command_name": "right_object_pose"}
-        )
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
-        object_position = ObsTerm(
-            func=mdp.object_position_in_robot_root_frame,
-            params={"object_cfg": SceneEntityCfg("object")},
-        )
-        object2_position = ObsTerm(
-            func=mdp.object_position_in_robot_root_frame,
-            params={"object_cfg": SceneEntityCfg("object2")},
-        )
-        object_obs = ObsTerm(
-            func=mdp.object_obs,
-            params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "command_name": "left_object_pose",
-                "use_command_pos": False,
-            },
-        )
-        object2_obs = ObsTerm(
-            func=mdp.object2_obs,
-            params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
-                "command_name": "right_object_pose",
-                "use_command_pos": False,
-            },
-        )
-        actions = ObsTerm(func=mdp.last_action)
-
-        def __post_init__(self):
-            self.enable_corruption = True
-            self.concatenate_terms = True
-
-    policy_low: PolicyLowCfg = PolicyLowCfg()
-
-    @configclass
-    class HighLevelCfg(ObsGroup):
-        """Additional observations for high-level pouring policy."""
-
-        cup_pair = ObsTerm(
-            func=mdp.cup_pair_compact_obs,
-            params={"source_name": "object", "target_name": "object2"},
-        )
-        bead = ObsTerm(
-            func=mdp.bead_to_target_obs,
-            params={"bead_name": "bead", "target_name": "object2"},
-        )
-        phase_left = ObsTerm(func=mdp.pour_phase_left)
-        phase_right = ObsTerm(func=mdp.pour_phase_right)
-        phase_group = ObsTerm(func=mdp.pour_phase_group)
-        # Optional per-hand high-level obs (kept for future separation)
-        # left_object_obs = ObsTerm(
-        #     func=mdp.object_position_in_robot_root_frame,
-        #     params={"object_cfg": SceneEntityCfg("object")},
-        # )
-        # right_object_obs = ObsTerm(
-        #     func=mdp.object_position_in_robot_root_frame,
-        #     params={"object_cfg": SceneEntityCfg("object2")},
-        # )
-
-        def __post_init__(self):
-            self.enable_corruption = True
-            self.concatenate_terms = True
-
-    high_level: HighLevelCfg = HighLevelCfg()
 
 
 @configclass
@@ -552,10 +475,10 @@ class TerminationsCfg:
 
 
 @configclass
-class PouringBaseEnvCfg(ManagerBasedRLEnvCfg):
+class Pouring1BaseEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pouring blending environment."""
 
-    scene: PouringSceneCfg = PouringSceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Pouring1SceneCfg = Pouring1SceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

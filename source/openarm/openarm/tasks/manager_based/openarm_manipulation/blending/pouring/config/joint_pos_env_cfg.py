@@ -238,6 +238,25 @@ class PouringEnvCfg(PouringBaseEnvCfg):
 
 
 @configclass
+class PouringEnvCfg_RIGHT_ONLY(PouringEnvCfg):
+    """Right-hand-only variant for debugging reach/goal behavior."""
+
+    def __post_init__(self):
+        super().__post_init__()
+        # Freeze left arm/hand by zeroing action scale.
+        self.actions.left_arm_action.scale = 0.0
+        self.actions.left_hand_action.scale = 0.0
+        # Disable left-side rewards/penalties to focus learning on right hand.
+        self.rewards.left_reaching_object.weight = 0.0
+        self.rewards.left_wrong_cup_penalty.weight = 0.0
+        self.rewards.left_tcp_align_reward.weight = 0.0
+        self.rewards.left_lifting_object.weight = 0.0
+        self.rewards.left_object_goal_tracking.weight = 0.0
+        self.rewards.left_object_goal_tracking_fine_grained.weight = 0.0
+        self.rewards.left_hold_offset.weight = 0.0
+
+
+@configclass
 class PouringEnvCfg_PLAY(PouringEnvCfg):
     def __post_init__(self):
         super().__post_init__()

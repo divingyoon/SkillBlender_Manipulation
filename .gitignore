@@ -1,2 +1,4 @@
 env_setup/reachability/output/
 log/
+__pycache__/
+*.pyc

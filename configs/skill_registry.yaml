@@ -1,0 +1,76 @@
+# Skill registry for hierarchical policies.
+# Each entry must provide command_dim. Use checkpoint_path for explicit paths,
+# or use experiment_name + load_run/checkpoint to auto-resolve from logs.
+
+skills:
+  openarm_bi_reach:
+    experiment_name: "openarm_bi_reach"
+    log_root: "log/rsl_rl/openarm_bi_reach"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_bi_approach:
+    experiment_name: "openarm_bi_approach"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_bi_grasp_2g:
+    experiment_name: "openarm_bi_grasp_2g"
+    log_root: "log/rsl_rl/openarm_bi_grasp_2g"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_bi_pick_and_place:
+    experiment_name: "openarm_bi_pick_and_place"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 0
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_uni_reach:
+    experiment_name: "openarm_uni_reach"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 7
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_uni_lift:
+    experiment_name: "openarm_uni_lift"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 7
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
+
+  openarm_uni_cabinet:
+    experiment_name: "openarm_uni_cabinet"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 0
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}

@@ -29,6 +29,8 @@ class SbmHierarchicalActorCriticCfg(RslRlPpoActorCriticCfg):
     frame_stack: int = MISSING
     command_dim: int = MISSING
     command_slice: list[int] | None = None
+    command_split_index: int | None = None
+    dof_split_index: int | None = None
     num_dofs: int | None = None
     low_level_obs_groups: list[str] | None = None
     disable_skill_selection_until_iter: int | None = None

@@ -396,6 +396,188 @@ class ActorCriticHierarchical(nn.Module):
         return skill_bias
 
 
+class ActorCriticHierarchicalDualHead(ActorCriticHierarchical):
+    """Hierarchical actor with shared encoder and per-side output heads."""
+
+    def __init__(
+        self,
+        num_actor_obs,
+        num_critic_obs,
+        num_actions,
+        obs_context_len=1,
+        actor_hidden_dims=None,
+        critic_hidden_dims=None,
+        activation="elu",
+        init_noise_std=1.0,
+        **kwargs,
+    ):
+        if TensorDict is not None and isinstance(num_actor_obs, TensorDict):
+            obs_groups = num_critic_obs
+            if not isinstance(obs_groups, dict):
+                raise ValueError("obs_groups must be provided when observations are a TensorDict.")
+            self._actor_input_dim = sum(num_actor_obs[group].shape[-1] for group in obs_groups["policy"])
+        else:
+            self._actor_input_dim = num_actor_obs
+        self._actor_hidden_dims = actor_hidden_dims or [256, 256, 256]
+        self._actor_activation = activation
+        super().__init__(
+            num_actor_obs,
+            num_critic_obs,
+            num_actions,
+            obs_context_len=obs_context_len,
+            actor_hidden_dims=self._actor_hidden_dims,
+            critic_hidden_dims=critic_hidden_dims,
+            activation=activation,
+            init_noise_std=init_noise_std,
+            **kwargs,
+        )
+        self.command_split_index = kwargs.get("command_split_index")
+        self.dof_split_index = kwargs.get("dof_split_index")
+        self._build_dual_head_actor()
+
+    def _build_dual_head_actor(self):
+        activation_fn = get_activation(self._actor_activation)
+        self.actor = nn.Identity()
+        left_cmd_dims = []
+        right_cmd_dims = []
+        for dim in self.skill_command_dims:
+            split = dim // 2 if self.command_split_index is None else int(self.command_split_index)
+            split = max(0, min(split, dim))
+            left_cmd_dims.append(split)
+            right_cmd_dims.append(dim - split)
+        self._left_skill_command_dims = left_cmd_dims
+        self._right_skill_command_dims = right_cmd_dims
+
+        if self.num_dofs is None:
+            raise ValueError("num_dofs must be available before building dual-head actor.")
+        dof_split = self.num_dofs // 2 if self.dof_split_index is None else int(self.dof_split_index)
+        dof_split = max(0, min(dof_split, self.num_dofs))
+        self._left_dofs = dof_split
+        self._right_dofs = self.num_dofs - dof_split
+
+        self._left_command_dim = sum(self._left_skill_command_dims)
+        self._right_command_dim = sum(self._right_skill_command_dims)
+        self._per_frame_left_dim = self._left_command_dim + self.num_skills * self._left_dofs
+        self._per_frame_right_dim = self._right_command_dim + self.num_skills * self._right_dofs
+
+        encoder_layers = []
+        prev_dim = self._actor_input_dim
+        for hidden_dim in self._actor_hidden_dims:
+            encoder_layers.append(nn.Linear(prev_dim, hidden_dim))
+            encoder_layers.append(activation_fn)
+            prev_dim = hidden_dim
+        self.encoder = nn.Sequential(*encoder_layers)
+        self.head_left = nn.Linear(prev_dim, self._per_frame_left_dim * self.frame_stack)
+        self.head_right = nn.Linear(prev_dim, self._per_frame_right_dim * self.frame_stack)
+
+    def _merge_dual_frame(self, left_frame: torch.Tensor, right_frame: torch.Tensor) -> torch.Tensor:
+        batch = left_frame.shape[0]
+        left_cmd = left_frame[:, : self._left_command_dim] if self._left_command_dim > 0 else None
+        left_mask = left_frame[:, self._left_command_dim :] if self._per_frame_left_dim > self._left_command_dim else None
+        right_cmd = right_frame[:, : self._right_command_dim] if self._right_command_dim > 0 else None
+        right_mask = (
+            right_frame[:, self._right_command_dim :]
+            if self._per_frame_right_dim > self._right_command_dim
+            else None
+        )
+
+        cmd_parts = []
+        left_offset = 0
+        right_offset = 0
+        for left_dim, right_dim in zip(self._left_skill_command_dims, self._right_skill_command_dims):
+            left_slice = (
+                left_cmd[:, left_offset : left_offset + left_dim] if left_dim > 0 else None
+            )
+            right_slice = (
+                right_cmd[:, right_offset : right_offset + right_dim] if right_dim > 0 else None
+            )
+            left_offset += left_dim
+            right_offset += right_dim
+            if left_slice is None:
+                cmd_parts.append(right_slice)
+            elif right_slice is None:
+                cmd_parts.append(left_slice)
+            else:
+                cmd_parts.append(torch.cat((left_slice, right_slice), dim=1))
+        commands = torch.cat(cmd_parts, dim=1) if cmd_parts else torch.zeros((batch, 0), device=left_frame.device)
+
+        if self.num_skills == 0 or self.num_dofs == 0:
+            masks = torch.zeros((batch, 0), device=left_frame.device)
+        else:
+            if self._left_dofs > 0:
+                left_mask = left_mask.view(batch, self.num_skills, self._left_dofs)
+            else:
+                left_mask = torch.zeros((batch, self.num_skills, 0), device=left_frame.device)
+            if self._right_dofs > 0:
+                right_mask = right_mask.view(batch, self.num_skills, self._right_dofs)
+            else:
+                right_mask = torch.zeros((batch, self.num_skills, 0), device=left_frame.device)
+
+            masks_per_skill = []
+            for idx in range(self.num_skills):
+                masks_per_skill.append(torch.cat((left_mask[:, idx, :], right_mask[:, idx, :]), dim=1))
+            masks = torch.cat(masks_per_skill, dim=1)
+
+        return torch.cat((commands, masks), dim=1)
+
+    def _dual_raw_mean(self, observations: torch.Tensor) -> torch.Tensor:
+        features = self.encoder(observations)
+        raw_left = self.head_left(features)
+        raw_right = self.head_right(features)
+        if self.frame_stack == 1:
+            return self._merge_dual_frame(raw_left, raw_right)
+        batch = raw_left.shape[0]
+        left = raw_left.view(batch, self.frame_stack, self._per_frame_left_dim)
+        right = raw_right.view(batch, self.frame_stack, self._per_frame_right_dim)
+        merged = [self._merge_dual_frame(left[:, idx, :], right[:, idx, :]) for idx in range(self.frame_stack)]
+        return torch.stack(merged, dim=1).reshape(batch, -1)
+
+    def _actor(self, observations, low_level_obs=None, full_obs=None):
+        obs_device = observations.device
+        if obs_device is not None and str(obs_device) != str(self.device):
+            self._move_policies_to_device(obs_device)
+        raw_mean = self._dual_raw_mean(observations)
+        input_to_low = raw_mean[:, : -(self.num_skills * self.num_dofs)]
+        mask_to_low = raw_mean[:, -(self.num_skills * self.num_dofs) :]
+        if not hasattr(self, "_log_counter"):
+            self._log_counter = 0
+        self._log_counter += 1
+        masks = []
+        for i in range(self.num_skills):
+            mask = mask_to_low[:, i * self.num_dofs : (i + 1) * self.num_dofs]
+            masks.append(mask)
+        masks = torch.stack(masks, dim=1)
+        masks = torch.softmax(masks, dim=1)
+        if (
+            self.training
+            and self.disable_skill_selection_until_iter is not None
+            and self.current_learning_iteration < self.disable_skill_selection_until_iter
+        ):
+            masks = torch.full_like(masks, 1.0 / float(self.num_skills))
+        self._last_skill_masks = masks.detach()
+
+        base_obs = low_level_obs if low_level_obs is not None else observations
+        means = []
+        command_offset = 0
+        for i in range(self.num_skills):
+            curr_command_dim = self.skill_command_dims[i]
+            cmd_slice = input_to_low[:, command_offset : command_offset + curr_command_dim]
+            command_offset += curr_command_dim
+            cmd_obs = self._replace_observations(
+                base_obs,
+                cmd_slice,
+                low_high=self.low_high_list[i],
+            )
+            if hasattr(cmd_obs, "is_inference") and cmd_obs.is_inference():
+                cmd_obs = cmd_obs.clone()
+            with torch.no_grad():
+                low_action = self.policy_list[i](cmd_obs)
+            mean = low_action * masks[:, i]
+            means.append(mean)
+        actions_mean = sum(means)
+        return {"actions_mean": actions_mean, "masks": masks}
+
+
 def _freeze_module(module: nn.Module):
     for param in module.parameters():
         param.requires_grad = False

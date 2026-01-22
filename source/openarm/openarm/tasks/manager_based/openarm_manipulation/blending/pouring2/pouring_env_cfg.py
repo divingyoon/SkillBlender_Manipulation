@@ -37,7 +37,7 @@ from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import m
 
 
 @configclass
-class Pouring1SceneCfg(InteractiveSceneCfg):
+class Pouring2SceneCfg(InteractiveSceneCfg):
     """Scene with a bimanual robot, table, and a cube for handover."""
 
     robot: ArticulationCfg = MISSING
@@ -491,10 +491,10 @@ class TerminationsCfg:
 
 
 @configclass
-class Pouring1BaseEnvCfg(ManagerBasedRLEnvCfg):
+class Pouring2BaseEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pouring blending environment."""
 
-    scene: Pouring1SceneCfg = Pouring1SceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Pouring2SceneCfg = Pouring2SceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

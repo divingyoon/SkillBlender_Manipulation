@@ -16,7 +16,9 @@ from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.utils import configclass
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.config import joint_pos_env_cfg as grasp2g_joint_cfg
+from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g_ik.config import (
+    joint_pos_env_cfg as grasp2g_joint_cfg,
+)
 
 
 @configclass

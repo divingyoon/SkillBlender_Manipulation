@@ -101,7 +101,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             init_state=AssetBaseCfg.InitialStateCfg(pos=[0.1, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(1.0, 1.0, 1.0),
+                scale=(0.8, 0.8, 1.0),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     articulation_enabled=False,
                 ),
@@ -126,7 +126,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
             init_state=AssetBaseCfg.InitialStateCfg(pos=[0.1, -0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(1.0, 1.0, 1.0),
+                scale=(0.8, 0.8, 1.0),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     articulation_enabled=False,
                 ),
@@ -214,7 +214,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
         marker_cfg.prim_path = "/Visuals/LeftEEFrameTransformer"
         self.scene.left_ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/openarm_left_hand",
-            debug_vis=True,
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
@@ -226,7 +226,7 @@ class PouringEnvCfg(PouringBaseEnvCfg):
         marker_cfg.prim_path = "/Visuals/RightEEFrameTransformer"
         self.scene.right_ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/openarm_right_hand",
-            debug_vis=True,
+            debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(

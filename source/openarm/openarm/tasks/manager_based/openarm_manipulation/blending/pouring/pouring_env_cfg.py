@@ -333,7 +333,7 @@ class RewardsCfg:
     )
     left_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=0.2,
+        weight=0.0,
         params={
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
@@ -342,7 +342,7 @@ class RewardsCfg:
     )
     right_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=0.2,
+        weight=0.0,
         params={
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),
@@ -360,7 +360,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_left_ee_tcp",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
-                "align_threshold": 0.985,
+                "align_threshold": 0.0,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
@@ -378,7 +378,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_right_ee_tcp",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
-                "align_threshold": 0.985,
+                "align_threshold": 0.0,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
@@ -522,6 +522,14 @@ class TerminationsCfg:
     object2_tipped = DoneTerm(
         func=mdp.cup_tipped,
         params={"object_name": "object2", "min_upright_dot": 0.5},
+    )
+    object_out_of_reach = DoneTerm(
+        func=mdp.object_out_of_reach,
+        params={"object_cfg": SceneEntityCfg("object"), "max_xy": 0.7, "max_z": 0.4, "min_z": -0.05},
+    )
+    object2_out_of_reach = DoneTerm(
+        func=mdp.object_out_of_reach,
+        params={"object_cfg": SceneEntityCfg("object2"), "max_xy": 0.7, "max_z": 0.4, "min_z": -0.05},
     )
 
 

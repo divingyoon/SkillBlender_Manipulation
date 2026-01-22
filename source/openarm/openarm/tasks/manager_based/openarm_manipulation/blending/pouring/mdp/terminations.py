@@ -16,7 +16,9 @@ from __future__ import annotations
 
 import torch
 
-from isaaclab.utils.math import quat_apply
+from isaaclab.assets import RigidObject
+from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.math import quat_apply, subtract_frame_transforms
 
 from isaaclab.envs import ManagerBasedRLEnv
 
@@ -47,3 +49,22 @@ def cup_tipped(
     cup_z_axis = quat_apply(object_quat_w, z_axis.expand(object_quat_w.shape[0], 3))
     dot = torch.sum(cup_z_axis * z_axis, dim=1)
     return dot < min_upright_dot
+
+
+def object_out_of_reach(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    max_xy: float = 0.7,
+    max_z: float = 0.4,
+    min_z: float = -0.05,
+) -> torch.Tensor:
+    """Terminate when the object is outside a reachable box in robot root frame."""
+    robot: RigidObject = env.scene[robot_cfg.name]
+    obj: RigidObject = env.scene[object_cfg.name]
+    object_pos_b, _ = subtract_frame_transforms(
+        robot.data.root_pos_w, robot.data.root_quat_w, obj.data.root_pos_w[:, :3]
+    )
+    xy_norm = torch.norm(object_pos_b[:, :2], p=2, dim=-1)
+    z = object_pos_b[:, 2]
+    return (xy_norm > max_xy) | (z > max_z) | (z < min_z)

@@ -2,3 +2,4 @@ env_setup/reachability/output/
 log/
 __pycache__/
 *.pyc
+obs_debug.log\

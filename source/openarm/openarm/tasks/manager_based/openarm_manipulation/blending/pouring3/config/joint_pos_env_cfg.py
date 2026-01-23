@@ -197,6 +197,31 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             ],
         )
 
+        marker_cfg.prim_path = "/Visuals/ObjectFrameTransformer"
+        self.scene.object_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Object/cup/cup",
+            debug_vis=True,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Object/cup/cup",
+                    name="object_cup",
+                ),
+            ],
+        )
+        marker_cfg.prim_path = "/Visuals/Object2FrameTransformer"
+        self.scene.object2_frame = FrameTransformerCfg(
+            prim_path="{ENV_REGEX_NS}/Object2/cup/cup",
+            debug_vis=True,
+            visualizer_cfg=marker_cfg,
+            target_frames=[
+                FrameTransformerCfg.FrameCfg(
+                    prim_path="{ENV_REGEX_NS}/Object2/cup/cup",
+                    name="object2_cup",
+                ),
+            ],
+        )
+
 
 @configclass
 class Pouring3EnvCfg_RIGHT_ONLY(Pouring3EnvCfg):

@@ -112,6 +112,39 @@ def eef_to_object_distance(
     return 1 - torch.tanh(distance / std)
 
 
+def tcp_z_axis_to_cup_y_alignment(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    """Alignment between TCP +Z axis and cup +Y axis in world frame."""
+    body_quat_w = env.scene["robot"].data.body_quat_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    tcp_quat_w = body_quat_w[:, eef_idx]
+
+    object_quat_w = env.scene[object_cfg.name].data.root_quat_w
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=tcp_quat_w.dtype)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device, dtype=object_quat_w.dtype)
+    tcp_z_axis = quat_apply(tcp_quat_w, z_axis.expand(tcp_quat_w.shape[0], 3))
+    cup_y_axis = quat_apply(object_quat_w, y_axis.expand(object_quat_w.shape[0], 3))
+    dot = torch.sum(tcp_z_axis * cup_y_axis, dim=1)
+    return torch.clamp(dot, min=0.0, max=1.0)
+
+
+def phase_tcp_z_to_cup_y_alignment(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    std: float = 0.1,
+) -> torch.Tensor:
+    """Phase-gated TCP +Z to cup +Y alignment reward during reach phase."""
+    phase_min = _get_shared_phase(env)
+    align_reward = tcp_z_axis_to_cup_y_alignment(env, eef_link_name, object_cfg)
+    dist_reward = eef_to_object_distance(env, std, eef_link_name, object_cfg)
+    reward = align_reward * dist_reward
+    return reward * (phase_min == 0)
+
+
 def tcp_x_axis_alignment(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
@@ -140,7 +173,7 @@ def phase_tcp_x_axis_alignment(
     """Phase-gated TCP x-axis alignment reward for a specific hand."""
     phase_min = _get_shared_phase(env)
     reward = tcp_x_axis_alignment(env, eef_link_name, object_cfg)
-    return reward * (phase_min <= 1)
+    return reward * (phase_min == 1)
 
 
 def grasp_reward(
@@ -484,10 +517,10 @@ def _cup_is_held(
 def _update_pour_phase(
     env: ManagerBasedRLEnv,
     lift_height: float = 0.1,
-    reach_distance: float = 0.05,
-    align_threshold: float = 0.985,
-    grasp_distance: float = 0.02,
-    close_threshold: float = 0.6,
+    reach_distance: float = 0.1,
+    align_threshold: float = 0.8,
+    grasp_distance: float = 0.03,
+    close_threshold: float = 0.2,
     hold_duration: float = 2.0,
     align_xy_threshold: float = 0.7,
     align_z_threshold: float = 0.7,
@@ -592,7 +625,7 @@ def _update_pour_hand_phase(
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
-    align = _object_eef_any_axis_alignment(env, eef_link_name, object_cfg)
+    align = tcp_x_axis_alignment(env, eef_link_name, object_cfg)
     reach_ok = (dist < reach_distance) & (align > align_threshold)
 
     close = _hand_closure_amount(env, eef_link_name)
@@ -600,6 +633,22 @@ def _update_pour_hand_phase(
 
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
+
+    if hasattr(env, "common_step_counter") and env.common_step_counter % 200 == 0:
+        try:
+            idx = 0
+            phase_val = int(phase[idx].item())
+            dist_val = float(dist[idx].item())
+            align_val = float(align[idx].item())
+            close_val = float(close[idx].item())
+            lift_val = float(obj.data.root_pos_w[idx, 2].item())
+            print(
+                f"[PHASE_DBG] hand={eef_link_name} phase={phase_val} "
+                f"dist={dist_val:.4f} align={align_val:.4f} "
+                f"close={close_val:.4f} lift_z={lift_val:.4f}"
+            )
+        except Exception:
+            pass
 
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
     phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)

@@ -86,9 +86,19 @@ def object_obs(
             rvec = right_eef_to_object[env0].detach().cpu().numpy()
             opos = object_pos[env0].detach().cpu().numpy()
             real_opos_w = real_object_pos_w[env0].detach().cpu().numpy()
+            body_quat_w = env.scene["robot"].data.body_quat_w
+            left_quat = body_quat_w[env0, left_eef_idx]
+            right_quat = body_quat_w[env0, right_eef_idx]
+            axis_x = torch.tensor([1.0, 0.0, 0.0], device=env.device, dtype=left_quat.dtype)
+            axis_z = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=left_quat.dtype)
+            left_x = quat_apply(left_quat, axis_x).detach().cpu().numpy()
+            left_z = quat_apply(left_quat, axis_z).detach().cpu().numpy()
+            right_x = quat_apply(right_quat, axis_x).detach().cpu().numpy()
+            right_z = quat_apply(right_quat, axis_z).detach().cpu().numpy()
             line = (
                 f"[OBS object] step={env.common_step_counter} pos={opos} "
-                f"Lvec={lvec} Rvec={rvec} object_real_pos_w={real_opos_w}"
+                f"Lvec={lvec} Rvec={rvec} object_real_pos_w={real_opos_w} "
+                f"Ltcp_x={left_x} Ltcp_z={left_z} Rtcp_x={right_x} Rtcp_z={right_z}"
             )
             print(line)
             _append_obs_log(line)

@@ -506,10 +506,10 @@ def _cup_is_held(
 def _update_pour_phase(
     env: ManagerBasedRLEnv,
     lift_height: float = 0.1,
-    reach_distance: float = 0.05,
-    align_threshold: float = 0.985,
-    grasp_distance: float = 0.02,
-    close_threshold: float = 0.6,
+    reach_distance: float = 0.1,
+    align_threshold: float = 0.8,
+    grasp_distance: float = 0.03,
+    close_threshold: float = 0.2,
     hold_duration: float = 2.0,
     align_xy_threshold: float = 0.7,
     align_z_threshold: float = 0.7,
@@ -614,7 +614,7 @@ def _update_pour_hand_phase(
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
-    align = _object_eef_any_axis_alignment(env, eef_link_name, object_cfg)
+    align = tcp_x_axis_alignment(env, eef_link_name, object_cfg)
     reach_ok = (dist < reach_distance) & (align > align_threshold)
 
     close = _hand_closure_amount(env, eef_link_name)
@@ -622,6 +622,22 @@ def _update_pour_hand_phase(
 
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
+
+    if hasattr(env, "common_step_counter") and env.common_step_counter % 200 == 0:
+        try:
+            idx = 0
+            phase_val = int(phase[idx].item())
+            dist_val = float(dist[idx].item())
+            align_val = float(align[idx].item())
+            close_val = float(close[idx].item())
+            lift_val = float(obj.data.root_pos_w[idx, 2].item())
+            print(
+                f"[PHASE_DBG] hand={eef_link_name} phase={phase_val} "
+                f"dist={dist_val:.4f} align={align_val:.4f} "
+                f"close={close_val:.4f} lift_z={lift_val:.4f}"
+            )
+        except Exception:
+            pass
 
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
     phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)

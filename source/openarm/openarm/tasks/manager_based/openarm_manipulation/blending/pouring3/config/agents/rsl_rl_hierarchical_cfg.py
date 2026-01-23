@@ -40,7 +40,7 @@ class Pouring3HierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         frame_stack=1,
         command_dim=14,
         command_slice=(0, 14),
-        low_level_obs_groups=None,
+        low_level_obs_groups=["policy_low"],
         num_dofs=None,
         disable_skill_selection_until_iter=None,
     )
@@ -83,7 +83,7 @@ class Pouring3HierarchicalReachOnlyPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         frame_stack=1,
         command_dim=14,
         command_slice=(0, 14),
-        low_level_obs_groups=None,
+        low_level_obs_groups=["policy_low"],
         num_dofs=None,
         disable_skill_selection_until_iter=None,
     )
@@ -126,7 +126,7 @@ class Pouring3HierarchicalGraspOnlyPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         frame_stack=1,
         command_dim=14,
         command_slice=(0, 14),
-        low_level_obs_groups=None,
+        low_level_obs_groups=["policy_low"],
         num_dofs=None,
         disable_skill_selection_until_iter=None,
     )

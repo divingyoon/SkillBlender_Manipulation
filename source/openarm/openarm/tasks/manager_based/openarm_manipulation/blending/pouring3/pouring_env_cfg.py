@@ -80,17 +80,17 @@ class CommandsCfg:
         resampling_time_range=(4.0, 4.0),
         pre_offset=(0.0, 0.0, 0.03),
         post_offset=(0.0, 0.0, 0.12),
-        switch_phase=3,
+        switch_phase=2,
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
-            pos_x=(-0.05, 0.05),
-            pos_y=(0.05, 0.15),
-            pos_z=(0.0, 0.2),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
+            pos_x=(0, 0),
+            pos_y=(0.0, 0.0),
+            pos_z=(0.05, 0.2),
+            roll=(-math.pi, math.pi),
+            pitch=(-math.pi, math.pi),
+            yaw=(-math.pi, math.pi),
         ),
-        debug_vis=True,
+        debug_vis=False,
     )
 
     right_object_pose = mdp.PhaseSwitchPoseCommandCfg(
@@ -101,17 +101,17 @@ class CommandsCfg:
         resampling_time_range=(4.0, 4.0),
         pre_offset=(0.0, 0.0, 0.03),
         post_offset=(0.0, 0.0, 0.12),
-        switch_phase=3,
+        switch_phase=2,
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
-            pos_x=(-0.05, 0.05),
-            pos_y=(-0.15, -0.05),
-            pos_z=(0.0, 0.2),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
+            pos_x=(0, 0),
+            pos_y=(0, -0),
+            pos_z=(0.05, 0.2),
+            roll=(-math.pi, math.pi),
+            pitch=(-math.pi, math.pi),
+            yaw=(-math.pi, math.pi),
         ),
-        debug_vis=True,
+        debug_vis=False,
     )
 
 
@@ -155,6 +155,52 @@ class ObservationsCfg:
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "left_object_pose",
+                "use_command_pos": False,
+            },
+        )
+        object2_obs = ObsTerm(
+            func=mdp.object2_obs,
+            params={
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "command_name": "right_object_pose",
+                "use_command_pos": False,
+            },
+        )
+        actions = ObsTerm(func=mdp.last_action)
+
+        def __post_init__(self):
+            self.enable_corruption = True
+            self.concatenate_terms = True
+
+    policy: PolicyCfg = PolicyCfg()
+
+    @configclass
+    class PolicyLowCfg(ObsGroup):
+        """Observations for low-level skills (IK command space)."""
+
+        target_object_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "left_object_pose"}
+        )
+        target_object2_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "right_object_pose"}
+        )
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        object_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object")},
+        )
+        object2_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={"object_cfg": SceneEntityCfg("object2")},
+        )
+        object_obs = ObsTerm(
+            func=mdp.object_obs,
+            params={
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "command_name": "left_object_pose",
                 "use_command_pos": True,
             },
         )
@@ -173,7 +219,7 @@ class ObservationsCfg:
             self.enable_corruption = True
             self.concatenate_terms = True
 
-    policy: PolicyCfg = PolicyCfg()
+    policy_low: PolicyLowCfg = PolicyLowCfg()
 
 
 @configclass
@@ -247,13 +293,13 @@ class RewardsCfg:
         weight=0.0,
     )
     left_reaching_object = RewTerm(
-        func=grasp2g_mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
+        func=mdp.phase_tcp_z_to_cup_y_alignment,
+        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object"), "std": 0.1},
         weight=3.0,
     )
     right_reaching_object = RewTerm(
-        func=grasp2g_mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
+        func=mdp.phase_tcp_z_to_cup_y_alignment,
+        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2"), "std": 0.1},
         weight=3.0,
     )
     left_wrong_cup_penalty = RewTerm(
@@ -274,7 +320,7 @@ class RewardsCfg:
     )
     left_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=0.5,
+        weight=3.0,
         params={
             "eef_link_name": "openarm_left_ee_tcp",
             "object_cfg": SceneEntityCfg("object"),
@@ -283,7 +329,7 @@ class RewardsCfg:
     )
     right_tcp_align_reward = RewTerm(
         func=mdp.phase_tcp_x_axis_alignment,
-        weight=0.5,
+        weight=3.0,
         params={
             "eef_link_name": "openarm_right_ee_tcp",
             "object_cfg": SceneEntityCfg("object2"),

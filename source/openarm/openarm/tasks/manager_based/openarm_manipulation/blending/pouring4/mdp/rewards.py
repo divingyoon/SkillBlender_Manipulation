@@ -22,24 +22,9 @@ from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply
 from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
-import os
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
-
-_ROOT_DIR = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../../../../../../../../")
-)
-_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring2.log")
-
-
-def _append_obs_log(line: str) -> None:
-    try:
-        with open(_OBS_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(line + "\n")
-    except OSError:
-        pass
-
 
 def _object_eef_distance(
     env: ManagerBasedRLEnv,
@@ -155,6 +140,15 @@ def eef_to_object_distance(
     return 1 - torch.tanh(distance / std)
 
 
+def hand_reach_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    return eef_to_object_distance(env, std, eef_link_name, object_cfg)
+
+
 def tcp_x_axis_alignment(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
@@ -191,7 +185,6 @@ def grasp_reward(
     eef_link_name: str,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
     surface_dist, penetration = _object_eef_surface_metrics(env, eef_link_name, object_cfg)
     closure_amount = _hand_closure_amount(env, eef_link_name)
 
@@ -203,6 +196,100 @@ def grasp_reward(
     close_score = torch.sigmoid((closure_amount - close_center) / close_scale)
 
     return dist_score * close_score * (~penetration).to(dist_score.dtype)
+
+
+def hand_grasp_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> torch.Tensor:
+    return grasp_reward(env, eef_link_name, object_cfg)
+
+
+def hand_lift_height_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    minimal_height: float = 0.05,
+    lift_height: float = 0.1,
+    grasp_distance: float = 0.08,
+    close_threshold: float = 0.2,
+) -> torch.Tensor:
+    """Dense lift reward gated by a soft grasp check."""
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    surface_dist, penetration = _object_eef_surface_metrics(env, eef_link_name, object_cfg)
+    close = _hand_closure_amount(env, eef_link_name)
+    grasp_ok = (dist < grasp_distance) & (close > close_threshold) & (~penetration)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    lift_progress = (obj.data.root_pos_w[:, 2] - minimal_height) / max(lift_height, 1e-6)
+    lift_progress = torch.clamp(lift_progress, min=0.0, max=1.0)
+    return lift_progress * grasp_ok.to(lift_progress.dtype)
+
+
+def staged_rewards_bimanual(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    reach_mult: float = 0.1,
+    grasp_mult: float = 0.35,
+    lift_mult: float = 0.5,
+    lift_height: float = 0.1,
+    minimal_height: float = 0.05,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Robosuite-style staged rewards (reach, grasp, lift) aggregated across both hands."""
+    def _per_hand(eef: str, obj_cfg: SceneEntityCfg):
+        dist = _object_eef_distance(env, eef, obj_cfg)
+        r_reach = (1.0 - torch.tanh(10.0 * dist)) * reach_mult
+
+        r_grasp_score = grasp_reward(env, eef, obj_cfg)
+        r_grasp = r_grasp_score * grasp_mult
+
+        obj: RigidObject = env.scene[obj_cfg.name]
+        z_target = minimal_height + lift_height
+        z_dist = torch.clamp(z_target - obj.data.root_pos_w[:, 2], min=0.0)
+        lift_bonus = (1.0 - torch.tanh(15.0 * z_dist)) * (lift_mult - grasp_mult)
+        r_lift = torch.where(r_grasp_score > 0.2, grasp_mult + lift_bonus, torch.zeros_like(r_reach))
+        return r_reach, r_grasp, r_lift
+
+    l_reach, l_grasp, l_lift = _per_hand(left_eef_link_name, left_object_cfg)
+    r_reach, r_grasp, r_lift = _per_hand(right_eef_link_name, right_object_cfg)
+
+    r_reach = torch.minimum(l_reach, r_reach)
+    r_grasp = torch.minimum(l_grasp, r_grasp)
+    r_lift = torch.minimum(l_lift, r_lift)
+    return r_reach, r_grasp, r_lift
+
+
+def staged_reward_bimanual(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    reach_mult: float = 0.1,
+    grasp_mult: float = 0.35,
+    lift_mult: float = 0.5,
+    lift_height: float = 0.1,
+    minimal_height: float = 0.05,
+) -> torch.Tensor:
+    """Return the max staged reward, matching robosuite's shaped reward composition."""
+    r_reach, r_grasp, r_lift = staged_rewards_bimanual(
+        env,
+        left_eef_link_name,
+        right_eef_link_name,
+        left_object_cfg,
+        right_object_cfg,
+        reach_mult=reach_mult,
+        grasp_mult=grasp_mult,
+        lift_mult=lift_mult,
+        lift_height=lift_height,
+        minimal_height=minimal_height,
+    )
+    staged = torch.stack([r_reach, r_grasp, r_lift], dim=1)
+    return torch.max(staged, dim=1).values
 
 
 def hand_open_reward(
@@ -655,38 +742,6 @@ def _update_pour_hand_phase(
 
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
-
-    if hasattr(env, "common_step_counter") and env.common_step_counter % 200 == 0:
-        try:
-            idx = 0
-            phase_val = int(phase[idx].item())
-            dist_val = float(dist[idx].item())
-            align_val = float(align[idx].item())
-            close_val = float(close[idx].item())
-            lift_val = float(obj.data.root_pos_w[idx, 2].item())
-            raw_mean = None
-            proc_mean = None
-            if "left" in eef_link_name:
-                hand_term = env.action_manager.get_term("left_hand_action")
-            elif "right" in eef_link_name:
-                hand_term = env.action_manager.get_term("right_hand_action")
-            else:
-                hand_term = None
-            if hand_term is not None:
-                if hasattr(hand_term, "raw_actions") and hand_term.raw_actions is not None:
-                    raw_mean = float(hand_term.raw_actions[idx].mean().item())
-                if hasattr(hand_term, "processed_actions") and hand_term.processed_actions is not None:
-                    proc_mean = float(hand_term.processed_actions[idx].mean().item())
-            _append_obs_log(
-                f"[PHASE_DBG] hand={eef_link_name} phase={phase_val} "
-                f"dist={dist_val:.4f} align={align_val:.4f} "
-                f"close={close_val:.4f} lift_z={lift_val:.4f} "
-                f"raw_mean={raw_mean} proc_mean={proc_mean} "
-                f"surface_dist={float(surface_dist[idx].item()):.4f} "
-                f"penetration={bool(penetration[idx].item())}"
-            )
-        except Exception:
-            pass
 
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
     phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)

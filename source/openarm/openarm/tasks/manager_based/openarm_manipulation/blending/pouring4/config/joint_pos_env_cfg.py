@@ -25,11 +25,11 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
 from .. import mdp
-from ..pouring_env_cfg import Pouring2BaseEnvCfg
+from ..pouring_env_cfg import Pouring4BaseEnvCfg
 
 
 @configclass
-class Pouring2EnvCfg(Pouring2BaseEnvCfg):
+class Pouring4EnvCfg(Pouring4BaseEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
@@ -241,7 +241,7 @@ class Pouring2EnvCfg(Pouring2BaseEnvCfg):
 
 
 @configclass
-class Pouring2EnvCfg_RIGHT_ONLY(Pouring2EnvCfg):
+class Pouring4EnvCfg_RIGHT_ONLY(Pouring4EnvCfg):
     """Right-hand-only variant for debugging reach/goal behavior."""
 
     def __post_init__(self):
@@ -260,7 +260,7 @@ class Pouring2EnvCfg_RIGHT_ONLY(Pouring2EnvCfg):
 
 
 @configclass
-class Pouring2EnvCfg_ACTION_ZERO(Pouring2EnvCfg):
+class Pouring4EnvCfg_ACTION_ZERO(Pouring4EnvCfg):
     """All-actions-zero variant to diagnose offset pulling."""
 
     def __post_init__(self):
@@ -272,7 +272,7 @@ class Pouring2EnvCfg_ACTION_ZERO(Pouring2EnvCfg):
 
 
 @configclass
-class Pouring2EnvCfg_PLAY(Pouring2EnvCfg):
+class Pouring4EnvCfg_PLAY(Pouring4EnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50

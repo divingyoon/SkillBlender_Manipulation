@@ -33,11 +33,10 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
 
 
 @configclass
-class Pouring2SceneCfg(InteractiveSceneCfg):
+class Pouring4SceneCfg(InteractiveSceneCfg):
     """Scene with a bimanual robot, table, and a cube for handover."""
 
     robot: ArticulationCfg = MISSING
@@ -157,6 +156,7 @@ class ObservationsCfg:
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "left_object_pose",
                 "use_command_pos": False,
+                "mask_cross_hand": False,
             },
         )
         object2_obs = ObsTerm(
@@ -166,6 +166,7 @@ class ObservationsCfg:
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "right_object_pose",
                 "use_command_pos": False,
+                "mask_cross_hand": False,
             },
         )
         actions = ObsTerm(func=mdp.last_action)
@@ -175,6 +176,74 @@ class ObservationsCfg:
             self.concatenate_terms = True
 
     policy: PolicyCfg = PolicyCfg()
+
+    @configclass
+    class PolicyLowCfg(ObsGroup):
+        """Observations for low-level skills (match reach / grasp_2g semantics)."""
+
+        target_object_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "left_object_pose"}
+        )
+        target_object2_position = ObsTerm(
+            func=mdp.generated_commands, params={"command_name": "right_object_pose"}
+        )
+        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
+        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        object_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={
+                "object_cfg": SceneEntityCfg("object"),
+                "command_name": "left_object_pose",
+                "use_command_pos": True,
+            },
+        )
+        object2_position = ObsTerm(
+            func=mdp.object_position_in_robot_root_frame,
+            params={
+                "object_cfg": SceneEntityCfg("object2"),
+                "command_name": "right_object_pose",
+                "use_command_pos": True,
+            },
+        )
+        object_obs = ObsTerm(
+            func=mdp.object_obs,
+            params={
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "command_name": "left_object_pose",
+                "use_command_pos": True,
+                "mask_cross_hand": True,
+            },
+        )
+        object2_obs = ObsTerm(
+            func=mdp.object2_obs,
+            params={
+                "left_eef_link_name": "openarm_left_ee_tcp",
+                "right_eef_link_name": "openarm_right_ee_tcp",
+                "command_name": "right_object_pose",
+                "use_command_pos": True,
+                "mask_cross_hand": True,
+            },
+        )
+        actions = ObsTerm(func=mdp.last_action)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    policy_low: PolicyLowCfg = PolicyLowCfg()
+
+    @configclass
+    class HighLevelCfg(ObsGroup):
+        """Auxiliary observations used for skill biasing."""
+
+        skill_bias = ObsTerm(func=mdp.skill_bias_reach_grasp)
+
+        def __post_init__(self):
+            self.enable_corruption = False
+            self.concatenate_terms = True
+
+    high_level: HighLevelCfg = HighLevelCfg()
 
 
 @configclass
@@ -247,15 +316,20 @@ class RewardsCfg:
         func=mdp.phase_shared_value,
         weight=0.0,
     )
-    left_reaching_object = RewTerm(
-        func=grasp2g_mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=3.0,
-    )
-    right_reaching_object = RewTerm(
-        func=grasp2g_mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=3.0,
+    staged_reward = RewTerm(
+        func=mdp.staged_reward_bimanual,
+        params={
+            "left_eef_link_name": "openarm_left_ee_tcp",
+            "right_eef_link_name": "openarm_right_ee_tcp",
+            "left_object_cfg": SceneEntityCfg("object"),
+            "right_object_cfg": SceneEntityCfg("object2"),
+            "reach_mult": 0.1,
+            "grasp_mult": 0.35,
+            "lift_mult": 0.5,
+            "lift_height": 0.1,
+            "minimal_height": 0.05,
+        },
+        weight=10.0,
     )
     left_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
@@ -290,59 +364,6 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("object2"),
             "hand": "right",
         },
-    )
-    left_grasp_reward = RewTerm(
-        func=mdp.phase_grasp_reward,
-        weight=3.0,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("object"),
-        },
-    )
-    right_grasp_reward = RewTerm(
-        func=mdp.phase_grasp_reward,
-        weight=3.0,
-        params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("object2"),
-        },
-    )
-
-    left_lifting_object = RewTerm(
-        func=grasp2g_mdp.phase_lift_reward,
-        params={
-            "lift_height": 0.1,
-            "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=15.0,
-    )
-    right_lifting_object = RewTerm(
-        func=grasp2g_mdp.phase_lift_reward,
-        params={
-            "lift_height": 0.1,
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=15.0,
     )
 
     left_object_goal_tracking = RewTerm(
@@ -492,10 +513,10 @@ class TerminationsCfg:
 
 
 @configclass
-class Pouring2BaseEnvCfg(ManagerBasedRLEnvCfg):
+class Pouring4BaseEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pouring blending environment."""
 
-    scene: Pouring2SceneCfg = Pouring2SceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Pouring4SceneCfg = Pouring4SceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

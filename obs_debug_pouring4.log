@@ -1,0 +1,3 @@
+[SKILLS] loaded skill checkpoints
+- openarm_bi_reach: /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/openarm_bi_reach/test7_5080/model_9999.pt
+- openarm_bi_grasp_2g: /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/openarm_bi_grasp_2g/test14_server/model_9999.pt

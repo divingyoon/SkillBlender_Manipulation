@@ -12,11 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
+
 from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 from isaaclab.utils import configclass
 
 from sbm.rl import SbmHierarchicalActorCriticCfg
 from sbm.skill_registry import load_skill_registry
+
+_ROOT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../../../../../../../../..")
+)
+os.environ.setdefault("SBM_SKILL_LOG_PATH", os.path.join(_ROOT_DIR, "obs_debug_pouring3.log"))
 
 
 @configclass

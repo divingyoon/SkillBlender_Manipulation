@@ -155,7 +155,7 @@ class ObservationsCfg:
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "left_object_pose",
-                "use_command_pos": False,
+                "use_command_pos": True,
             },
         )
         object2_obs = ObsTerm(
@@ -164,7 +164,7 @@ class ObservationsCfg:
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "right_object_pose",
-                "use_command_pos": False,
+                "use_command_pos": True,
             },
         )
         actions = ObsTerm(func=mdp.last_action)
@@ -556,6 +556,9 @@ class Pouring3BaseEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
+        # Command-only high-level observations (drop real object positions).
+        self.observations.policy.object_position = None
+        self.observations.policy.object2_position = None
         self.sim.physx = PhysxCfg(
             solver_type=1,  # TGS
             max_position_iteration_count=192,

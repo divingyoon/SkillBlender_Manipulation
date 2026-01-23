@@ -48,6 +48,38 @@ except ImportError:  # pragma: no cover - tensordict may be absent in some envs
     TensorDict = None
 
 
+_SKILL_LOG_WRITTEN = False
+
+
+def _maybe_log_loaded_skills(skill_dict: dict) -> None:
+    log_path = os.environ.get("SBM_SKILL_LOG_PATH")
+    if not log_path:
+        return
+
+    global _SKILL_LOG_WRITTEN
+    if _SKILL_LOG_WRITTEN:
+        return
+
+    lines = ["[SKILLS] loaded skill checkpoints"]
+    for name, cfg in skill_dict.items():
+        if "policy" in cfg:
+            checkpoint_path = cfg.get("checkpoint_path", "<inline_policy>")
+        else:
+            try:
+                checkpoint_path = _resolve_checkpoint_path(cfg)
+            except Exception as exc:
+                checkpoint_path = f"<unresolved:{exc}>"
+        lines.append(f"- {name}: {checkpoint_path}")
+
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        _SKILL_LOG_WRITTEN = True
+    except OSError:
+        pass
+
+
 class ActorCriticHierarchical(nn.Module):
     is_recurrent = False
 
@@ -128,6 +160,8 @@ class ActorCriticHierarchical(nn.Module):
         skill_dict = kwargs.get("skill_dict")
         if not skill_dict:
             raise ValueError("skill_dict is required to build hierarchical policies.")
+
+        _maybe_log_loaded_skills(skill_dict)
 
         self.skill_names = []
         self.policy_list = []

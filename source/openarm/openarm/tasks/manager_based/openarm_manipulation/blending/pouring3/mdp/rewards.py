@@ -18,13 +18,67 @@ from typing import TYPE_CHECKING
 
 import torch
 
-from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import quat_apply
+from isaaclab.utils.math import combine_frame_transforms, quat_apply
 from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+
+
+def _command_name_from_object_cfg(object_cfg: SceneEntityCfg) -> str | None:
+    if object_cfg.name == "object":
+        return "left_object_pose"
+    if object_cfg.name == "object2":
+        return "right_object_pose"
+    return None
+
+
+def _get_object_pose_w(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    command_name = _command_name_from_object_cfg(object_cfg)
+    if command_name is None:
+        return (
+            env.scene[object_cfg.name].data.root_pos_w,
+            env.scene[object_cfg.name].data.root_quat_w,
+        )
+
+    try:
+        command = env.command_manager.get_command(command_name)
+    except Exception:
+        command = None
+
+    if command is None or command.numel() == 0:
+        return (
+            env.scene[object_cfg.name].data.root_pos_w,
+            env.scene[object_cfg.name].data.root_quat_w,
+        )
+
+    des_pos_b = command[:, :3]
+    des_quat_b = command[:, 3:7]
+    robot = env.scene["robot"]
+    des_pos_w, des_quat_w = combine_frame_transforms(
+        robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
+    )
+    return des_pos_w, des_quat_w
+
+
+def _get_object_pos_env(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    pos_w, _ = _get_object_pose_w(env, object_cfg)
+    return pos_w - env.scene.env_origins
+
+
+def _get_object_quat_w(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    _, quat_w = _get_object_pose_w(env, object_cfg)
+    return quat_w
 
 
 def _object_eef_distance(
@@ -32,7 +86,7 @@ def _object_eef_distance(
     eef_link_name: str,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    object_pos = _get_object_pos_env(env, object_cfg)
     body_pos_w = env.scene["robot"].data.body_pos_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
@@ -45,7 +99,7 @@ def _object_eef_any_axis_alignment(
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
     """Maximum absolute alignment between any EE axis and any object axis."""
-    object_quat = env.scene[object_cfg.name].data.root_quat_w
+    object_quat = _get_object_quat_w(env, object_cfg)
     body_quat_w = env.scene["robot"].data.body_quat_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     eef_quat = body_quat_w[:, eef_idx]
@@ -122,7 +176,7 @@ def tcp_z_axis_to_cup_y_alignment(
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     tcp_quat_w = body_quat_w[:, eef_idx]
 
-    object_quat_w = env.scene[object_cfg.name].data.root_quat_w
+    object_quat_w = _get_object_quat_w(env, object_cfg)
     z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=tcp_quat_w.dtype)
     y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device, dtype=object_quat_w.dtype)
     tcp_z_axis = quat_apply(tcp_quat_w, z_axis.expand(tcp_quat_w.shape[0], 3))
@@ -156,7 +210,7 @@ def tcp_x_axis_alignment(
     axis_x = torch.tensor([1.0, 0.0, 0.0], device=env.device, dtype=body_quat_w.dtype)
     tcp_x_axis = quat_apply(body_quat_w[:, eef_idx], axis_x.expand(body_quat_w.shape[0], 3))
 
-    object_quat_w = env.scene[object_cfg.name].data.root_quat_w
+    object_quat_w = _get_object_quat_w(env, object_cfg)
     axis_z = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=object_quat_w.dtype)
     object_z_axis = quat_apply(object_quat_w, axis_z.expand(object_quat_w.shape[0], 3))
 
@@ -259,8 +313,8 @@ def object_is_lifted(
     minimal_height: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    object: RigidObject = env.scene[object_cfg.name]
-    return torch.where(object.data.root_pos_w[:, 2] > minimal_height, 1.0, 0.0)
+    object_pos_w, _ = _get_object_pose_w(env, object_cfg)
+    return torch.where(object_pos_w[:, 2] > minimal_height, 1.0, 0.0)
 
 
 def object_is_held(
@@ -269,12 +323,11 @@ def object_is_held(
     hold_duration: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    object: RigidObject = env.scene[object_cfg.name]
-
     if not hasattr(env, "hold_counter"):
         env.hold_counter = torch.zeros(env.num_envs, device=env.device)
 
-    is_lifted = object.data.root_pos_w[:, 2] > minimal_height
+    object_pos_w, _ = _get_object_pose_w(env, object_cfg)
+    is_lifted = object_pos_w[:, 2] > minimal_height
     env.hold_counter = torch.where(
         is_lifted,
         env.hold_counter + env.step_dt,
@@ -295,7 +348,7 @@ def hold_at_offset_reward(
     hold_distance: float = 0.05,
 ) -> torch.Tensor:
     """Reward holding the object at a fixed offset above its grasp position."""
-    object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    object_pos = _get_object_pos_env(env, object_cfg)
     eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
     closure_amount = _hand_closure_amount(env, eef_link_name)
     grasp_ok = (eef_dist < grasp_distance) & (closure_amount > close_threshold)
@@ -366,8 +419,7 @@ def object_at_target(
     max_height: float = 0.08,
     object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
 ) -> torch.Tensor:
-    object: RigidObject = env.scene[object_cfg.name]
-    object_pos = object.data.root_pos_w - env.scene.env_origins
+    object_pos = _get_object_pos_env(env, object_cfg)
     target = torch.tensor(target_pos, device=object_pos.device)
     xy_dist = torch.norm(object_pos[:, :2] - target[:2], dim=1)
     height_ok = object_pos[:, 2] < max_height
@@ -381,8 +433,8 @@ def cup_xy_alignment(
     target_d_xy: float = 0.095,
 ) -> torch.Tensor:
     """Reward for aligning cup positions in the XY plane."""
-    source_pos = env.scene[source_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
+    source_pos = _get_object_pos_env(env, SceneEntityCfg(source_name))
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
     d_xy = torch.norm(source_pos[:, :2] - target_pos[:, :2], p=2, dim=-1)
     distance_far = torch.relu(d_xy - target_d_xy)
     penalty_tan = torch.tanh(distance_far * 20.5) * 0.3
@@ -399,8 +451,8 @@ def cup_z_alignment(
     target_d_z_max: float = 0.12,
 ) -> torch.Tensor:
     """Reward for aligning cup heights within a target band."""
-    source_pos = env.scene[source_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
+    source_pos = _get_object_pos_env(env, SceneEntityCfg(source_name))
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
     d_z = source_pos[:, 2] - target_pos[:, 2]
     distance_close = torch.relu(-d_z + target_d_z_min) * 25
     distance_far = torch.relu(d_z - target_d_z_max) * 25
@@ -423,9 +475,9 @@ def cup_tilt_reward(
     target_name: str,
 ) -> torch.Tensor:
     """Reward for tilting the source cup toward the target cup."""
-    source_pos = env.scene[source_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
-    source_quat = env.scene[source_name].data.root_quat_w
+    source_pos = _get_object_pos_env(env, SceneEntityCfg(source_name))
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
+    source_quat = _get_object_quat_w(env, SceneEntityCfg(source_name))
     target_vector = target_pos - source_pos
     target_vector = torch.nn.functional.normalize(target_vector, p=2.0, dim=-1)
     z_axis = torch.tensor([0.0, 0.0, 1.0], device=source_pos.device, dtype=source_pos.dtype).expand_as(source_pos)
@@ -442,7 +494,7 @@ def cup_tipped_penalty(
     min_upright_dot: float = 0.5,
 ) -> torch.Tensor:
     """Penalty when the cup tilts beyond the upright threshold."""
-    object_quat_w = env.scene[object_cfg.name].data.root_quat_w
+    object_quat_w = _get_object_quat_w(env, object_cfg)
     z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=object_quat_w.dtype)
     cup_z_axis = quat_apply(object_quat_w, z_axis.expand(object_quat_w.shape[0], 3))
     dot = torch.sum(cup_z_axis * z_axis, dim=1)
@@ -457,7 +509,7 @@ def bead_in_target_reward(
 ) -> torch.Tensor:
     """Reward when bead is close to the target cup."""
     bead_pos = env.scene[bead_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
     dist = torch.norm(bead_pos - target_pos, p=2, dim=-1)
     return torch.where(dist <= radius, 1.0, 0.0)
 
@@ -470,7 +522,7 @@ def bead_to_target_distance_reward(
 ) -> torch.Tensor:
     """Dense shaping reward for bringing the bead toward the target cup."""
     bead_pos = env.scene[bead_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
     dist = torch.norm(bead_pos - target_pos, p=2, dim=-1)
     return 1.0 - torch.tanh(dist / std)
 
@@ -485,7 +537,7 @@ def bead_spill_penalty(
     # Added for bead pouring stabilization: penalize bead spilling outside the target cup.
     """Penalty when the bead drops below the target cup height outside the cup area."""
     bead_pos = env.scene[bead_name].data.root_pos_w - env.scene.env_origins
-    target_pos = env.scene[target_name].data.root_pos_w - env.scene.env_origins
+    target_pos = _get_object_pos_env(env, SceneEntityCfg(target_name))
     spill_height = target_pos[:, 2] + min_height_offset
     d_xy = torch.norm(bead_pos[:, :2] - target_pos[:, :2], p=2, dim=-1)
     spill = (bead_pos[:, 2] < spill_height) & (d_xy > xy_radius)
@@ -504,8 +556,8 @@ def _cup_is_held(
     if name not in env.cup_hold_counters:
         env.cup_hold_counters[name] = torch.zeros(env.num_envs, device=env.device)
 
-    obj: RigidObject = env.scene[name]
-    is_lifted = obj.data.root_pos_w[:, 2] > minimal_height
+    object_pos_w, _ = _get_object_pose_w(env, object_cfg)
+    is_lifted = object_pos_w[:, 2] > minimal_height
     env.cup_hold_counters[name] = torch.where(
         is_lifted,
         env.cup_hold_counters[name] + env.step_dt,
@@ -631,8 +683,8 @@ def _update_pour_hand_phase(
     close = _hand_closure_amount(env, eef_link_name)
     grasp_ok = (dist < grasp_distance) & (close > close_threshold)
 
-    obj: RigidObject = env.scene[object_cfg.name]
-    lift_ok = obj.data.root_pos_w[:, 2] > lift_height
+    object_pos_w, _ = _get_object_pose_w(env, object_cfg)
+    lift_ok = object_pos_w[:, 2] > lift_height
 
     if hasattr(env, "common_step_counter") and env.common_step_counter % 200 == 0:
         try:
@@ -641,7 +693,7 @@ def _update_pour_hand_phase(
             dist_val = float(dist[idx].item())
             align_val = float(align[idx].item())
             close_val = float(close[idx].item())
-            lift_val = float(obj.data.root_pos_w[idx, 2].item())
+            lift_val = float(object_pos_w[idx, 2].item())
             print(
                 f"[PHASE_DBG] hand={eef_link_name} phase={phase_val} "
                 f"dist={dist_val:.4f} align={align_val:.4f} "

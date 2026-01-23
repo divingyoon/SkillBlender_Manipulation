@@ -82,8 +82,6 @@ def object_obs(
 
     left_eef_to_object = object_pos - left_eef_pos_b
     right_eef_to_object = object_pos - right_eef_pos_b
-    # mask cross-hand info to avoid symmetric policies
-    right_eef_to_object = torch.zeros_like(right_eef_to_object)
     # add a left-hand token without changing dimension
     right_eef_to_object[:, 0] = 1.0
     if hasattr(env, "common_step_counter") and env.common_step_counter % 100 == 0:
@@ -170,8 +168,6 @@ def object2_obs(
 
     left_eef_to_object = object_pos - left_eef_pos_b
     right_eef_to_object = object_pos - right_eef_pos_b
-    # mask cross-hand info to avoid symmetric policies
-    left_eef_to_object = torch.zeros_like(left_eef_to_object)
     # add a right-hand token without changing dimension
     left_eef_to_object[:, 0] = -1.0
     if hasattr(env, "common_step_counter") and env.common_step_counter % 100 == 0:
@@ -209,6 +205,19 @@ def object2_obs(
                     + f" right_cmd_root_dist={dist_root_cmd:.4f}"
                     + f" right_tcp_root_dist={dist_root_tcp:.4f}"
                 )
+                # Log left command in world frame for overlap checks.
+                try:
+                    lcmd = env.command_manager.get_command("left_object_pose")[env0]
+                    ldes_pos_b = lcmd[:3].detach()
+                    ldes_quat_b = lcmd[3:7].detach()
+                    ldes_pos_w, _ = combine_frame_transforms(
+                        robot.data.root_pos_w[env0], robot.data.root_quat_w[env0], ldes_pos_b, ldes_quat_b
+                    )
+                    line = line + f" left_cmd_pos={ldes_pos_w.cpu().numpy()}"
+                    cmd_sep = torch.linalg.norm(ldes_pos_w - des_pos_w).item()
+                    line = line + f" lr_cmd_dist={cmd_sep:.4f}"
+                except Exception:
+                    pass
                 # rolling stats for right_cmd_dist
                 if not hasattr(env, "_right_cmd_dist_sum"):
                     env._right_cmd_dist_sum = 0.0

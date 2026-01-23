@@ -37,26 +37,29 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
+        # Disable one-time IK reset; use fixed joint init from pouring2 baseline.
+        self.events.reset_robot_tcp_to_cups = None
+
         self.scene.robot = OPEN_ARM_HIGH_PD_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=[0.0, 0.0, -0.25],
                 rot=[1.0, 0.0, 0.0, 0.0],
                 joint_pos={
-                    "openarm_left_joint1": -0.5,
-                    "openarm_left_joint2": -0.5,
-                    "openarm_left_joint3": 0.6,
-                    "openarm_left_joint4": 0.7,
-                    "openarm_left_joint5": 0.0,
-                    "openarm_left_joint6": 0.0,
-                    "openarm_left_joint7": -1.0,
-                    "openarm_right_joint1": 0.5,
-                    "openarm_right_joint2": 0.5,
-                    "openarm_right_joint3": -0.6,
-                    "openarm_right_joint4": 0.7,
-                    "openarm_right_joint5": 0.0,
-                    "openarm_right_joint6": 0.0,
-                    "openarm_right_joint7": 1.0,
+                    "openarm_left_joint1": -0.31204933,
+                    "openarm_left_joint2": -0.42612678,
+                    "openarm_left_joint3": 0.32234982,
+                    "openarm_left_joint4": 0.43979153,
+                    "openarm_left_joint5": -0.46879697,
+                    "openarm_left_joint6": -0.25350952,
+                    "openarm_left_joint7": -0.827409,
+                    "openarm_right_joint1": 0.24847749,
+                    "openarm_right_joint2": 0.00039903,
+                    "openarm_right_joint3": -0.40817988,
+                    "openarm_right_joint4": 0.6461343,
+                    "openarm_right_joint5": 0.33295986,
+                    "openarm_right_joint6": -0.24095318,
+                    "openarm_right_joint7": 0.7177656,
                     "openarm_left_finger_joint1": 0.044,
                     "openarm_left_finger_joint2": 0.052,
                     "openarm_right_finger_joint1": 0.044,
@@ -140,7 +143,7 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             joint_names=["openarm_left_joint[1-7]"],
             body_name="openarm_left_ee_tcp",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.2,
+            scale=0.1,
         )
 
         self.actions.right_arm_action = DifferentialInverseKinematicsActionCfg(
@@ -148,7 +151,7 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             joint_names=["openarm_right_joint[1-7]"],
             body_name="openarm_right_ee_tcp",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.2,
+            scale=0.1,
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",

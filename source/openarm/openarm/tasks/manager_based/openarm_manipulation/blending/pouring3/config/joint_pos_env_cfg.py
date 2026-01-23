@@ -143,7 +143,7 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             joint_names=["openarm_left_joint[1-7]"],
             body_name="openarm_left_ee_tcp",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.1,
+            scale=0.3,
         )
 
         self.actions.right_arm_action = DifferentialInverseKinematicsActionCfg(
@@ -151,7 +151,7 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             joint_names=["openarm_right_joint[1-7]"],
             body_name="openarm_right_ee_tcp",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.1,
+            scale=0.3,
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",

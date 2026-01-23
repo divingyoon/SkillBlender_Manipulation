@@ -83,8 +83,8 @@ class CommandsCfg:
         switch_phase=3,
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
-            pos_x=(-0.05, 0.05),
-            pos_y=(0.05, 0.15),
+            pos_x=(0.0, 0.0),
+            pos_y=(0.0, 0.0),
             pos_z=(0.0, 0.2),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -104,8 +104,8 @@ class CommandsCfg:
         switch_phase=3,
         phase_source="group",
         ranges=mdp.PhaseSwitchPoseCommandCfg.Ranges(
-            pos_x=(-0.05, 0.05),
-            pos_y=(-0.15, -0.05),
+            pos_x=(0.0, 0.0),
+            pos_y=(0.0, 0.0),
             pos_z=(0.0, 0.2),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),

@@ -22,9 +22,23 @@ from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, combine_frame_transforms
 from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
+import os
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
+
+_ROOT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "../../../../../../../../../")
+)
+_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring1.log")
+
+
+def _append_obs_log(line: str) -> None:
+    try:
+        with open(_OBS_LOG_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except OSError:
+        pass
 
 
 def _object_eef_distance(
@@ -631,7 +645,7 @@ def _update_pour_hand_phase(
             align_val = float(align[idx].item())
             close_val = float(close[idx].item())
             lift_val = float(obj.data.root_pos_w[idx, 2].item())
-            print(
+            _append_obs_log(
                 f"[PHASE_DBG] hand={eef_link_name} phase={phase_val} "
                 f"dist={dist_val:.4f} align={align_val:.4f} "
                 f"close={close_val:.4f} lift_z={lift_val:.4f}"

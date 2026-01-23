@@ -331,6 +331,51 @@ class RewardsCfg:
         },
         weight=10.0,
     )
+    staged_reach = RewTerm(
+        func=mdp.staged_reach_bimanual,
+        params={
+            "left_eef_link_name": "openarm_left_ee_tcp",
+            "right_eef_link_name": "openarm_right_ee_tcp",
+            "left_object_cfg": SceneEntityCfg("object"),
+            "right_object_cfg": SceneEntityCfg("object2"),
+            "reach_mult": 0.1,
+            "grasp_mult": 0.35,
+            "lift_mult": 0.5,
+            "lift_height": 0.1,
+            "minimal_height": 0.05,
+        },
+        weight=0.0,
+    )
+    staged_grasp = RewTerm(
+        func=mdp.staged_grasp_bimanual,
+        params={
+            "left_eef_link_name": "openarm_left_ee_tcp",
+            "right_eef_link_name": "openarm_right_ee_tcp",
+            "left_object_cfg": SceneEntityCfg("object"),
+            "right_object_cfg": SceneEntityCfg("object2"),
+            "reach_mult": 0.1,
+            "grasp_mult": 0.35,
+            "lift_mult": 0.5,
+            "lift_height": 0.1,
+            "minimal_height": 0.05,
+        },
+        weight=0.0,
+    )
+    staged_lift = RewTerm(
+        func=mdp.staged_lift_bimanual,
+        params={
+            "left_eef_link_name": "openarm_left_ee_tcp",
+            "right_eef_link_name": "openarm_right_ee_tcp",
+            "left_object_cfg": SceneEntityCfg("object"),
+            "right_object_cfg": SceneEntityCfg("object2"),
+            "reach_mult": 0.1,
+            "grasp_mult": 0.35,
+            "lift_mult": 0.5,
+            "lift_height": 0.1,
+            "minimal_height": 0.05,
+        },
+        weight=0.0,
+    )
     left_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
         weight=-0.2,

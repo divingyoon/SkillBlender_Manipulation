@@ -292,6 +292,87 @@ def staged_reward_bimanual(
     return torch.max(staged, dim=1).values
 
 
+def staged_reach_bimanual(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    reach_mult: float = 0.1,
+    grasp_mult: float = 0.35,
+    lift_mult: float = 0.5,
+    lift_height: float = 0.1,
+    minimal_height: float = 0.05,
+) -> torch.Tensor:
+    r_reach, _, _ = staged_rewards_bimanual(
+        env,
+        left_eef_link_name,
+        right_eef_link_name,
+        left_object_cfg,
+        right_object_cfg,
+        reach_mult=reach_mult,
+        grasp_mult=grasp_mult,
+        lift_mult=lift_mult,
+        lift_height=lift_height,
+        minimal_height=minimal_height,
+    )
+    return r_reach
+
+
+def staged_grasp_bimanual(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    reach_mult: float = 0.1,
+    grasp_mult: float = 0.35,
+    lift_mult: float = 0.5,
+    lift_height: float = 0.1,
+    minimal_height: float = 0.05,
+) -> torch.Tensor:
+    _, r_grasp, _ = staged_rewards_bimanual(
+        env,
+        left_eef_link_name,
+        right_eef_link_name,
+        left_object_cfg,
+        right_object_cfg,
+        reach_mult=reach_mult,
+        grasp_mult=grasp_mult,
+        lift_mult=lift_mult,
+        lift_height=lift_height,
+        minimal_height=minimal_height,
+    )
+    return r_grasp
+
+
+def staged_lift_bimanual(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    reach_mult: float = 0.1,
+    grasp_mult: float = 0.35,
+    lift_mult: float = 0.5,
+    lift_height: float = 0.1,
+    minimal_height: float = 0.05,
+) -> torch.Tensor:
+    _, _, r_lift = staged_rewards_bimanual(
+        env,
+        left_eef_link_name,
+        right_eef_link_name,
+        left_object_cfg,
+        right_object_cfg,
+        reach_mult=reach_mult,
+        grasp_mult=grasp_mult,
+        lift_mult=lift_mult,
+        lift_height=lift_height,
+        minimal_height=minimal_height,
+    )
+    return r_lift
+
+
 def hand_open_reward(
     env: ManagerBasedRLEnv,
     eef_link_name: str,

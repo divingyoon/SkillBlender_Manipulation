@@ -86,9 +86,9 @@ class CommandsCfg:
             pos_x=(0, 0),
             pos_y=(0.0, 0.0),
             pos_z=(0.05, 0.2),
-            roll=(-math.pi, math.pi),
-            pitch=(-math.pi, math.pi),
-            yaw=(-math.pi, math.pi),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
         ),
         debug_vis=False,
     )
@@ -107,9 +107,9 @@ class CommandsCfg:
             pos_x=(0, 0),
             pos_y=(0, -0),
             pos_z=(0.05, 0.2),
-            roll=(-math.pi, math.pi),
-            pitch=(-math.pi, math.pi),
-            yaw=(-math.pi, math.pi),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
         ),
         debug_vis=False,
     )
@@ -293,13 +293,13 @@ class RewardsCfg:
         weight=0.0,
     )
     left_reaching_object = RewTerm(
-        func=mdp.phase_tcp_z_to_cup_y_alignment,
-        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object"), "std": 0.1},
+        func=mdp.phase_reach_xy_reward,
+        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object"), "std": 0.05},
         weight=3.0,
     )
     right_reaching_object = RewTerm(
-        func=mdp.phase_tcp_z_to_cup_y_alignment,
-        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2"), "std": 0.1},
+        func=mdp.phase_reach_xy_reward,
+        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2"), "std": 0.05},
         weight=3.0,
     )
     left_wrong_cup_penalty = RewTerm(

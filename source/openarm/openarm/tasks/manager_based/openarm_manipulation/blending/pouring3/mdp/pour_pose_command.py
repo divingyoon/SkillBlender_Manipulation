@@ -212,8 +212,17 @@ class PhaseSwitchPoseCommand(CommandTerm):
             cmd_quat_w,
         )
 
+        # Keep current TCP orientation before switching to target to avoid sudden spins.
+        body_link_pose_w = self.robot.data.body_link_pose_w[:, self.body_idx]
+        cur_pos_b, cur_quat_b = subtract_frame_transforms(
+            self.robot.data.root_pos_w,
+            self.robot.data.root_quat_w,
+            body_link_pose_w[:, :3],
+            body_link_pose_w[:, 3:7],
+        )
+
         self.pose_command_b[:, :3] = torch.where(use_target.unsqueeze(1), cmd_pos_b, self.uniform_command_b[:, :3])
-        self.pose_command_b[:, 3:] = torch.where(use_target.unsqueeze(1), cmd_quat_b, self.uniform_command_b[:, 3:])
+        self.pose_command_b[:, 3:] = torch.where(use_target.unsqueeze(1), cmd_quat_b, cur_quat_b)
 
         if hasattr(self._env, "common_step_counter") and self._env.common_step_counter % 200 == 0:
             if not hasattr(self, "_last_log_step") or self._last_log_step != self._env.common_step_counter:

@@ -678,7 +678,7 @@ def _update_pour_hand_phase(
 
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
     align = tcp_x_axis_alignment(env, eef_link_name, object_cfg)
-    reach_ok = (dist < reach_distance) & (align > align_threshold)
+    reach_ok = dist < reach_distance
 
     close = _hand_closure_amount(env, eef_link_name)
     grasp_ok = (dist < grasp_distance) & (close > close_threshold)
@@ -728,6 +728,23 @@ def phase_reach_reward(
     """Phase-gated reach reward before grasp."""
     phase_min = _get_shared_phase(env)
     reward = eef_to_object_distance(env, std, eef_link_name, object_cfg)
+    return reward * (phase_min == 0)
+
+
+def phase_reach_xy_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Phase-gated XY reach reward before grasp."""
+    phase_min = _get_shared_phase(env)
+    object_pos = _get_object_pos_env(env, object_cfg)
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
+    d_xy = torch.norm(object_pos[:, :2] - eef_pos[:, :2], dim=1)
+    reward = 1.0 - torch.tanh(d_xy / std)
     return reward * (phase_min == 0)
 
 

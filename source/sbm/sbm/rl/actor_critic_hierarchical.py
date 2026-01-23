@@ -704,8 +704,12 @@ def _latest_checkpoint(run_dir: str) -> str:
     if not candidates:
         raise FileNotFoundError(f"No checkpoints found in {run_dir}")
 
+    # Prefer explicit best checkpoint when present.
+    if "model_best.pt" in candidates:
+        return os.path.join(run_dir, "model_best.pt")
+
     def sort_key(name: str):
-        match = re.search(r"model_(\\d+)\\.pt", name)
+        match = re.search(r"model_(\d+)\.pt", name)
         return int(match.group(1)) if match else -1
 
     latest = max(candidates, key=sort_key)

@@ -182,7 +182,7 @@ def tcp_z_axis_to_cup_y_alignment(
     tcp_z_axis = quat_apply(tcp_quat_w, z_axis.expand(tcp_quat_w.shape[0], 3))
     cup_y_axis = quat_apply(object_quat_w, y_axis.expand(object_quat_w.shape[0], 3))
     dot = torch.sum(tcp_z_axis * cup_y_axis, dim=1)
-    return torch.clamp(dot, min=0.0, max=1.0)
+    return torch.clamp(-dot, min=0.0, max=1.0)
 
 
 def phase_tcp_z_to_cup_y_alignment(
@@ -195,7 +195,7 @@ def phase_tcp_z_to_cup_y_alignment(
     phase_min = _get_shared_phase(env)
     align_reward = tcp_z_axis_to_cup_y_alignment(env, eef_link_name, object_cfg)
     dist_reward = eef_to_object_distance(env, std, eef_link_name, object_cfg)
-    reward = align_reward * dist_reward
+    reward = align_reward + dist_reward
     return reward * (phase_min == 0)
 
 

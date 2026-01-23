@@ -173,10 +173,10 @@ def grasp_reward(
     eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
     closure_amount = _hand_closure_amount(env, eef_link_name)
 
-    reach_radius = 0.05
-    dist_scale = 0.03
-    close_center = 0.6
-    close_scale = 0.2
+    reach_radius = 0.08
+    dist_scale = 0.05
+    close_center = 0.5
+    close_scale = 0.3
     dist_score = torch.sigmoid((reach_radius - eef_dist) / dist_scale)
     close_score = torch.sigmoid((closure_amount - close_center) / close_scale)
 

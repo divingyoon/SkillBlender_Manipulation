@@ -249,12 +249,12 @@ class RewardsCfg:
     left_reaching_object = RewTerm(
         func=grasp2g_mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=3.0,
+        weight=5.0,
     )
     right_reaching_object = RewTerm(
         func=grasp2g_mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=3.0,
+        weight=5.0,
     )
     left_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
@@ -434,18 +434,18 @@ class RewardsCfg:
         params={
             "command_name": "left_object_pose",
             "eef_link_name": "openarm_left_ee_tcp",
-            "std": 0.1,
+            "std": 0.08,
         },
-        weight=2.0,
+        weight=4.0,
     )
     right_command_tracking = RewTerm(
         func=mdp.tcp_to_command_distance_reward,
         params={
             "command_name": "right_object_pose",
             "eef_link_name": "openarm_right_ee_tcp",
-            "std": 0.1,
+            "std": 0.08,
         },
-        weight=2.0,
+        weight=4.0,
     )
 
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)

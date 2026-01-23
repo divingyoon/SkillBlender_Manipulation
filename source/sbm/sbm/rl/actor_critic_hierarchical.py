@@ -437,7 +437,8 @@ class ActorCriticHierarchicalDualHead(ActorCriticHierarchical):
 
     def _build_dual_head_actor(self):
         activation_fn = get_activation(self._actor_activation)
-        self.actor = nn.Identity()
+        # Keep a lightweight, parameter-free actor stub so exporters can query in_features.
+        self.actor = _ActorInFeaturesStub(self._actor_input_dim)
         left_cmd_dims = []
         right_cmd_dims = []
         for dim in self.skill_command_dims:
@@ -582,6 +583,22 @@ def _freeze_module(module: nn.Module):
     for param in module.parameters():
         param.requires_grad = False
     module.eval()
+
+
+class _ActorInFeaturesStub(nn.Module):
+    """Parameter-free stub that mimics actor[0].in_features for exporters."""
+
+    def __init__(self, in_features: int):
+        super().__init__()
+        self.in_features = int(in_features)
+
+    def __getitem__(self, idx: int):
+        if idx != 0:
+            raise IndexError("Actor stub only supports index 0.")
+        return self
+
+    def forward(self, x):
+        return x
 
 
 def _resolve_checkpoint_path(skill_cfg: dict) -> str:

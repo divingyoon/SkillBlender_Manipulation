@@ -177,7 +177,7 @@ def reset_robot_tcp_to_cups(
     if right_joint_names is None:
         right_joint_names = [f"openarm_right_joint{i}" for i in range(1, 8)]
     if mirror_signs is None:
-        # default mirror based on initial pose symmetry: right = sign * left (kept for logging/backward compat)
+        # default mirror based on initial pose symmetry: right = sign * left
         mirror_signs = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0]
 
     joint_names = robot.data.joint_names
@@ -297,15 +297,9 @@ def reset_robot_tcp_to_cups(
             left_joint_pos_des, torch.zeros_like(left_joint_pos_des), joint_ids=left_joint_ids, env_ids=env_ids_t
         )
 
-        # right arm IK (do not mirror from left)
-        right_cmd = torch.cat([right_des_pos_b, right_des_quat_b], dim=1)
-        ik.set_command(right_cmd, ee_pos=right_pos_b, ee_quat=right_quat_b)
-        right_joint_pos = robot.data.joint_pos[env_ids_t][:, right_joint_ids]
-        right_joint_pos_des = ik.compute(right_pos_b, right_quat_b, right_jac_b, right_joint_pos)
-        if max_delta is not None and max_delta > 0.0:
-            right_joint_pos_des = torch.clamp(
-                right_joint_pos_des, right_joint_pos - max_delta, right_joint_pos + max_delta
-            )
+        # right arm mirrored from left
+        mirror = torch.tensor(mirror_signs, device=env.device, dtype=left_joint_pos_des.dtype).unsqueeze(0)
+        right_joint_pos_des = left_joint_pos_des * mirror
         robot.write_joint_state_to_sim(
             right_joint_pos_des, torch.zeros_like(right_joint_pos_des), joint_ids=right_joint_ids, env_ids=env_ids_t
         )
@@ -356,12 +350,5 @@ def reset_robot_tcp_to_cups(
         lq = left_joint_pos_des[0].cpu().numpy()
         rq = right_joint_pos_des[0].cpu().numpy()
         _append_obs_log(f"[RESET_JOINTS] left={lq} right={rq} mirror_signs={list(mirror_signs)}")
-
-    # Refresh commands after cup + TCP reset to ensure targets are near the cups on step 0.
-    try:
-        env.command_manager.reset(env_ids_t)
-        env.command_manager.compute(0.0)
-    except Exception:
-        pass
 
     env._tcp_reset_done = True

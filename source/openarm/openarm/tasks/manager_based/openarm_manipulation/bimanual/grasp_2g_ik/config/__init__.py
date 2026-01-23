@@ -14,7 +14,7 @@
 
 import gymnasium as gym
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.config import agents as grasp2g_agents
+from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g_ik.config import agents as grasp2g_agents
 
 
 gym.register(

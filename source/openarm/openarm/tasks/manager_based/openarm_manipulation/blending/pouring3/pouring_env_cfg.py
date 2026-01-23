@@ -37,7 +37,7 @@ from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import m
 
 
 @configclass
-class Pouring1SceneCfg(InteractiveSceneCfg):
+class Pouring3SceneCfg(InteractiveSceneCfg):
     """Scene with a bimanual robot, table, and a cube for handover."""
 
     robot: ArticulationCfg = MISSING
@@ -155,7 +155,7 @@ class ObservationsCfg:
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "left_object_pose",
-                "use_command_pos": False,
+                "use_command_pos": True,
             },
         )
         object2_obs = ObsTerm(
@@ -164,7 +164,7 @@ class ObservationsCfg:
                 "left_eef_link_name": "openarm_left_ee_tcp",
                 "right_eef_link_name": "openarm_right_ee_tcp",
                 "command_name": "right_object_pose",
-                "use_command_pos": False,
+                "use_command_pos": True,
             },
         )
         actions = ObsTerm(func=mdp.last_action)
@@ -429,24 +429,6 @@ class RewardsCfg:
         },
         weight=5.0,
     )
-    left_command_tracking = RewTerm(
-        func=mdp.tcp_to_command_distance_reward,
-        params={
-            "command_name": "left_object_pose",
-            "eef_link_name": "openarm_left_ee_tcp",
-            "std": 0.1,
-        },
-        weight=2.0,
-    )
-    right_command_tracking = RewTerm(
-        func=mdp.tcp_to_command_distance_reward,
-        params={
-            "command_name": "right_object_pose",
-            "eef_link_name": "openarm_right_ee_tcp",
-            "std": 0.1,
-        },
-        weight=2.0,
-    )
 
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
     joint_vel = RewTerm(
@@ -509,10 +491,10 @@ class TerminationsCfg:
 
 
 @configclass
-class Pouring1BaseEnvCfg(ManagerBasedRLEnvCfg):
+class Pouring3BaseEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the bimanual pouring blending environment."""
 
-    scene: Pouring1SceneCfg = Pouring1SceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Pouring3SceneCfg = Pouring3SceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

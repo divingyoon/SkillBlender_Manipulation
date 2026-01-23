@@ -14,6 +14,16 @@ skills:
     init_noise_std: 1.0
     policy_kwargs: {}
 
+  openarm_bi_reach_ik:
+    experiment_name: "openarm_bi_reach_ik"
+    log_root: "log/rsl_rl/openarm_bi_reach_ik"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
   openarm_bi_approach:
     experiment_name: "openarm_bi_approach"
     load_run: "latest"
@@ -35,6 +45,16 @@ skills:
     init_noise_std: 1.0
     policy_kwargs: {}
 
+  openarm_bi_grasp_2g_ik:
+    experiment_name: "openarm_bi_grasp_2g_ik"
+    log_root: "log/rsl_rl/openarm_bi_grasp_2g_ik"
+    load_run: "latest"
+    checkpoint: "latest"
+    command_dim: 14
+    low_high: [-1.0, 1.0]
+    activation: "elu"
+    init_noise_std: 1.0
+    policy_kwargs: {}
   openarm_bi_pick_and_place:
     experiment_name: "openarm_bi_pick_and_place"
     load_run: "latest"

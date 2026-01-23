@@ -40,3 +40,4 @@ import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g_ik.con
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring1.config
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring2.config
+import openarm.tasks.manager_based.openarm_manipulation.blending.pouring3.config

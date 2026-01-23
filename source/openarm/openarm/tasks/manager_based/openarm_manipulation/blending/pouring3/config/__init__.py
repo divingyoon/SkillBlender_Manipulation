@@ -14,18 +14,18 @@
 
 import gymnasium as gym
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.reach_ik.config import agents as reach_agents
-
+from . import agents
 
 gym.register(
-    id="ReachIK-v0",
+    id="Pouring-v3",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
-        "env_cfg_entry_point": f"{__name__}.ik_rel_env_cfg:OpenArmReachIKEnvCfg",
-        "rl_games_cfg_entry_point": f"{reach_agents.__name__}:rl_games_ppo_cfg.yaml",
-        "rsl_rl_cfg_entry_point": f"{reach_agents.__name__}.rsl_rl_ppo_cfg:OpenArmReachPPORunnerCfg",
-        "rsl_rl_hier_cfg_entry_point": f"{reach_agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmReachHierarchicalPPORunnerCfg",
-        "skrl_cfg_entry_point": f"{reach_agents.__name__}:skrl_ppo_cfg.yaml",
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:Pouring3EnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Pouring3PPORunnerCfg",
+        "rsl_rl_ppo_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Pouring3PPORunnerCfg",
+        "rsl_rl_hier_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_hierarchical_cfg:Pouring3HierarchicalPPORunnerCfg"
+        ),
     },
 )

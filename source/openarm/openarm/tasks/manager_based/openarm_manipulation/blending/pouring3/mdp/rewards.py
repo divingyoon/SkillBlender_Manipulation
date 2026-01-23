@@ -20,7 +20,7 @@ import torch
 
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import quat_apply, combine_frame_transforms
+from isaaclab.utils.math import quat_apply
 from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
 
 if TYPE_CHECKING:
@@ -110,28 +110,6 @@ def eef_to_object_distance(
 ) -> torch.Tensor:
     distance = _object_eef_distance(env, eef_link_name, object_cfg)
     return 1 - torch.tanh(distance / std)
-
-
-def tcp_to_command_distance_reward(
-    env: ManagerBasedRLEnv,
-    command_name: str,
-    eef_link_name: str,
-    std: float = 0.1,
-) -> torch.Tensor:
-    """Reward for tracking the commanded TCP pose."""
-    robot = env.scene["robot"]
-    cmd = env.command_manager.get_command(command_name)
-    des_pos_b = cmd[:, :3]
-    des_quat_b = cmd[:, 3:7]
-    des_pos_w, _ = combine_frame_transforms(
-        robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
-    )
-
-    body_pos_w = robot.data.body_pos_w
-    eef_idx = robot.data.body_names.index(eef_link_name)
-    eef_pos_w = body_pos_w[:, eef_idx]
-    dist = torch.norm(des_pos_w - eef_pos_w, dim=1)
-    return 1 - torch.tanh(dist / std)
 
 
 def tcp_x_axis_alignment(

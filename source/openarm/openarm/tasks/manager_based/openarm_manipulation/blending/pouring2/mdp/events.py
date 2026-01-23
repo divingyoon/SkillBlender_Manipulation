@@ -29,7 +29,7 @@ import isaaclab.utils.math as math_utils
 _ROOT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../../../../../../../")
 )
-_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug.log")
+_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring2.log")
 
 
 def _append_obs_log(line: str) -> None:
@@ -154,6 +154,15 @@ def reset_robot_tcp_to_cups(
     """Reset robot joints so each TCP reaches a fixed offset in each cup frame."""
     robot = env.scene["robot"]
 
+    # Clear log once per run to keep reset diagnostics scoped to the current session.
+    if not getattr(env, "_obs_log_cleared", False):
+        try:
+            with open(_OBS_LOG_PATH, "w", encoding="utf-8") as f:
+                f.write("")
+        except OSError:
+            pass
+        env._obs_log_cleared = True
+
     # Only run once after environment startup (cups are fixed).
     if getattr(env, "_tcp_reset_done", False):
         return
@@ -168,7 +177,7 @@ def reset_robot_tcp_to_cups(
     if right_joint_names is None:
         right_joint_names = [f"openarm_right_joint{i}" for i in range(1, 8)]
     if mirror_signs is None:
-        # default mirror based on initial pose symmetry: right = sign * left
+        # default mirror based on initial pose symmetry: right = sign * left (kept for logging/backward compat)
         mirror_signs = [-1.0, -1.0, -1.0, 1.0, 1.0, 1.0, -1.0]
 
     joint_names = robot.data.joint_names
@@ -204,14 +213,13 @@ def reset_robot_tcp_to_cups(
     left_pos_b, left_quat_b = subtract_frame_transforms(root_pos_w, root_quat_w, left_pos_w, left_quat_w)
     right_pos_b, right_quat_b = subtract_frame_transforms(root_pos_w, root_quat_w, right_pos_w, right_quat_w)
 
-    # desired TCP orientations (world): tcp_x aligned with cup_z
-    left_cup_R = math_utils.matrix_from_quat(left_cup_quat_w)
-    right_cup_R = math_utils.matrix_from_quat(right_cup_quat_w)
-    left_x = left_cup_R[:, :, 2]  # cup z-axis
-    # Right arm TCP frame is mirrored; align its +x to the opposite of cup z.
-    right_x = -right_cup_R[:, :, 2]
-    left_z_seed = left_cup_R[:, :, 0]  # cup x-axis
-    right_z_seed = right_cup_R[:, :, 0]
+    # desired TCP orientations (world): align tcp_x with world z for a stable reset pose
+    world_z = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=left_cup_quat_w.dtype)
+    world_x = torch.tensor([1.0, 0.0, 0.0], device=env.device, dtype=left_cup_quat_w.dtype)
+    left_x = world_z.expand(env_ids_t.shape[0], 3)
+    right_x = world_z.expand(env_ids_t.shape[0], 3)
+    left_z_seed = world_x.expand(env_ids_t.shape[0], 3)
+    right_z_seed = world_x.expand(env_ids_t.shape[0], 3)
 
     def _orthonormal_from_xz(x_axis: torch.Tensor, z_seed: torch.Tensor) -> torch.Tensor:
         x = x_axis / torch.linalg.norm(x_axis, dim=-1, keepdim=True)
@@ -288,9 +296,15 @@ def reset_robot_tcp_to_cups(
             left_joint_pos_des, torch.zeros_like(left_joint_pos_des), joint_ids=left_joint_ids, env_ids=env_ids_t
         )
 
-        # right arm mirrored from left
-        mirror = torch.tensor(mirror_signs, device=env.device, dtype=left_joint_pos_des.dtype).unsqueeze(0)
-        right_joint_pos_des = left_joint_pos_des * mirror
+        # right arm IK (do not mirror from left)
+        right_cmd = torch.cat([right_des_pos_b, right_des_quat_b], dim=1)
+        ik.set_command(right_cmd, ee_pos=right_pos_b, ee_quat=right_quat_b)
+        right_joint_pos = robot.data.joint_pos[env_ids_t][:, right_joint_ids]
+        right_joint_pos_des = ik.compute(right_pos_b, right_quat_b, right_jac_b, right_joint_pos)
+        if max_delta is not None and max_delta > 0.0:
+            right_joint_pos_des = torch.clamp(
+                right_joint_pos_des, right_joint_pos - max_delta, right_joint_pos + max_delta
+            )
         robot.write_joint_state_to_sim(
             right_joint_pos_des, torch.zeros_like(right_joint_pos_des), joint_ids=right_joint_ids, env_ids=env_ids_t
         )
@@ -341,5 +355,12 @@ def reset_robot_tcp_to_cups(
         lq = left_joint_pos_des[0].cpu().numpy()
         rq = right_joint_pos_des[0].cpu().numpy()
         _append_obs_log(f"[RESET_JOINTS] left={lq} right={rq} mirror_signs={list(mirror_signs)}")
+
+    # Refresh commands after cup + TCP reset to ensure targets are near the cups on step 0.
+    try:
+        env.command_manager.reset(env_ids_t)
+        env.command_manager.compute(0.0)
+    except Exception:
+        pass
 
     env._tcp_reset_done = True

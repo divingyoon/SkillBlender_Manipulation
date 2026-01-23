@@ -22,12 +22,12 @@ from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
 import os
 
-from isaaclab.utils.math import quat_apply, subtract_frame_transforms, combine_frame_transforms
+from isaaclab.utils.math import quat_apply, subtract_frame_transforms, combine_frame_transforms, quat_inv
 
 _ROOT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../../../../../../../")
 )
-_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug.log")
+_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring1.log")
 
 
 def _append_obs_log(line: str) -> None:
@@ -49,11 +49,15 @@ def object_obs(
     use_command_pos: bool = True,
 ) -> torch.Tensor:
     """Object observations in env frame with relative vectors to both end effectors."""
-    body_pos_w = env.scene["robot"].data.body_pos_w
+    robot = env.scene["robot"]
+    body_pos_w = robot.data.body_pos_w
     left_eef_idx = env.scene["robot"].data.body_names.index(left_eef_link_name)
     right_eef_idx = env.scene["robot"].data.body_names.index(right_eef_link_name)
-    left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
-    right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
+    root_pos_w = robot.data.root_pos_w
+    root_quat_w = robot.data.root_quat_w
+    root_quat_inv = quat_inv(root_quat_w)
+    left_eef_pos_b, _ = subtract_frame_transforms(root_pos_w, root_quat_w, body_pos_w[:, left_eef_idx])
+    right_eef_pos_b, _ = subtract_frame_transforms(root_pos_w, root_quat_w, body_pos_w[:, right_eef_idx])
 
     # Always capture real object position in world frame for logging/debug.
     real_object_pos_w = env.scene["object"].data.root_pos_w
@@ -61,22 +65,23 @@ def object_obs(
         command = env.command_manager.get_command(command_name)
         des_pos_b = command[:, :3]
         des_quat_b = command[:, 3:7]
-        robot = env.scene["robot"]
-        des_pos_w, des_quat_w = combine_frame_transforms(
-            robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
-        )
-        object_pos = des_pos_w - env.scene.env_origins
-        object_quat = des_quat_w
+        object_pos = des_pos_b
+        object_quat = des_quat_b
         object_lin_vel = torch.zeros_like(object_pos)
         object_ang_vel = torch.zeros_like(object_pos)
     else:
-        object_pos = env.scene["object"].data.root_pos_w - env.scene.env_origins
-        object_quat = env.scene["object"].data.root_quat_w
-        object_lin_vel = env.scene["object"].data.root_lin_vel_w
-        object_ang_vel = env.scene["object"].data.root_ang_vel_w
+        object_pos_w = env.scene["object"].data.root_pos_w
+        object_quat_w = env.scene["object"].data.root_quat_w
+        object_pos, object_quat = subtract_frame_transforms(
+            root_pos_w, root_quat_w, object_pos_w, object_quat_w
+        )
+        object_lin_vel_w = env.scene["object"].data.root_lin_vel_w
+        object_ang_vel_w = env.scene["object"].data.root_ang_vel_w
+        object_lin_vel = quat_apply(root_quat_inv, object_lin_vel_w)
+        object_ang_vel = quat_apply(root_quat_inv, object_ang_vel_w)
 
-    left_eef_to_object = object_pos - left_eef_pos
-    right_eef_to_object = object_pos - right_eef_pos
+    left_eef_to_object = object_pos - left_eef_pos_b
+    right_eef_to_object = object_pos - right_eef_pos_b
     # mask cross-hand info to avoid symmetric policies
     right_eef_to_object = torch.zeros_like(right_eef_to_object)
     # add a left-hand token without changing dimension
@@ -132,11 +137,15 @@ def object2_obs(
     use_command_pos: bool = True,
 ) -> torch.Tensor:
     """Object2 observations in env frame with relative vectors to both end effectors."""
-    body_pos_w = env.scene["robot"].data.body_pos_w
+    robot = env.scene["robot"]
+    body_pos_w = robot.data.body_pos_w
     left_eef_idx = env.scene["robot"].data.body_names.index(left_eef_link_name)
     right_eef_idx = env.scene["robot"].data.body_names.index(right_eef_link_name)
-    left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
-    right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
+    root_pos_w = robot.data.root_pos_w
+    root_quat_w = robot.data.root_quat_w
+    root_quat_inv = quat_inv(root_quat_w)
+    left_eef_pos_b, _ = subtract_frame_transforms(root_pos_w, root_quat_w, body_pos_w[:, left_eef_idx])
+    right_eef_pos_b, _ = subtract_frame_transforms(root_pos_w, root_quat_w, body_pos_w[:, right_eef_idx])
 
     # Always capture real object2 position in world frame for logging/debug.
     real_object_pos_w = env.scene["object2"].data.root_pos_w
@@ -144,22 +153,23 @@ def object2_obs(
         command = env.command_manager.get_command(command_name)
         des_pos_b = command[:, :3]
         des_quat_b = command[:, 3:7]
-        robot = env.scene["robot"]
-        des_pos_w, des_quat_w = combine_frame_transforms(
-            robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b, des_quat_b
-        )
-        object_pos = des_pos_w - env.scene.env_origins
-        object_quat = des_quat_w
+        object_pos = des_pos_b
+        object_quat = des_quat_b
         object_lin_vel = torch.zeros_like(object_pos)
         object_ang_vel = torch.zeros_like(object_pos)
     else:
-        object_pos = env.scene["object2"].data.root_pos_w - env.scene.env_origins
-        object_quat = env.scene["object2"].data.root_quat_w
-        object_lin_vel = env.scene["object2"].data.root_lin_vel_w
-        object_ang_vel = env.scene["object2"].data.root_ang_vel_w
+        object_pos_w = env.scene["object2"].data.root_pos_w
+        object_quat_w = env.scene["object2"].data.root_quat_w
+        object_pos, object_quat = subtract_frame_transforms(
+            root_pos_w, root_quat_w, object_pos_w, object_quat_w
+        )
+        object_lin_vel_w = env.scene["object2"].data.root_lin_vel_w
+        object_ang_vel_w = env.scene["object2"].data.root_ang_vel_w
+        object_lin_vel = quat_apply(root_quat_inv, object_lin_vel_w)
+        object_ang_vel = quat_apply(root_quat_inv, object_ang_vel_w)
 
-    left_eef_to_object = object_pos - left_eef_pos
-    right_eef_to_object = object_pos - right_eef_pos
+    left_eef_to_object = object_pos - left_eef_pos_b
+    right_eef_to_object = object_pos - right_eef_pos_b
     # mask cross-hand info to avoid symmetric policies
     left_eef_to_object = torch.zeros_like(left_eef_to_object)
     # add a right-hand token without changing dimension

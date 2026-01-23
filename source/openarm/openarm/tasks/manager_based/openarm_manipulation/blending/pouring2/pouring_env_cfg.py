@@ -215,9 +215,9 @@ class EventCfg:
             "left_tcp_body_name": "openarm_left_ee_tcp",
             "right_tcp_body_name": "openarm_right_ee_tcp",
             "offset": (-0.1, 0.0, 0.05),
-            "ik_iters": 7,
+            "ik_iters": 20,
             "ik_lambda": 0.5,
-            "max_delta": 0.15,
+            "max_delta": 0.5,
         },
     )
     reset_bead_position = EventTerm(

@@ -29,3 +29,17 @@ gym.register(
         ),
     },
 )
+
+gym.register(
+    id="PouringRightOnly-v1",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:Pouring1EnvCfg_RIGHT_ONLY",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Pouring1PPORunnerCfg",
+        "rsl_rl_ppo_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:Pouring1PPORunnerCfg",
+        "rsl_rl_hier_cfg_entry_point": (
+            f"{agents.__name__}.rsl_rl_hierarchical_cfg:Pouring1HierarchicalPPORunnerCfg"
+        ),
+    },
+)

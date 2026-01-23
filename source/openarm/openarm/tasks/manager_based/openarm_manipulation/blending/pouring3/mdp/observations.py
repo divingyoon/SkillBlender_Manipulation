@@ -27,7 +27,7 @@ from isaaclab.utils.math import quat_apply, subtract_frame_transforms, combine_f
 _ROOT_DIR = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../../../../../../../../../")
 )
-_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring2.log")
+_OBS_LOG_PATH = os.path.join(_ROOT_DIR, "obs_debug_pouring3.log")
 
 
 def _append_obs_log(line: str) -> None:

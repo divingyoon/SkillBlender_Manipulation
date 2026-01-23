@@ -373,6 +373,158 @@ def staged_lift_bimanual(
     return r_lift
 
 
+def staged_pour_rewards(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Robosuite-style staged rewards for pouring: align -> tilt -> pour -> success."""
+    align_xy = cup_xy_alignment(env, source_name, target_name)
+    align_z = cup_z_alignment(env, source_name, target_name)
+    align = torch.minimum(align_xy, align_z)
+    r_align = 0.25 * align
+
+    tilt = cup_tilt_reward(env, source_name, target_name)
+    r_tilt = torch.where(
+        align > align_xy_threshold,
+        0.5 + pour_scale * tilt,
+        r_align,
+    )
+
+    bead_dist = bead_to_target_distance_reward(env, bead_name, target_name, std=0.1)
+    r_pour = torch.where(
+        (align > align_xy_threshold) & (tilt > tilt_threshold),
+        0.75 + pour_scale * bead_dist,
+        r_tilt,
+    )
+
+    bead_in = bead_in_target_reward(env, bead_name, target_name, radius=0.1)
+    r_success = torch.where(bead_in > 0.5, torch.ones_like(r_pour), r_pour)
+
+    return r_align, r_tilt, r_pour, r_success
+
+
+def staged_pour_reward(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> torch.Tensor:
+    r_align, r_tilt, r_pour, r_success = staged_pour_rewards(
+        env,
+        source_name,
+        target_name,
+        bead_name,
+        align_xy_threshold=align_xy_threshold,
+        align_z_threshold=align_z_threshold,
+        tilt_threshold=tilt_threshold,
+        pour_scale=pour_scale,
+    )
+    staged = torch.stack([r_align, r_tilt, r_pour, r_success], dim=1)
+    return torch.max(staged, dim=1).values
+
+
+def staged_pour_align(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> torch.Tensor:
+    r_align, _, _, _ = staged_pour_rewards(
+        env,
+        source_name,
+        target_name,
+        bead_name,
+        align_xy_threshold=align_xy_threshold,
+        align_z_threshold=align_z_threshold,
+        tilt_threshold=tilt_threshold,
+        pour_scale=pour_scale,
+    )
+    return r_align
+
+
+def staged_pour_tilt(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> torch.Tensor:
+    _, r_tilt, _, _ = staged_pour_rewards(
+        env,
+        source_name,
+        target_name,
+        bead_name,
+        align_xy_threshold=align_xy_threshold,
+        align_z_threshold=align_z_threshold,
+        tilt_threshold=tilt_threshold,
+        pour_scale=pour_scale,
+    )
+    return r_tilt
+
+
+def staged_pour_flow(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> torch.Tensor:
+    _, _, r_pour, _ = staged_pour_rewards(
+        env,
+        source_name,
+        target_name,
+        bead_name,
+        align_xy_threshold=align_xy_threshold,
+        align_z_threshold=align_z_threshold,
+        tilt_threshold=tilt_threshold,
+        pour_scale=pour_scale,
+    )
+    return r_pour
+
+
+def staged_pour_success(
+    env: ManagerBasedRLEnv,
+    source_name: str,
+    target_name: str,
+    bead_name: str,
+    align_xy_threshold: float = 0.7,
+    align_z_threshold: float = 0.7,
+    tilt_threshold: float = 0.6,
+    pour_scale: float = 0.25,
+) -> torch.Tensor:
+    _, _, _, r_success = staged_pour_rewards(
+        env,
+        source_name,
+        target_name,
+        bead_name,
+        align_xy_threshold=align_xy_threshold,
+        align_z_threshold=align_z_threshold,
+        tilt_threshold=tilt_threshold,
+        pour_scale=pour_scale,
+    )
+    return r_success
+
+
 def hand_open_reward(
     env: ManagerBasedRLEnv,
     eef_link_name: str,

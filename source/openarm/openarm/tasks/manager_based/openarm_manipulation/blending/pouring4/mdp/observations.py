@@ -250,15 +250,15 @@ def skill_bias_reach_grasp(env: ManagerBasedRLEnv) -> torch.Tensor:
         return torch.zeros((env.num_envs, 2), device=env.device, dtype=torch.float32)
     phase_min = torch.minimum(env.pour_phase_left, env.pour_phase_right)
     bias = torch.zeros((env.num_envs, 2), device=env.device, dtype=torch.float32)
-    # phase < 3: favor grasp2g, phase >= 3: favor reach
+    # phase 0: favor reach, phase >= 1: favor grasp2g
     bias[:, 0] = torch.where(
-        phase_min < 3,
-        torch.tensor(-2.0, device=env.device),
+        phase_min < 1,
         torch.tensor(2.0, device=env.device),
+        torch.tensor(-2.0, device=env.device),
     )
     bias[:, 1] = torch.where(
-        phase_min < 3,
-        torch.tensor(2.0, device=env.device),
+        phase_min < 1,
         torch.tensor(-2.0, device=env.device),
+        torch.tensor(2.0, device=env.device),
     )
     return bias

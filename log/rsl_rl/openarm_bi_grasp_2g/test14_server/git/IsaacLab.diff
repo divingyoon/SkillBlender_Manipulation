@@ -1,0 +1,363 @@
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   scripts/benchmarks/benchmark_non_rl.py
+	modified:   scripts/benchmarks/benchmark_rlgames.py
+	modified:   scripts/benchmarks/benchmark_rsl_rl.py
+	modified:   scripts/environments/export_IODescriptors.py
+	modified:   scripts/environments/list_envs.py
+	modified:   scripts/environments/random_agent.py
+	modified:   scripts/environments/state_machine/lift_cube_sm.py
+	modified:   scripts/environments/state_machine/lift_teddy_bear.py
+	modified:   scripts/environments/state_machine/open_cabinet_sm.py
+	modified:   scripts/environments/teleoperation/teleop_se3_agent.py
+	modified:   scripts/environments/zero_agent.py
+	modified:   scripts/imitation_learning/isaaclab_mimic/annotate_demos.py
+	modified:   scripts/imitation_learning/isaaclab_mimic/consolidated_demo.py
+	modified:   scripts/imitation_learning/isaaclab_mimic/generate_dataset.py
+	modified:   scripts/imitation_learning/robomimic/train.py
+	modified:   scripts/reinforcement_learning/rl_games/play.py
+	modified:   scripts/reinforcement_learning/rl_games/train.py
+	modified:   scripts/reinforcement_learning/rsl_rl/play.py
+	modified:   scripts/reinforcement_learning/rsl_rl/train.py
+	modified:   scripts/reinforcement_learning/sb3/play.py
+	modified:   scripts/reinforcement_learning/sb3/train.py
+	modified:   scripts/reinforcement_learning/skrl/play.py
+	modified:   scripts/reinforcement_learning/skrl/train.py
+	modified:   scripts/sim2sim_transfer/rsl_rl_transfer.py
+	modified:   scripts/tools/record_demos.py
+	modified:   scripts/tools/replay_demos.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/scripts/benchmarks/benchmark_non_rl.py b/scripts/benchmarks/benchmark_non_rl.py
+index b5c7d82879..dadf40e68a 100644
+--- a/scripts/benchmarks/benchmark_non_rl.py
++++ b/scripts/benchmarks/benchmark_non_rl.py
+@@ -86,6 +86,7 @@ from isaaclab.envs import DirectMARLEnvCfg, DirectRLEnvCfg, ManagerBasedRLEnvCfg
+ from isaaclab.utils.dict import print_dict
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+ imports_time_end = time.perf_counter_ns()
+diff --git a/scripts/benchmarks/benchmark_rlgames.py b/scripts/benchmarks/benchmark_rlgames.py
+index dca396ccab..7fdf23f068 100644
+--- a/scripts/benchmarks/benchmark_rlgames.py
++++ b/scripts/benchmarks/benchmark_rlgames.py
+@@ -80,6 +80,7 @@ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+ imports_time_end = time.perf_counter_ns()
+diff --git a/scripts/benchmarks/benchmark_rsl_rl.py b/scripts/benchmarks/benchmark_rsl_rl.py
+index 0f410f4096..c5a7a7e85c 100644
+--- a/scripts/benchmarks/benchmark_rsl_rl.py
++++ b/scripts/benchmarks/benchmark_rsl_rl.py
+@@ -80,6 +80,7 @@ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlVecEnvWrapper
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+diff --git a/scripts/environments/export_IODescriptors.py b/scripts/environments/export_IODescriptors.py
+index 3f515a166f..f2e20aa914 100644
+--- a/scripts/environments/export_IODescriptors.py
++++ b/scripts/environments/export_IODescriptors.py
+@@ -32,6 +32,7 @@ import gymnasium as gym
+ import torch
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import parse_env_cfg
+ 
+ # PLACEHOLDER: Extension template (do not remove this comment)
+diff --git a/scripts/environments/list_envs.py b/scripts/environments/list_envs.py
+index 0beb83e921..abb0109e4f 100644
+--- a/scripts/environments/list_envs.py
++++ b/scripts/environments/list_envs.py
+@@ -36,6 +36,7 @@ import gymnasium as gym
+ from prettytable import PrettyTable
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ 
+ 
+ def main():
+diff --git a/scripts/environments/random_agent.py b/scripts/environments/random_agent.py
+index 6a40060d64..6607279a4c 100644
+--- a/scripts/environments/random_agent.py
++++ b/scripts/environments/random_agent.py
+@@ -33,6 +33,7 @@ import gymnasium as gym
+ import torch
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import parse_env_cfg
+ 
+ # PLACEHOLDER: Extension template (do not remove this comment)
+diff --git a/scripts/environments/state_machine/lift_cube_sm.py b/scripts/environments/state_machine/lift_cube_sm.py
+index 21338f74ed..0f85aaeda1 100644
+--- a/scripts/environments/state_machine/lift_cube_sm.py
++++ b/scripts/environments/state_machine/lift_cube_sm.py
+@@ -46,6 +46,7 @@ from collections.abc import Sequence
+ from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+diff --git a/scripts/environments/state_machine/lift_teddy_bear.py b/scripts/environments/state_machine/lift_teddy_bear.py
+index ad4e560fa6..d2d96e7f0f 100644
+--- a/scripts/environments/state_machine/lift_teddy_bear.py
++++ b/scripts/environments/state_machine/lift_teddy_bear.py
+@@ -48,6 +48,7 @@ from collections.abc import Sequence
+ from isaaclab.assets.rigid_object.rigid_object_data import RigidObjectData
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.manager_based.manipulation.lift.lift_env_cfg import LiftEnvCfg
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+diff --git a/scripts/environments/state_machine/open_cabinet_sm.py b/scripts/environments/state_machine/open_cabinet_sm.py
+index 94c8d4d832..565175b4b3 100644
+--- a/scripts/environments/state_machine/open_cabinet_sm.py
++++ b/scripts/environments/state_machine/open_cabinet_sm.py
+@@ -46,6 +46,7 @@ from collections.abc import Sequence
+ from isaaclab.sensors import FrameTransformer
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.manager_based.manipulation.cabinet.cabinet_env_cfg import CabinetEnvCfg
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+diff --git a/scripts/environments/teleoperation/teleop_se3_agent.py b/scripts/environments/teleoperation/teleop_se3_agent.py
+index 2aead85066..ae7e2c4f38 100644
+--- a/scripts/environments/teleoperation/teleop_se3_agent.py
++++ b/scripts/environments/teleoperation/teleop_se3_agent.py
+@@ -69,6 +69,7 @@ from isaaclab.devices.teleop_device_factory import create_teleop_device
+ from isaaclab.managers import TerminationTermCfg as DoneTerm
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.manager_based.manipulation.lift import mdp
+ from isaaclab_tasks.utils import parse_env_cfg
+ 
+diff --git a/scripts/environments/zero_agent.py b/scripts/environments/zero_agent.py
+index edd9317a62..16b2ab233f 100644
+--- a/scripts/environments/zero_agent.py
++++ b/scripts/environments/zero_agent.py
+@@ -33,6 +33,7 @@ import gymnasium as gym
+ import torch
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import parse_env_cfg
+ 
+ # PLACEHOLDER: Extension template (do not remove this comment)
+diff --git a/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py b/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py
+index a3b08d937e..be8e37cabc 100644
+--- a/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py
++++ b/scripts/imitation_learning/isaaclab_mimic/annotate_demos.py
+@@ -78,6 +78,7 @@ from isaaclab.utils import configclass
+ from isaaclab.utils.datasets import EpisodeData, HDF5DatasetFileHandler
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+ is_paused = False
+diff --git a/scripts/imitation_learning/isaaclab_mimic/consolidated_demo.py b/scripts/imitation_learning/isaaclab_mimic/consolidated_demo.py
+index bb7dc524b5..c7162482c6 100644
+--- a/scripts/imitation_learning/isaaclab_mimic/consolidated_demo.py
++++ b/scripts/imitation_learning/isaaclab_mimic/consolidated_demo.py
+@@ -92,6 +92,7 @@ from isaaclab_mimic.datagen.data_generator import DataGenerator
+ from isaaclab_mimic.datagen.datagen_info_pool import DataGenInfoPool
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+ # global variable to keep track of the data generation statistics
+diff --git a/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py b/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py
+index 3f83fa171e..d5bb4ec6d7 100644
+--- a/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py
++++ b/scripts/imitation_learning/isaaclab_mimic/generate_dataset.py
+@@ -80,6 +80,7 @@ from isaaclab_mimic.datagen.generation import env_loop, setup_async_generation,
+ from isaaclab_mimic.datagen.utils import get_env_name_from_dataset, setup_output_paths
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ 
+ # import logger
+ logger = logging.getLogger(__name__)
+diff --git a/scripts/imitation_learning/robomimic/train.py b/scripts/imitation_learning/robomimic/train.py
+index 18cb0b04ca..1f0937e2f6 100644
+--- a/scripts/imitation_learning/robomimic/train.py
++++ b/scripts/imitation_learning/robomimic/train.py
+@@ -85,6 +85,7 @@ from robomimic.utils.log_utils import DataLogger, PrintLogger
+ 
+ # Isaac Lab imports (needed so that environment is registered)
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ import isaaclab_tasks.manager_based.locomanipulation.pick_place  # noqa: F401
+ import isaaclab_tasks.manager_based.manipulation.pick_place  # noqa: F401
+ 
+diff --git a/scripts/reinforcement_learning/rl_games/play.py b/scripts/reinforcement_learning/rl_games/play.py
+index 05b71094af..dd405e6eee 100644
+--- a/scripts/reinforcement_learning/rl_games/play.py
++++ b/scripts/reinforcement_learning/rl_games/play.py
+@@ -79,6 +79,7 @@ from isaaclab_rl.rl_games import RlGamesGpuEnv, RlGamesVecEnvWrapper
+ from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+diff --git a/scripts/reinforcement_learning/rl_games/train.py b/scripts/reinforcement_learning/rl_games/train.py
+index c3d2bec31b..e87c873e22 100644
+--- a/scripts/reinforcement_learning/rl_games/train.py
++++ b/scripts/reinforcement_learning/rl_games/train.py
+@@ -88,6 +88,7 @@ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.rl_games import MultiObserver, PbtAlgoObserver, RlGamesGpuEnv, RlGamesVecEnvWrapper
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+ # import logger
+diff --git a/scripts/reinforcement_learning/rsl_rl/play.py b/scripts/reinforcement_learning/rsl_rl/play.py
+index ef9d1e9c49..1ee63f7663 100644
+--- a/scripts/reinforcement_learning/rsl_rl/play.py
++++ b/scripts/reinforcement_learning/rsl_rl/play.py
+@@ -74,6 +74,7 @@ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_po
+ from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+diff --git a/scripts/reinforcement_learning/rsl_rl/train.py b/scripts/reinforcement_learning/rsl_rl/train.py
+index a8a2a05f1b..655c30554c 100644
+--- a/scripts/reinforcement_learning/rsl_rl/train.py
++++ b/scripts/reinforcement_learning/rsl_rl/train.py
+@@ -9,6 +9,12 @@
+ 
+ import argparse
+ import sys
++from pathlib import Path
++
++ROOT_DIR = Path(__file__).resolve().parents[3]
++SKILLBLENDER_MANIPULATION_ROOT = ROOT_DIR.parent / "SkillBlender_Manipulation"
++if SKILLBLENDER_MANIPULATION_ROOT.exists():
++    sys.path.insert(0, str(SKILLBLENDER_MANIPULATION_ROOT))
+ 
+ from isaaclab.app import AppLauncher
+ 
+@@ -98,6 +104,7 @@ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper
+ import isaaclab_tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
++import openarm.tasks  # noqa: F401
+ 
+ # import logger
+ logger = logging.getLogger(__name__)
+diff --git a/scripts/reinforcement_learning/sb3/play.py b/scripts/reinforcement_learning/sb3/play.py
+index 0558d3d656..0edaba025e 100644
+--- a/scripts/reinforcement_learning/sb3/play.py
++++ b/scripts/reinforcement_learning/sb3/play.py
+@@ -83,6 +83,7 @@ from isaaclab_rl.sb3 import Sb3VecEnvWrapper, process_sb3_cfg
+ from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ from isaaclab_tasks.utils.parse_cfg import get_checkpoint_path
+ 
+diff --git a/scripts/reinforcement_learning/sb3/train.py b/scripts/reinforcement_learning/sb3/train.py
+index f8f1c82178..37254fb1d7 100644
+--- a/scripts/reinforcement_learning/sb3/train.py
++++ b/scripts/reinforcement_learning/sb3/train.py
+@@ -100,6 +100,7 @@ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.sb3 import Sb3VecEnvWrapper, process_sb3_cfg
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+ # import logger
+diff --git a/scripts/reinforcement_learning/skrl/play.py b/scripts/reinforcement_learning/skrl/play.py
+index 610b3e1616..bd69ab11d0 100644
+--- a/scripts/reinforcement_learning/skrl/play.py
++++ b/scripts/reinforcement_learning/skrl/play.py
+@@ -110,6 +110,7 @@ from isaaclab_rl.skrl import SkrlVecEnvWrapper
+ from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+diff --git a/scripts/reinforcement_learning/skrl/train.py b/scripts/reinforcement_learning/skrl/train.py
+index de81a3c8f9..f74305fe12 100644
+--- a/scripts/reinforcement_learning/skrl/train.py
++++ b/scripts/reinforcement_learning/skrl/train.py
+@@ -112,6 +112,7 @@ from isaaclab.utils.io import dump_yaml
+ from isaaclab_rl.skrl import SkrlVecEnvWrapper
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+ # import logger
+diff --git a/scripts/sim2sim_transfer/rsl_rl_transfer.py b/scripts/sim2sim_transfer/rsl_rl_transfer.py
+index 9cb0e55681..42a9cc758c 100644
+--- a/scripts/sim2sim_transfer/rsl_rl_transfer.py
++++ b/scripts/sim2sim_transfer/rsl_rl_transfer.py
+@@ -78,6 +78,7 @@ from isaaclab.utils.dict import print_dict
+ from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils import get_checkpoint_path
+ from isaaclab_tasks.utils.hydra import hydra_task_config
+ 
+diff --git a/scripts/tools/record_demos.py b/scripts/tools/record_demos.py
+index 818eddbbad..b20d0d2936 100644
+--- a/scripts/tools/record_demos.py
++++ b/scripts/tools/record_demos.py
+@@ -116,6 +116,7 @@ from isaaclab.envs.ui import EmptyWindow
+ from isaaclab.managers import DatasetExportMode
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+ # import logger
+diff --git a/scripts/tools/replay_demos.py b/scripts/tools/replay_demos.py
+index 680d75deea..ef96d856a0 100644
+--- a/scripts/tools/replay_demos.py
++++ b/scripts/tools/replay_demos.py
+@@ -75,6 +75,7 @@ if args_cli.enable_pinocchio:
+     import isaaclab_tasks.manager_based.locomanipulation.pick_place  # noqa: F401
+ 
+ import isaaclab_tasks  # noqa: F401
++import openarm.tasks  # noqa: F401
+ from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
+ 
+ is_paused = False

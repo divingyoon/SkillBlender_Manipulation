@@ -1,5 +1,4 @@
 env_setup/reachability/output/
-log/
 __pycache__/
 *.pyc
 obs_debug.log/
@@ -7,3 +6,18 @@ obs_debug_pouring1.log/
 obs_debug_pouring2.log/
 obs_debug_pouring3.log
 **/__pycache__/
+
+# Ignore all contents of the log directory by default
+log/*
+
+# But, do not ignore the rsl_rl directory itself
+!log/rsl_rl/
+
+# Now, ignore the contents of the rsl_rl directory
+log/rsl_rl/*
+
+# Finally, un-ignore the specific directories you want to track
+!log/rsl_rl/openarm_bi_grasp_2g/
+!log/rsl_rl/openarm_bi_grasp_2g_ik/
+!log/rsl_rl/openarm_bi_reach/
+!log/rsl_rl/openarm_bi_reach_ik/

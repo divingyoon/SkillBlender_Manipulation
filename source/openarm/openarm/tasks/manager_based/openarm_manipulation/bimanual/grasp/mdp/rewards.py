@@ -139,3 +139,190 @@ def object_stability_reward(
     speed = torch.norm(lin_vel, dim=1)
     reward = torch.exp(-speed / std)
     return reward * lifted.to(torch.float)
+
+
+# =============================================================================
+# Bimanual Grasp Rewards (for two-object manipulation)
+# =============================================================================
+
+def bimanual_lift_reward(
+    env: ManagerBasedRLEnv,
+    lift_threshold: float = 0.1,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+) -> torch.Tensor:
+    """Reward for lifting both objects above threshold height.
+
+    Success = both cups lifted above initial_height + lift_threshold
+    """
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+
+    left_height = left_obj.data.root_pos_w[:, 2]
+    right_height = right_obj.data.root_pos_w[:, 2]
+
+    # Get initial heights from default state
+    left_init_height = left_obj.data.default_root_state[:, 2].mean()
+    right_init_height = right_obj.data.default_root_state[:, 2].mean()
+
+    left_lifted = left_height > (left_init_height + lift_threshold)
+    right_lifted = right_height > (right_init_height + lift_threshold)
+
+    # Both must be lifted for reward
+    both_lifted = left_lifted & right_lifted
+
+    return both_lifted.float()
+
+
+def continuous_hold_reward(
+    env: ManagerBasedRLEnv,
+    lift_threshold: float = 0.1,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+) -> torch.Tensor:
+    """Reward for continuously holding both objects above threshold.
+
+    This encourages the policy to maintain grasp after lifting.
+    """
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+
+    left_height = left_obj.data.root_pos_w[:, 2]
+    right_height = right_obj.data.root_pos_w[:, 2]
+
+    left_init_height = left_obj.data.default_root_state[:, 2].mean()
+    right_init_height = right_obj.data.default_root_state[:, 2].mean()
+
+    left_held = left_height > (left_init_height + lift_threshold)
+    right_held = right_height > (right_init_height + lift_threshold)
+
+    # Reward for each object being held
+    reward = left_held.float() * 0.5 + right_held.float() * 0.5
+
+    return reward
+
+
+def drop_penalty(
+    env: ManagerBasedRLEnv,
+    drop_threshold: float = 0.05,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+) -> torch.Tensor:
+    """Penalty for dropping objects after having lifted them.
+
+    Tracks max height reached and penalizes if current height drops significantly.
+    """
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+
+    left_height = left_obj.data.root_pos_w[:, 2]
+    right_height = right_obj.data.root_pos_w[:, 2]
+
+    # Initialize max height tracking
+    if not hasattr(env, "_max_left_height"):
+        env._max_left_height = left_height.clone()
+        env._max_right_height = right_height.clone()
+
+    # Update max heights
+    env._max_left_height = torch.maximum(env._max_left_height, left_height)
+    env._max_right_height = torch.maximum(env._max_right_height, right_height)
+
+    # Check for drops
+    left_drop = env._max_left_height - left_height
+    right_drop = env._max_right_height - right_height
+
+    left_dropped = left_drop > drop_threshold
+    right_dropped = right_drop > drop_threshold
+
+    # Penalty if either object dropped
+    dropped = left_dropped | right_dropped
+
+    return dropped.float()
+
+
+def reset_height_tracking(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+) -> None:
+    """Reset height tracking for specified environments.
+
+    Call this in the reset event.
+    """
+    if not hasattr(env, "_max_left_height"):
+        return
+
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+
+    env._max_left_height[env_ids] = left_obj.data.root_pos_w[env_ids, 2]
+    env._max_right_height[env_ids] = right_obj.data.root_pos_w[env_ids, 2]
+
+
+def bimanual_grasp_success(
+    env: ManagerBasedRLEnv,
+    lift_threshold: float = 0.1,
+    contact_threshold: float = 1.0,
+    left_eef_link_name: str = "openarm_left_eef_link",
+    right_eef_link_name: str = "openarm_right_eef_link",
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("contact_grasp"),
+) -> torch.Tensor:
+    """Reward for successful bimanual grasp.
+
+    Success criteria:
+    1. Both objects lifted above threshold
+    2. Both hands in contact with their respective objects
+    """
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+
+    left_height = left_obj.data.root_pos_w[:, 2]
+    right_height = right_obj.data.root_pos_w[:, 2]
+
+    left_init_height = left_obj.data.default_root_state[:, 2].mean()
+    right_init_height = right_obj.data.default_root_state[:, 2].mean()
+
+    left_lifted = left_height > (left_init_height + lift_threshold)
+    right_lifted = right_height > (right_init_height + lift_threshold)
+
+    both_lifted = left_lifted & right_lifted
+
+    return both_lifted.float()
+
+
+def bimanual_reaching_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.15,
+    left_eef_link_name: str = "openarm_left_eef_link",
+    right_eef_link_name: str = "openarm_right_eef_link",
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+) -> torch.Tensor:
+    """Reward for both end-effectors approaching their target objects."""
+    left_obj = env.scene[left_object_cfg.name]
+    right_obj = env.scene[right_object_cfg.name]
+    robot = env.scene["robot"]
+
+    # Get object positions (local frame)
+    left_obj_pos = left_obj.data.root_pos_w - env.scene.env_origins
+    right_obj_pos = right_obj.data.root_pos_w - env.scene.env_origins
+
+    # Get EEF positions
+    left_eef_idx = robot.data.body_names.index(left_eef_link_name)
+    right_eef_idx = robot.data.body_names.index(right_eef_link_name)
+
+    left_eef_pos = robot.data.body_pos_w[:, left_eef_idx] - env.scene.env_origins
+    right_eef_pos = robot.data.body_pos_w[:, right_eef_idx] - env.scene.env_origins
+
+    # Calculate distances
+    left_dist = torch.norm(left_obj_pos - left_eef_pos, dim=1)
+    right_dist = torch.norm(right_obj_pos - right_eef_pos, dim=1)
+
+    # Tanh reward
+    left_reward = 1 - torch.tanh(left_dist / std)
+    right_reward = 1 - torch.tanh(right_dist / std)
+
+    return (left_reward + right_reward) / 2

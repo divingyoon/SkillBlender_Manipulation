@@ -264,8 +264,9 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         agent_cfg.seed = seed
 
     # specify directory for logging experiments
+    task_name = args_cli.task.split("-")[0]
     sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", "reach")
+    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", task_name)
     log_root_path = os.path.abspath(log_root_path)
     os.makedirs(log_root_path, exist_ok=True)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
@@ -332,7 +333,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env = RslRlVecEnvWrapper(
         env,
         clip_actions=agent_cfg.clip_actions,
-        swap_lr=args_cli.swap_lr,
         swap_prob=args_cli.swap_lr_prob,
     )
 

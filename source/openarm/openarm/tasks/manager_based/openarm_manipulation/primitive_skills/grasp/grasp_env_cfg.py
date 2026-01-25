@@ -144,9 +144,10 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
+    # 1. Reset scene to default state first (same as reach task)
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    # Reset cups to fixed positions (same as reach task)
+    # 2. Reset cup positions (SAME as reach task)
     reset_cup_position = EventTerm(
         func=mdp.reset_root_state_uniform,
         mode="reset",
@@ -172,6 +173,17 @@ class EventCfg:
         },
     )
 
+    # 3. Roll-out reset: Set robot joints from reach terminal states
+    reset_joints_from_reach = EventTerm(
+        func=mdp.reset_from_reach_terminal_states,
+        mode="reset",
+        params={
+            "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
+            "left_gripper_joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+            "right_gripper_joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
+            "gripper_open_position": 0.04,
+        },
+    )
 
 @configclass
 class RewardsCfg:
@@ -183,92 +195,48 @@ class RewardsCfg:
     3. Lift confirmation: Small lift to verify stable grasp
     """
 
-    # Fine positioning reward (sharp exponential for precise positioning)
-    left_tcp_to_cup = RewTerm(
-        func=mdp.tcp_distance_to_cup,
-        params={
-            "tcp_body_name": "openarm_left_ee_tcp",
-            "target_cfg": SceneEntityCfg("cup"),
-            "offset": [0.0, 0.0, 0.0],  # Target cup center
-        },
-        weight=1.0,
-    )
-    right_tcp_to_cup2 = RewTerm(
-        func=mdp.tcp_distance_to_cup,
-        params={
-            "tcp_body_name": "openarm_right_ee_tcp",
-            "target_cfg": SceneEntityCfg("cup2"),
-            "offset": [0.0, 0.0, 0.0],
-        },
-        weight=1.0,
-    )
-
-    # Grasp reward (close gripper when near object)
-    left_grasp = RewTerm(
-        func=mdp.grasp_reward,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("cup"),
-            "reach_radius": 0.03,
-            "close_threshold": 0.5,
-        },
-        weight=2.0,
-    )
-    right_grasp = RewTerm(
-        func=mdp.grasp_reward,
-        params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "reach_radius": 0.03,
-            "close_threshold": 0.5,
-        },
-        weight=2.0,
-    )
-
-    # Stable grasp reward (lifted while grasping)
-    left_stable_grasp = RewTerm(
-        func=mdp.stable_grasp_reward,
-        params={
-            "eef_link_name": "openarm_left_ee_tcp",
-            "object_cfg": SceneEntityCfg("cup"),
-            "lift_height": 0.03,
-            "grasp_distance": 0.03,
-            "close_threshold": 0.5,
-        },
+    # Lift success reward - based on new grasp_success_with_hold function
+    lift_success = RewTerm(
+        func=mdp.grasp_success_with_hold,
         weight=5.0,
-    )
-    right_stable_grasp = RewTerm(
-        func=mdp.stable_grasp_reward,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "lift_height": 0.03,
-            "grasp_distance": 0.03,
-            "close_threshold": 0.5,
-        },
-        weight=5.0,
+            "lift_threshold": 0.1,
+            "eef_link_name_left": "openarm_left_ee_tcp",
+            "eef_link_name_right": "openarm_right_ee_tcp",
+            "object_cfg_left": SceneEntityCfg("cup"),
+            "object_cfg_right": SceneEntityCfg("cup2"),
+            "contact_distance": 0.02,
+            "min_closure": 0.7,
+        }
     )
 
-    # Lift progress reward
-    left_lift = RewTerm(
-        func=mdp.lift_reward,
+    # Continuous hold reward
+    hold_reward = RewTerm(
+        func=mdp.continuous_hold_reward,
+        weight=0.5,
         params={
-            "object_cfg": SceneEntityCfg("cup"),
-            "lift_height": 0.05,
-            "table_height": 0.0,
-        },
-        weight=1.0,
-    )
-    right_lift = RewTerm(
-        func=mdp.lift_reward,
-        params={
-            "object_cfg": SceneEntityCfg("cup2"),
-            "lift_height": 0.05,
-            "table_height": 0.0,
-        },
-        weight=1.0,
+            "lift_threshold": 0.1,
+            "eef_link_name_left": "openarm_left_ee_tcp",
+            "eef_link_name_right": "openarm_right_ee_tcp",
+            "object_cfg_left": SceneEntityCfg("cup"),
+            "object_cfg_right": SceneEntityCfg("cup2"),
+            "contact_distance": 0.02,
+            "min_closure": 0.7,
+        }
     )
 
+    # Drop penalty
+    drop_penalty_term = RewTerm(
+        func=mdp.drop_penalty,
+        weight=1.0,
+        params={
+            "penalty_scale": -10.0,
+            "height_drop_threshold": 0.05,
+            "object_cfg_left": SceneEntityCfg("cup"),
+            "object_cfg_right": SceneEntityCfg("cup2"),
+        }
+    )
+    
     # Regularization
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
@@ -309,6 +277,10 @@ class GraspEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
     curriculum = None
 
+    # Roll-out setting from markdown - using the simplified approach
+    use_rollout_reset: bool = True
+    reach_checkpoint_path: str = "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_reach/test7_5080/model_9999.pt"
+
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 8.0
@@ -325,6 +297,5 @@ class GraspEnvCfg(ManagerBasedRLEnvCfg):
             friction_correlation_distance=0.00625,
             gpu_max_rigid_contact_count=2**23,
             gpu_max_rigid_patch_count=2**23,
-            gpu_max_num_partitions=8,
             gpu_collision_stack_size=1000000000,
         )

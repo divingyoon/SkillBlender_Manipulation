@@ -67,7 +67,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                     "openarm_left_joint2": -0.42612678,
                     "openarm_left_joint3": 0.32234982,
                     "openarm_left_joint4": 0.43979153,
-                    "openarm_left_joint5": -0.46879697,
+                    "openarm_left_joint5": 0.0,
                     "openarm_left_joint6": -0.25350952,
                     "openarm_left_joint7": -0.827409,
                     # Pre-grasp pose for right arm (mirrored)
@@ -75,7 +75,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                     "openarm_right_joint2": 0.42612678,
                     "openarm_right_joint3": -0.32234982,
                     "openarm_right_joint4": 0.43979153,
-                    "openarm_right_joint5": 0.46879697,
+                    "openarm_right_joint5": 0.0,
                     "openarm_right_joint6": -0.25350952,
                     "openarm_right_joint7": 0.827409,
                     # Grippers fully open

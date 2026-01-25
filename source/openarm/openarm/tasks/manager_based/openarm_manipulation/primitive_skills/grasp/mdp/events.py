@@ -23,7 +23,7 @@ Key concept: Teacher-forcing reset
 
 from __future__ import annotations
 
-from typing import Sequence
+from typing import Sequence, TYPE_CHECKING
 
 import torch
 
@@ -36,6 +36,9 @@ from isaaclab.utils.math import (
     sample_uniform,
     quat_inv,
 )
+
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedRLEnv
 
 
 def reset_cup_with_randomization(
@@ -186,3 +189,75 @@ def reset_robot_to_pregrasp_ik(
     default_joint_pos = robot.data.default_joint_pos[env_ids].clone()
     default_joint_vel = robot.data.default_joint_vel[env_ids].clone()
     robot.write_joint_state_to_sim(default_joint_pos, default_joint_vel, env_ids=env_ids)
+
+
+def reset_from_reach_terminal_states(
+    env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
+    terminal_states_path: str = "reach_terminal_states.pt",
+    left_gripper_joint_names: list[str] = ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+    right_gripper_joint_names: list[str] = ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
+    gripper_open_position: float = 0.04,
+):
+    """
+    Reset robot joints from pre-recorded terminal states of a successful reach policy.
+
+    NOTE: This only resets JOINT POSITIONS. Cup positions should be reset separately
+    using the same events as the reach task.
+
+    Args:
+        env: The environment instance.
+        env_ids: Tensor of environment IDs to reset.
+        terminal_states_path: Path to the .pt file containing saved terminal states.
+        left_gripper_joint_names: Names of the left gripper joints.
+        right_gripper_joint_names: Names of the right gripper joints.
+        gripper_open_position: The position to set gripper joints to (open).
+    """
+    if len(env_ids) == 0:
+        return
+
+    # Load saved terminal states
+    if not hasattr(env, "_reach_terminal_states_buffer"):
+        try:
+            env._reach_terminal_states_buffer = torch.load(terminal_states_path, map_location=env.device)
+            # Transfer all states to the correct device
+            for key, value in env._reach_terminal_states_buffer.items():
+                env._reach_terminal_states_buffer[key] = value.to(env.device)
+            print(f"[INFO] Loaded {env._reach_terminal_states_buffer['joint_pos'].shape[0]} reach terminal states")
+        except FileNotFoundError:
+            print(f"Warning: Reach terminal states file not found at {terminal_states_path}. "
+                  "Roll-out reset will not function correctly.")
+            env._reach_terminal_states_buffer = None
+            return
+
+    if env._reach_terminal_states_buffer is None:
+        return
+
+    terminal_states = env._reach_terminal_states_buffer
+
+    # Handle cases where there might not be enough stored states for all envs.
+    num_available_states = terminal_states["joint_pos"].shape[0]
+    if num_available_states == 0:
+        print("Warning: No reach terminal states available for roll-out reset.")
+        return
+
+    # Randomly select states
+    if num_available_states < len(env_ids):
+        state_indices = torch.randint(0, num_available_states, (len(env_ids),), device=env.device)
+    else:
+        state_indices = torch.randperm(num_available_states, device=env.device)[:len(env_ids)]
+
+    # Set robot joint positions (ONLY joints, not cup positions)
+    joint_pos_to_set = terminal_states["joint_pos"][state_indices]
+    joint_vel_to_set = terminal_states["joint_vel"][state_indices] if "joint_vel" in terminal_states else torch.zeros_like(joint_pos_to_set)
+
+    env.scene["robot"].write_joint_state_to_sim(
+        joint_pos_to_set,
+        joint_vel_to_set,
+        env_ids=env_ids
+    )
+
+    # Ensure grippers are open after robot reset
+    reset_gripper_open(env, env_ids, left_gripper_joint_names, gripper_open_position)
+    reset_gripper_open(env, env_ids, right_gripper_joint_names, gripper_open_position)
+

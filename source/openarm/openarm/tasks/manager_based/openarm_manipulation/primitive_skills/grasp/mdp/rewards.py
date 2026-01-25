@@ -169,8 +169,8 @@ def lift_reward(
     """Reward for lifting the object above table height."""
     obj: RigidObject = env.scene[object_cfg.name]
     height = obj.data.root_pos_w[:, 2] - (env.scene.env_origins[:, 2] + table_height)
-    progress = height / lift_height
-    return torch.clamp(progress, min=0.0, max=1.0)
+    progress = torch.clamp(height / lift_height, min=0.0, max=1.0)
+    return progress
 
 
 def stable_grasp_reward(
@@ -230,3 +230,131 @@ def hand_joint_position(
     joint_pos = robot.data.joint_pos[:, joint_idx].mean(dim=-1)
 
     return torch.exp(-torch.abs(joint_pos - target_pos))
+
+
+def _is_gripper_in_contact(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    contact_distance: float = 0.02, # How close EEF needs to be to object
+    min_closure: float = 0.7,      # How closed the gripper needs to be
+) -> torch.Tensor:
+    """
+    Determines if the gripper is in "contact" with the object based on proximity and closure.
+    """
+    eef_dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    closure = _hand_closure_amount(env, eef_link_name)
+
+    is_close = eef_dist < contact_distance
+    is_closed_enough = closure > min_closure
+
+    return is_close & is_closed_enough
+
+
+def grasp_success_with_hold(
+    env: ManagerBasedRLEnv,
+    eef_link_name_left: str,
+    eef_link_name_right: str,
+    object_cfg_left: SceneEntityCfg,
+    object_cfg_right: SceneEntityCfg,
+    lift_threshold: float = 0.1,
+    contact_distance: float = 0.02, # Passed to helper
+    min_closure: float = 0.7,      # Passed to helper
+) -> torch.Tensor:
+    """
+    Grasp success condition:
+    1. Objects grasped (contact + gripper closed)
+    2. Lifted above lift_threshold
+    """
+    # Current height
+    cup1_height = env.scene[object_cfg_left.name].data.root_pos_w[:, 2]
+    cup2_height = env.scene[object_cfg_right.name].data.root_pos_w[:, 2]
+
+    # Use default_root_state for initial height (shape: [num_envs, 13] -> pos is [:, :3])
+    initial_height_cup1 = env.scene[object_cfg_left.name].data.default_root_state[:, 2]
+    initial_height_cup2 = env.scene[object_cfg_right.name].data.default_root_state[:, 2]
+
+    # Lifted condition
+    left_lifted = cup1_height > (initial_height_cup1 + lift_threshold)
+    right_lifted = cup2_height > (initial_height_cup2 + lift_threshold)
+
+    # Gripper contact condition
+    left_contact = _is_gripper_in_contact(env, eef_link_name_left, object_cfg_left, contact_distance, min_closure)
+    right_contact = _is_gripper_in_contact(env, eef_link_name_right, object_cfg_right, contact_distance, min_closure)
+
+    # Success = lifted + contact maintained
+    success = left_lifted & right_lifted & left_contact & right_contact
+
+    return success.float()
+
+
+def drop_penalty(
+    env: ManagerBasedRLEnv,
+    object_cfg_left: SceneEntityCfg,
+    object_cfg_right: SceneEntityCfg,
+    penalty_scale: float = -10.0,
+    height_drop_threshold: float = 0.05, # 5cm drop threshold
+) -> torch.Tensor:
+    """
+    Penalty for dropping the objects.
+    - Penalizes if the height drops significantly after being lifted.
+    """
+    cup1_height = env.scene[object_cfg_left.name].data.root_pos_w[:, 2]
+    cup2_height = env.scene[object_cfg_right.name].data.root_pos_w[:, 2]
+
+    # Add attributes to environment for tracking max height per object per environment
+    if not hasattr(env, "_max_height_cup1"):
+        env._max_height_cup1 = torch.zeros(env.num_envs, device=env.device)
+        env._max_height_cup2 = torch.zeros(env.num_envs, device=env.device)
+
+    # Reset max heights for newly terminated/truncated environments
+    reset_mask = (env.episode_length_buf == 0).squeeze(-1) # Assuming episode_length_buf is 0 at start of new episode
+
+    env._max_height_cup1[reset_mask] = cup1_height[reset_mask]
+    env._max_height_cup2[reset_mask] = cup2_height[reset_mask]
+
+    # Update max heights for ongoing episodes
+    env._max_height_cup1 = torch.maximum(env._max_height_cup1, cup1_height)
+    env._max_height_cup2 = torch.maximum(env._max_height_cup2, cup2_height)
+
+    # Calculate height drop from max observed height
+    height_drop_cup1 = env._max_height_cup1 - cup1_height
+    height_drop_cup2 = env._max_height_cup2 - cup2_height
+
+    # Penalize if either cup drops below the threshold
+    dropped = (height_drop_cup1 > height_drop_threshold) | (height_drop_cup2 > height_drop_threshold)
+
+    return dropped.float() * penalty_scale
+
+
+def continuous_hold_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name_left: str,
+    eef_link_name_right: str,
+    object_cfg_left: SceneEntityCfg,
+    object_cfg_right: SceneEntityCfg,
+    lift_threshold: float = 0.1,
+    reward_scale: float = 1.0,
+    contact_distance: float = 0.02, # Passed to helper
+    min_closure: float = 0.7,      # Passed to helper
+) -> torch.Tensor:
+    """
+    Reward for maintaining the lifted and grasped state.
+    """
+    cup1_height = env.scene[object_cfg_left.name].data.root_pos_w[:, 2]
+    cup2_height = env.scene[object_cfg_right.name].data.root_pos_w[:, 2]
+
+    # Use default_root_state for initial height
+    initial_height_cup1 = env.scene[object_cfg_left.name].data.default_root_state[:, 2]
+    initial_height_cup2 = env.scene[object_cfg_right.name].data.default_root_state[:, 2]
+
+    # Both cups lifted above the threshold
+    both_lifted = (cup1_height > initial_height_cup1 + lift_threshold) & \
+                  (cup2_height > initial_height_cup2 + lift_threshold)
+
+    # Both grippers in contact
+    left_contact = _is_gripper_in_contact(env, eef_link_name_left, object_cfg_left, contact_distance, min_closure)
+    right_contact = _is_gripper_in_contact(env, eef_link_name_right, object_cfg_right, contact_distance, min_closure)
+
+    # Reward if both are lifted and in contact
+    return (both_lifted & left_contact & right_contact).float() * reward_scale

@@ -12,31 +12,29 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from isaaclab_rl.rsl_rl import (
-    RslRlOnPolicyRunnerCfg,
-    RslRlPpoActorCriticCfg,
-    RslRlPpoAlgorithmCfg,
-)
-
+from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoAlgorithmCfg
 from isaaclab.utils import configclass
+
+from sbm.rl import SbmDualHeadActorCriticCfg
 
 
 @configclass
-class Pouring4PPORunnerCfg(RslRlOnPolicyRunnerCfg):
+class ReachDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
-    experiment_name = "openarm_bi_pouring4"
+    experiment_name = "openarm_reach_dualhead"
     run_name = ""
     resume = False
     empirical_normalization = False
-    policy = RslRlPpoActorCriticCfg(
+    policy = SbmDualHeadActorCriticCfg(
         init_noise_std=1.0,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
         actor_hidden_dims=[512, 256],
         critic_hidden_dims=[512, 256],
         activation="elu",
+        dof_split_index=9,
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=2.0,
@@ -52,9 +50,3 @@ class Pouring4PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         desired_kl=0.01,
         max_grad_norm=1.0,
     )
-
-@configclass
-class ReachPPORunnerCfg(Pouring4PPORunnerCfg):
-    def __post_init__(self):
-        super().__post_init__()
-        self.experiment_name = "openarm_reach"

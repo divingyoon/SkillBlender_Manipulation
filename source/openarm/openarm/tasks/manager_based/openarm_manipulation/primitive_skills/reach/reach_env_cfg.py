@@ -41,6 +41,7 @@ class ReachSceneCfg(InteractiveSceneCfg):
 
     robot: ArticulationCfg = MISSING
     cup: RigidObjectCfg = MISSING
+    cup2: RigidObjectCfg = MISSING
 
     table = AssetBaseCfg(
         prim_path="{ENV_REGEX_NS}/Table",
@@ -80,7 +81,23 @@ class CommandsCfg:
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
-        debug_vis=True,
+        debug_vis=False,
+    )
+    tcp_pose2 = mdp.ReachPoseCommandCfg(
+        asset_name="robot",
+        body_name="openarm_left_ee_tcp",
+        target_asset_cfg=SceneEntityCfg("cup2"),
+        resampling_time_range=(4.0, 4.0),
+        offset=(0.0, 0.0, 0.02),
+        ranges=mdp.ReachPoseCommandCfg.Ranges(
+            pos_x=(0.3, 0.5),
+            pos_y=(-0.3, -0.1),
+            pos_z=(0.25, 0.55),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
+        debug_vis=False,
     )
 
 
@@ -88,8 +105,10 @@ class CommandsCfg:
 class ActionsCfg:
     """Action specifications for the MDP."""
 
-    arm_action: ActionTerm = MISSING
-    hand_action: ActionTerm = MISSING
+    left_arm_action: ActionTerm = MISSING
+    left_hand_action: ActionTerm = MISSING
+    right_arm_action: ActionTerm = MISSING
+    right_hand_action: ActionTerm = MISSING
 
 
 @configclass
@@ -103,12 +122,22 @@ class ObservationsCfg:
         joint_pos = ObsTerm(func=mdp.joint_pos_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
         joint_vel = ObsTerm(func=mdp.joint_vel_rel, noise=Unoise(n_min=-0.01, n_max=0.01))
         tcp_pose = ObsTerm(func=mdp.body_pose, params={"body_name": "openarm_left_ee_tcp"})
+        tcp_pose_right = ObsTerm(func=mdp.body_pose, params={"body_name": "openarm_right_ee_tcp"})
         cup_pose = ObsTerm(func=mdp.root_pose, params={"asset_cfg": SceneEntityCfg("cup")})
+        cup2_pose = ObsTerm(func=mdp.root_pose, params={"asset_cfg": SceneEntityCfg("cup2")})
         tcp_to_cup_pos = ObsTerm(
             func=mdp.target_pos_in_tcp_frame,
             params={
                 "tcp_body_name": "openarm_left_ee_tcp",
                 "target_cfg": SceneEntityCfg("cup"),
+                "offset": [0.0, 0.0, 0.02],
+            },
+        )
+        tcp_to_cup2_pos = ObsTerm(
+            func=mdp.target_pos_in_tcp_frame,
+            params={
+                "tcp_body_name": "openarm_right_ee_tcp",
+                "target_cfg": SceneEntityCfg("cup2"),
                 "offset": [0.0, 0.0, 0.02],
             },
         )
@@ -132,10 +161,23 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.5), "y": (0.1, 0.3), "z": (0.1, 0.1),
+                "x": (0.15, 0.15), "y": (0.1, 0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup"),
+        },
+    )
+    reset_cup2_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {
+                "x": (0.15, 0.15), "y": (-0.1, -0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("cup2"),
         },
     )
 
@@ -144,25 +186,44 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
-    reaching_object = RewTerm(
+    reaching_left_cup = RewTerm(
         func=mdp.tcp_distance_to_target,
         params={"tcp_body_name": "openarm_left_ee_tcp", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
         weight=1.0,
     )
     
-    tcp_align_reward = RewTerm(
-        func=mdp.tcp_x_axis_alignment,
+    reaching_right_cup2 = RewTerm(
+        func=mdp.tcp_distance_to_target,
+        params={"tcp_body_name": "openarm_right_ee_tcp", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
+        weight=1.0,
+    )
+
+    tcp_forward_alignment_left = RewTerm(
+        func=mdp.tcp_z_axis_to_target_alignment,
+        params={"tcp_body_name": "openarm_left_ee_tcp", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
         weight=0.5,
-        params={
-            "tcp_body_name": "openarm_left_ee_tcp",
-            "target_cfg": SceneEntityCfg("cup"),
-        },
+    )
+    tcp_forward_alignment_right = RewTerm(
+        func=mdp.tcp_z_axis_to_target_alignment,
+        params={"tcp_body_name": "openarm_right_ee_tcp", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
+        weight=0.5,
     )
 
     open_hand_reward = RewTerm(
         func=mdp.hand_joint_position,
-        params={"joint_name": "gripper_joint", "target_pos": 0.0}, # Assuming 0.0 is open
-        weight=0.2,
+        params={
+            "joint_name": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+            "target_pos": 0.048,  # Open position (average of 0.044 and 0.052)
+        },
+        weight=0.6,
+    )
+    open_hand_reward_right = RewTerm(
+        func=mdp.hand_joint_position,
+        params={
+            "joint_name": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
+            "target_pos": 0.048,  # Open position (average of 0.044 and 0.052)
+        },
+        weight=0.6,
     )
 
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
@@ -183,6 +244,10 @@ class TerminationsCfg:
     cup_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
         params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")},
+    )
+    cup2_dropping = DoneTerm(
+        func=mdp.root_height_below_minimum,
+        params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")},
     )
 
 

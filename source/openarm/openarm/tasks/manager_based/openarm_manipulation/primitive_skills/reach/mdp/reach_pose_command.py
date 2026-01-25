@@ -1,26 +1,29 @@
-# Copyright 2025 Enactic, Inc.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+"""
+Modified command generator for the Reach‑v1 task.
+
+This implementation adjusts the target position computation to rotate the
+pre‑grasp offset from the cup's local frame into the world frame before
+translation.  This ensures the commanded TCP pose stays consistent relative
+to the cup even when the cup is rotated.  The orientation logic (aligning
+the TCP's x-axis with the cup's z-axis) is preserved from the original
+implementation.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
+import math
 import torch
 
 from isaaclab.managers import CommandTerm
-from isaaclab.utils.math import quat_from_euler_xyz, quat_mul, subtract_frame_transforms, euler_xyz_from_quat
+from isaaclab.utils.math import (
+    quat_from_euler_xyz,
+    quat_mul,
+    subtract_frame_transforms,
+    quat_apply,
+)
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation, RigidObject
@@ -46,7 +49,7 @@ class ReachPoseCommand(CommandTerm):
         # command in world frame (for sampling)
         self.pose_command_w = torch.zeros_like(self.pose_command_b)
         self.pose_command_w[:, 3] = 1.0
-        
+
         self.offset = torch.tensor(self.cfg.offset, device=self.device)
 
     @property
@@ -63,28 +66,36 @@ class ReachPoseCommand(CommandTerm):
     def _update_command(self, env_ids: Sequence[int] | None = None):
         if env_ids is None:
             env_ids = slice(None)
-        
+
         # Get cup pose
         cup_pos_w = self.target_object.data.root_pos_w[env_ids]
         cup_quat_w = self.target_object.data.root_quat_w[env_ids]
 
-        # Target position is cup position + offset
-        target_pos_w = cup_pos_w + self.offset.expand_as(cup_pos_w)
-        
+        # Compute the offset in world coordinates by rotating the local offset
+        # vector using the cup's orientation.  This ensures the target position
+        # remains consistent relative to the cup even when the cup rotates.
+        # Expand offset to match batch for quat_apply
+        offset_local = self.offset.unsqueeze(0).repeat(cup_quat_w.shape[0], 1)
+        offset_world = quat_apply(cup_quat_w, offset_local)
+        target_pos_w = cup_pos_w + offset_world
+
         # Target orientation: TCP's x-axis should align with the cup's z-axis (world up)
         # This means we want the tcp's x-axis to be (0,0,1) in world frame.
         # The original tcp orientation has x-axis pointing forward.
         # We need to rotate it by -90 degrees around the y-axis.
-        rot_quat = quat_from_euler_xyz(torch.zeros(len(env_ids), device=self.device),
-                                       -torch.ones(len(env_ids), device=self.device) * math.pi / 2,
-                                       torch.zeros(len(env_ids), device=self.device))
-        
+        batch_size = cup_pos_w.shape[0]
+        rot_quat = quat_from_euler_xyz(
+            torch.zeros(batch_size, device=self.device),
+            -torch.ones(batch_size, device=self.device) * math.pi / 2,
+            torch.zeros(batch_size, device=self.device),
+        )
+
         # Also consider the cup's orientation
         target_quat_w = quat_mul(cup_quat_w, rot_quat)
 
         self.pose_command_w[env_ids, :3] = target_pos_w
         self.pose_command_w[env_ids, 3:] = target_quat_w
-        
+
         # convert world command to base frame
         cmd_pos_b, cmd_quat_b = subtract_frame_transforms(
             self.robot.data.root_pos_w[env_ids],
@@ -94,7 +105,6 @@ class ReachPoseCommand(CommandTerm):
         )
         self.pose_command_b[env_ids, :3] = cmd_pos_b
         self.pose_command_b[env_ids, 3:] = cmd_quat_b
-
 
     def _set_debug_vis_impl(self, debug_vis: bool):
         pass

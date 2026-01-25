@@ -12,14 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
-from .assets import *  # noqa
-from . import blending # noqa
-from . import bimanual # noqa
-from . import primitive_skills # noqa
+import gymnasium as gym
 
-_env_root = os.environ.get("OPENARM_ROOT_DIR")
-if _env_root:
-    OPENARM_ROOT_DIR = os.path.abspath(os.path.expanduser(_env_root))
-else:
-    OPENARM_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+from . import reach  # Import the reach module
+from . import grasp  # Import the grasp module
+
+# The reach and grasp tasks are registered in their own __init__.py files.
+# We just need to make sure this package is recognized.

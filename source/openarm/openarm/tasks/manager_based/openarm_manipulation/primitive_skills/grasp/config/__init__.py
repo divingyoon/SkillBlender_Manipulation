@@ -1,0 +1,41 @@
+# Copyright 2025 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import gymnasium as gym
+
+from . import agents
+
+# Standard Grasp task (teacher-forcing reset)
+gym.register(
+    id="Grasp-v1",
+    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.grasp_cfg:GraspObjectEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:GraspPPORunnerCfg",
+        "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
+    },
+)
+
+# Grasp task with reach policy rollout
+gym.register(
+    id="Grasp-v1-Rollout",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp.grasp_with_rollout_env:GraspWithRolloutEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.grasp_cfg:GraspObjectEnvCfg",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:GraspPPORunnerCfg",
+        "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
+    },
+)

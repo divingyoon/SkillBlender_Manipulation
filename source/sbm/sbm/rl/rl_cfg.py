@@ -34,3 +34,11 @@ class SbmHierarchicalActorCriticCfg(RslRlPpoActorCriticCfg):
     num_dofs: int | None = None
     low_level_obs_groups: list[str] | None = None
     disable_skill_selection_until_iter: int | None = None
+
+
+@configclass
+class SbmDualHeadActorCriticCfg(RslRlPpoActorCriticCfg):
+    """Actor-critic config for shared-encoder dual-head low-level PPO."""
+
+    class_name: str = "ActorCriticDualHead"
+    dof_split_index: int | None = None

@@ -19,22 +19,27 @@ from __future__ import annotations
 
 def register_rsl_rl():
     """Expose custom policies to rsl_rl via module injection."""
+    from sbm.rl.actor_critic_dual_head import ActorCriticDualHead
     from sbm.rl.actor_critic_hierarchical import ActorCriticHierarchical, ActorCriticHierarchicalDualHead
 
     import rsl_rl.modules as rsl_modules
 
     rsl_modules.ActorCriticHierarchical = ActorCriticHierarchical
     rsl_modules.ActorCriticHierarchicalDualHead = ActorCriticHierarchicalDualHead
+    rsl_modules.ActorCriticDualHead = ActorCriticDualHead
     if hasattr(rsl_modules, "__all__") and "ActorCriticHierarchical" not in rsl_modules.__all__:
         rsl_modules.__all__.append("ActorCriticHierarchical")
     if hasattr(rsl_modules, "__all__") and "ActorCriticHierarchicalDualHead" not in rsl_modules.__all__:
         rsl_modules.__all__.append("ActorCriticHierarchicalDualHead")
+    if hasattr(rsl_modules, "__all__") and "ActorCriticDualHead" not in rsl_modules.__all__:
+        rsl_modules.__all__.append("ActorCriticDualHead")
 
     try:
         import rsl_rl.runners.on_policy_runner as on_policy_runner
 
         on_policy_runner.ActorCriticHierarchical = ActorCriticHierarchical
         on_policy_runner.ActorCriticHierarchicalDualHead = ActorCriticHierarchicalDualHead
+        on_policy_runner.ActorCriticDualHead = ActorCriticDualHead
     except Exception:
         pass
 
@@ -43,5 +48,6 @@ def register_rsl_rl():
 
         distillation_runner.ActorCriticHierarchical = ActorCriticHierarchical
         distillation_runner.ActorCriticHierarchicalDualHead = ActorCriticHierarchicalDualHead
+        distillation_runner.ActorCriticDualHead = ActorCriticDualHead
     except Exception:
         pass

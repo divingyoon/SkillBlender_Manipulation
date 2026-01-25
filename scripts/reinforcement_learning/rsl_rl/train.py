@@ -265,15 +265,21 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # specify directory for logging experiments
     sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", agent_cfg.experiment_name)
+    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", "reach")
     log_root_path = os.path.abspath(log_root_path)
+    os.makedirs(log_root_path, exist_ok=True)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
-    # specify directory for logging runs: {time-stamp}_{run_name}
-    log_dir = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+    # specify directory for logging runs: testN (auto-increment)
+    existing = []
+    for name in os.listdir(log_root_path):
+        if name.startswith("test"):
+            suffix = name[4:]
+            if suffix.isdigit():
+                existing.append(int(suffix))
+    next_idx = (max(existing) + 1) if existing else 1
+    log_dir = f"test{next_idx}"
     # The Ray Tune workflow extracts experiment name using the logging line below, hence, do not change it (see PR #2346, comment-2819298849)
     print(f"Exact experiment name requested from command line: {log_dir}")
-    if agent_cfg.run_name:
-        log_dir += f"_{agent_cfg.run_name}"
     log_dir = os.path.join(log_root_path, log_dir)
 
     # set the IO descriptors export flag if requested

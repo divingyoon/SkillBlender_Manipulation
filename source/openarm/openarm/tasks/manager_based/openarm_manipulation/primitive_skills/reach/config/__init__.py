@@ -23,5 +23,6 @@ gym.register(
     kwargs={
         "env_cfg_entry_point": f"{__name__}.reach_cfg:ReachObjectEnvCfg",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:ReachPPORunnerCfg",
+        "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:ReachDualHeadPPORunnerCfg",
     },
 )

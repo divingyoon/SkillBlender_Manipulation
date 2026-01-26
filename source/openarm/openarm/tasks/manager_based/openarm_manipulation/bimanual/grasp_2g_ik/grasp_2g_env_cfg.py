@@ -40,7 +40,7 @@ from . import mdp
 
 @configclass
 class Grasp2gSceneCfg(InteractiveSceneCfg):
-    """Scene with a bimanual robot, table, and a cube to be grasped."""
+    """Scene with a bimanual robot, table, and a cup to be grasped."""
 
     # robots
     robot: ArticulationCfg = MISSING
@@ -112,11 +112,15 @@ class CommandsCfg:
 
 @configclass
 class ActionsCfg:
-    """Action specifications for the MDP."""
+    """Action specifications for the MDP.
+
+    DualHead를 위해 Left → Right 순서로 배치:
+    [0:N] left_arm, [N:M] left_hand, [M:P] right_arm, [P:Q] right_hand
+    """
 
     left_arm_action: ActionTerm = MISSING
-    right_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
+    right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
 
 

@@ -55,11 +55,41 @@ def reset_root_state_uniform_robot_frame(
 
     root_states = asset.data.default_root_state[env_ids].clone()
 
-    range_list = [pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
-    ranges = torch.tensor(range_list, device=asset.device)
-    rand_samples = math_utils.sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=asset.device)
+    # Initialize all pose offsets to zero
+    x_offset = torch.zeros(len(env_ids), device=asset.device)
+    y_offset = torch.zeros(len(env_ids), device=asset.device)
+    z_offset = torch.zeros(len(env_ids), device=asset.device)
+    roll_offset = torch.zeros(len(env_ids), device=asset.device)
+    pitch_offset = torch.zeros(len(env_ids), device=asset.device)
+    yaw_offset = torch.zeros(len(env_ids), device=asset.device)
 
-    pos_offset = rand_samples[:, 0:3]
+    # Define all pose keys and their corresponding ranges
+    pose_keys = ["x", "y", "z", "roll", "pitch", "yaw"]
+    all_pose_ranges = {key: pose_range.get(key, (0.0, 0.0)) for key in pose_keys}
+
+    # Randomly choose one degree of freedom (DOF) to randomize for each environment
+    chosen_dof_idx = torch.randint(0, len(pose_keys), (len(env_ids),), device=asset.device)
+
+    # Apply randomization only to the chosen DOF
+    for i, key in enumerate(pose_keys):
+        current_range = all_pose_ranges[key]
+        if current_range[1] - current_range[0] > 1e-6: # Only sample if range is not zero
+            samples = math_utils.sample_uniform(current_range[0], current_range[1], (len(env_ids),), device=asset.device)
+            if key == "x":
+                x_offset = torch.where(chosen_dof_idx == i, samples, x_offset)
+            elif key == "y":
+                y_offset = torch.where(chosen_dof_idx == i, samples, y_offset)
+            elif key == "z":
+                z_offset = torch.where(chosen_dof_idx == i, samples, z_offset)
+            elif key == "roll":
+                roll_offset = torch.where(chosen_dof_idx == i, samples, roll_offset)
+            elif key == "pitch":
+                pitch_offset = torch.where(chosen_dof_idx == i, samples, pitch_offset)
+            elif key == "yaw":
+                yaw_offset = torch.where(chosen_dof_idx == i, samples, yaw_offset)
+
+    pos_offset_vec = torch.stack([x_offset, y_offset, z_offset], dim=1)
+
     if base_body_name is not None and base_body_name in robot.data.body_names:
         body_idx = robot.data.body_names.index(base_body_name)
         robot_pos_w = robot.data.body_pos_w[env_ids, body_idx]
@@ -67,15 +97,14 @@ def reset_root_state_uniform_robot_frame(
     else:
         robot_pos_w = robot.data.root_pos_w[env_ids]
         robot_quat_w = robot.data.root_quat_w[env_ids]
-    positions = robot_pos_w + quat_apply(robot_quat_w, pos_offset)
+    positions = robot_pos_w + quat_apply(robot_quat_w, pos_offset_vec)
 
-    orientations_delta = math_utils.quat_from_euler_xyz(rand_samples[:, 3], rand_samples[:, 4], rand_samples[:, 5])
+    orientations_delta = math_utils.quat_from_euler_xyz(roll_offset, pitch_offset, yaw_offset)
     orientations = math_utils.quat_mul(root_states[:, 3:7], orientations_delta)
 
-    range_list = [velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
-    ranges = torch.tensor(range_list, device=asset.device)
-    rand_samples = math_utils.sample_uniform(ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=asset.device)
-    velocities = root_states[:, 7:13] + rand_samples
+    range_list_vel = [velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
+    ranges_vel = torch.tensor(range_list_vel, device=asset.device)
+    velocities = root_states[:, 7:13] + math_utils.sample_uniform(ranges_vel[:, 0], ranges_vel[:, 1], (len(env_ids), 6), device=asset.device)
 
     asset.write_root_pose_to_sim(torch.cat([positions, orientations], dim=-1), env_ids=env_ids)
     asset.write_root_velocity_to_sim(velocities, env_ids=env_ids)

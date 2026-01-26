@@ -14,8 +14,9 @@
 
 import gymnasium as gym
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g_ik.config import agents as grasp2g_agents
 
+from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g_ik.config import agents as grasp2g_ik_agents
+from openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp.config import agents as grasp_agents
 
 gym.register(
     id="Grasp2g_IK-v0",
@@ -23,9 +24,10 @@ gym.register(
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.ik_rel_env_cfg:OpenArmGrasp2gIKEnvCfg",
-        "rl_games_cfg_entry_point": f"{grasp2g_agents.__name__}:rl_games_ppo_cfg.yaml",
-        "rsl_rl_cfg_entry_point": f"{grasp2g_agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
-        "rsl_rl_hier_cfg_entry_point": f"{grasp2g_agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
-        "skrl_cfg_entry_point": f"{grasp2g_agents.__name__}:skrl_ppo_cfg.yaml",
+        "rl_games_cfg_entry_point": f"{grasp_agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{grasp_agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
+        "rsl_rl_hier_cfg_entry_point": f"{grasp_agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
+        "skrl_cfg_entry_point": f"{grasp_agents.__name__}:skrl_ppo_cfg.yaml",
+        "rsl_rl_dual_cfg_entry_point": f"{grasp2g_ik_agents.__name__}.rsl_rl_ppo_dualhead_cfg:Grasp2gIKDualHeadPPORunnerCfg",
     },
 )

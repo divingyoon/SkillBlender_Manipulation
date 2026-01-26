@@ -27,5 +27,6 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{reach_agents.__name__}.rsl_rl_ppo_cfg:OpenArmReachPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": f"{reach_agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmReachHierarchicalPPORunnerCfg",
         "skrl_cfg_entry_point": f"{reach_agents.__name__}:skrl_ppo_cfg.yaml",
+        "rsl_rl_dual_cfg_entry_point": f"{reach_agents.__name__}.rsl_rl_ppo_dualhead_cfg:ReachDualHeadPPORunnerCfg",
     },
 )

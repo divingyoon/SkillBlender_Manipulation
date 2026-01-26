@@ -219,7 +219,7 @@ def reset_from_reach_terminal_states(
         cup_cfg_name: Name of the left cup in scene config.
         cup2_cfg_name: Name of the right cup in scene config.
     """
-    print(f"[DEBUG] reset_from_reach_terminal_states called with {len(env_ids)} env_ids")
+    # print(f"[DEBUG] reset_from_reach_terminal_states called with {len(env_ids)} env_ids")
     if len(env_ids) == 0:
         return
 
@@ -263,12 +263,7 @@ def reset_from_reach_terminal_states(
     joint_vel_to_set = terminal_states["joint_vel"][state_indices] if "joint_vel" in terminal_states else torch.zeros_like(joint_pos_to_set)
 
     # Debug: Print first env's joint positions and EEF positions
-    if len(env_ids) > 0:
-        print(f"[DEBUG] Setting joint_pos[0]: {joint_pos_to_set[0, :7].tolist()}")  # First 7 joints (left arm)
-        if "left_eef_pos" in terminal_states:
-            eef_pos = terminal_states["left_eef_pos"][state_indices]
-            print(f"[DEBUG] Expected left EEF pos: {eef_pos[0].tolist()}")
-
+    
     env.scene["robot"].write_joint_state_to_sim(
         joint_pos_to_set,
         joint_vel_to_set,
@@ -286,9 +281,7 @@ def reset_from_reach_terminal_states(
             world_pos = cup_pos + env.scene.env_origins[env_ids]
 
             # Debug: Print cup position
-            if len(env_ids) > 0:
-                print(f"[DEBUG] Setting cup local_pos: {cup_pos[0].tolist()}, world_pos: {world_pos[0].tolist()}")
-
+            
             cup.write_root_pose_to_sim(
                 torch.cat([world_pos, cup_quat], dim=-1),
                 env_ids=env_ids

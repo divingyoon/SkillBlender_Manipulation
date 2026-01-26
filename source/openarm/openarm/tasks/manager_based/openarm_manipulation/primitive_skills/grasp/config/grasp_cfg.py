@@ -63,21 +63,21 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 rot=[1.0, 0.0, 0.0, 0.0],
                 joint_pos={
                     # Pre-grasp pose for left arm (similar to reach end pose)
-                    "openarm_left_joint1": -0.31204933,
-                    "openarm_left_joint2": -0.42612678,
-                    "openarm_left_joint3": 0.32234982,
-                    "openarm_left_joint4": 0.43979153,
-                    "openarm_left_joint5": 0.0,
-                    "openarm_left_joint6": -0.25350952,
-                    "openarm_left_joint7": -0.827409,
+                    "openarm_left_joint1": -0.557392,
+                    "openarm_left_joint2": -0.098327,
+                    "openarm_left_joint3": 0.042375,
+                    "openarm_left_joint4": 0.004948,
+                    "openarm_left_joint5": -0.044618,
+                    "openarm_left_joint6": -0.072074,
+                    "openarm_left_joint7": -0.709090,
                     # Pre-grasp pose for right arm (mirrored)
-                    "openarm_right_joint1": 0.31204933,
-                    "openarm_right_joint2": 0.42612678,
-                    "openarm_right_joint3": -0.32234982,
-                    "openarm_right_joint4": 0.43979153,
-                    "openarm_right_joint5": 0.0,
-                    "openarm_right_joint6": -0.25350952,
-                    "openarm_right_joint7": 0.827409,
+                    "openarm_right_joint1": 0.557392,
+                    "openarm_right_joint2": 0.152403,
+                    "openarm_right_joint3": -0.357480,
+                    "openarm_right_joint4": 0.075468,
+                    "openarm_right_joint5": -0.052993,
+                    "openarm_right_joint6": -0.058325,
+                    "openarm_right_joint7": 0.592470,
                     # Grippers fully open
                     "openarm_left_finger_joint1": 0.044,
                     "openarm_left_finger_joint2": 0.052,
@@ -171,13 +171,13 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 "openarm_left_joint7",
             ],
             scale=0.1,
-            use_default_offset=True,
+            use_default_offset=True
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_finger_joint.*"],
             scale=0.8,
-            use_default_offset=True,
+            use_default_offset=True
         )
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
@@ -191,13 +191,13 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 "openarm_right_joint7",
             ],
             scale=0.1,
-            use_default_offset=True,
+            use_default_offset=True
         )
         self.actions.right_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_finger_joint.*"],
             scale=0.8,
-            use_default_offset=True,
+            use_default_offset=True
         )
 
         # Frame transformers for EE tracking

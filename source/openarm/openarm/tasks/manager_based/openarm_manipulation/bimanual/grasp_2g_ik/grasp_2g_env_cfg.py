@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from dataclasses import MISSING
+import math
 
 import isaaclab.sim as sim_utils
 from isaaclab.sim import PhysxCfg
@@ -45,7 +46,9 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = MISSING
 
     # target object
+    object_source: AssetBaseCfg = MISSING
     object: RigidObjectCfg = MISSING
+    object2_source: AssetBaseCfg = MISSING
     object2: RigidObjectCfg = MISSING
 
     # table
@@ -144,15 +147,15 @@ class ObservationsCfg:
         object_obs = ObsTerm(
             func=mdp.object_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
             },
         )
         object2_obs = ObsTerm(
             func=mdp.object2_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
             },
         )
         actions = ObsTerm(func=mdp.last_action)
@@ -186,15 +189,15 @@ class ObservationsCfg:
         object_obs = ObsTerm(
             func=mdp.object_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
             },
         )
         object2_obs = ObsTerm(
             func=mdp.object2_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
             },
         )
         actions = ObsTerm(func=mdp.last_action)
@@ -217,11 +220,9 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                # world-frame ranges
-                "x": (0.2, 0.2),
-                "y": (0.1, 0.1),
-                "z": (0.05, 0.05),
-            },#left object
+                "x": (0.3, 0.3), "y": (0.1, 0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object"),
         },
@@ -231,12 +232,27 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.2, 0.2),
-                "y": (-0.1, -0.1),
-                "z": (0.05, 0.05),
-            },#right object
+                "x": (0.3, 0.3), "y": (-0.1, -0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("object2"),
+        },
+    )
+    reset_robot_tcp_to_cups = EventTerm(
+        func=mdp.reset_robot_tcp_to_cups,
+        mode="reset",
+        params={
+            "left_cup_name": "object",
+            "right_cup_name": "object2",
+            # Target the palm links when resetting TCP to cups.  These frames
+            # correspond to the 2‑finger gripper's palm rather than the finger-tip TCP.
+            "left_tcp_body_name": "openarm_left_hand",
+            "right_tcp_body_name": "openarm_right_hand",
+            "offset": (-0.1, 0.0, 0.05),
+            "ik_iters": 7,
+            "ik_lambda": 0.5,
+            "max_delta": 0.15,
         },
     )
 
@@ -263,7 +279,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
+                "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -281,7 +297,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
+                "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -304,7 +320,7 @@ class RewardsCfg:
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
+                "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -326,7 +342,7 @@ class RewardsCfg:
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
+                "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -349,7 +365,7 @@ class RewardsCfg:
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
+                "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
@@ -371,7 +387,7 @@ class RewardsCfg:
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
+                "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
@@ -388,7 +404,7 @@ class RewardsCfg:
         params={
             "object_cfg": SceneEntityCfg("object"),
             "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
+                "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
@@ -404,7 +420,7 @@ class RewardsCfg:
         params={
             "object_cfg": SceneEntityCfg("object2"),
             "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
+                "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
@@ -471,17 +487,18 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 2
-        self.episode_length_s = 8.0
-        self.sim.dt = 1.0 / 100.0
+        self.episode_length_s = 10.0
+        self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-
-        # assign a default physx material to all scene geometries
-        # we can also do this per-asset in the scene definition
+        # Command-only high-level observations (drop real object positions).
+        self.observations.policy.object_position = None
+        self.observations.policy.object2_position = None
         self.sim.physx = PhysxCfg(
             solver_type=1,  # TGS
             max_position_iteration_count=192,
             max_velocity_iteration_count=1,
+            enable_ccd=True,
             bounce_threshold_velocity=0.2,
             friction_offset_threshold=0.01,
             friction_correlation_distance=0.00625,
@@ -489,11 +506,5 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
             gpu_max_rigid_contact_count=2**23,
             gpu_max_rigid_patch_count=2**23,
             gpu_max_num_partitions=8,
-            gpu_collision_stack_size=640000,
-            # set default material properties
-            # default_material=RigidBodyMaterialCfg(
-            #     static_friction=1.0,
-            #     dynamic_friction=1.0,
-            #     restitution=0.0,
-            # ),
+            gpu_collision_stack_size=1000000000,
         )

@@ -11,43 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from isaaclab.actuators import ImplicitActuatorCfg
-from isaaclab.assets import ArticulationCfg, RigidObjectCfg
+from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 import isaaclab.sim as sim_utils
-from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
-from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
-from isaaclab.markers.config import FRAME_MARKER_CFG
-from isaaclab.sensors import FrameTransformerCfg
-from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
+from isaaclab.sensors import FrameTransformerCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG
+from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
+from isaaclab.utils import configclass
+
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
-
+from openarm.tasks.manager_based.openarm_manipulation.assets.openarm_bimanual import (
+    OPEN_ARM_HIGH_PD_CFG,
+)
 from .. import mdp
 from ..grasp_2g_env_cfg import Grasp2gEnvCfg
-
 
 @configclass
 class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
-        self.scene.robot = ArticulationCfg(
+        # Disable one-time IK reset; use fixed joint init from pouring2 baseline.
+        self.events.reset_robot_tcp_to_cups = None
+
+        self.scene.robot = OPEN_ARM_HIGH_PD_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
-            spawn=sim_utils.UsdFileCfg(
-                usd_path=f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/openarm_bimanual.usd",
-                activate_contact_sensors=False,
-                rigid_props=sim_utils.RigidBodyPropertiesCfg(
-                    disable_gravity=True,
-                    max_depenetration_velocity=5.0,
-                ),
-                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                    enabled_self_collisions=False,
-                    solver_position_iteration_count=8,
-                    solver_velocity_iteration_count=0,
-                ),
-            ), #10deg=0.1745rad
             init_state=ArticulationCfg.InitialStateCfg(
                 pos=[0.0, 0.0, -0.25],
                 rot=[1.0, 0.0, 0.0, 0.0],
@@ -72,60 +62,60 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
                     "openarm_right_finger_joint2": 0.052,
                 },
             ),
-            actuators={
-                "openarm_arm": ImplicitActuatorCfg(
-                    joint_names_expr=[
-                        "openarm_left_joint[1-7]",
-                        "openarm_right_joint[1-7]",
-                    ],
-                    stiffness=400.0,
-                    damping=80.0,
-                ),
-                "openarm_gripper": ImplicitActuatorCfg(
-                    joint_names_expr=[
-                        "openarm_left_finger_joint.*",
-                        "openarm_right_finger_joint.*",
-                    ],
-                    stiffness=2e3,
-                    damping=1e2,
-                ),
-            },
-            soft_joint_pos_limit_factor=1.0,
         )
 
-        self.scene.object = RigidObjectCfg(
+        cup_usd = f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/cup.usd"
+
+        self.scene.object_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.1, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[0.1, 0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                scale=(0.8, 0.8, 0.8),
+                usd_path=cup_usd,
+                scale=(0.8, 0.8, 1.0),
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
+                    max_angular_velocity=100.0,
+                    max_linear_velocity=100.0,
                     max_depenetration_velocity=5.0,
                     disable_gravity=False,
                 ),
             ),
+        )
+        self.scene.object = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object/cup",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.1, 0.1, 0.05], rot=[1, 0, 0, 0]),
+            spawn=None,
         )
 
-        self.scene.object2 = RigidObjectCfg(
+        self.scene.object2_source = AssetBaseCfg(
             prim_path="{ENV_REGEX_NS}/Object2",
-            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.1, -0.1, 0.05], rot=[1, 0, 0, 0]),
+            init_state=AssetBaseCfg.InitialStateCfg(pos=[0.1, -0.1, 0.05], rot=[1, 0, 0, 0]),
             spawn=UsdFileCfg(
-                usd_path=f"{ISAAC_NUCLEUS_DIR}/Props/Blocks/DexCube/dex_cube_instanceable.usd",
-                scale=(0.8, 0.8, 0.8),
+                usd_path=cup_usd,
+                scale=(0.8, 0.8, 1.0),
+                articulation_props=sim_utils.ArticulationRootPropertiesCfg(
+                    articulation_enabled=False,
+                ),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
                     solver_velocity_iteration_count=1,
-                    max_angular_velocity=1000.0,
-                    max_linear_velocity=1000.0,
+                    max_angular_velocity=100.0,
+                    max_linear_velocity=100.0,
                     max_depenetration_velocity=5.0,
                     disable_gravity=False,
                 ),
             ),
         )
+        self.scene.object2 = RigidObjectCfg(
+            prim_path="{ENV_REGEX_NS}/Object2/cup",
+            init_state=RigidObjectCfg.InitialStateCfg(pos=[0.1, -0.1, 0.05], rot=[1, 0, 0, 0]),
+            spawn=None,
+        )
+
 
         self.actions.left_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
@@ -141,7 +131,6 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             scale=0.2,
             use_default_offset=True,
         )
-
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=[
@@ -169,11 +158,10 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             use_default_offset=True,
         )
 
-        # override command generator body
-        self.commands.left_object_pose.body_name = "openarm_left_ee_tcp"
-        self.commands.right_object_pose.body_name = "openarm_right_ee_tcp"
+        # Commands should target the palm frames.
+        self.commands.left_object_pose.body_name = "openarm_left_hand"
+        self.commands.right_object_pose.body_name = "openarm_right_hand"
         
-        # add frame transformer for visualization
         marker_cfg = FRAME_MARKER_CFG.copy()
         marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
         
@@ -181,11 +169,11 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
         marker_cfg.prim_path = "/Visuals/LeftEEFrameTransformer"
         self.scene.left_ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/openarm_left_hand",
-            debug_vis=False,
+            debug_vis=True,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/openarm_left_ee_tcp",
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_left_hand",
                     name="left_end_effector",
                 ),
             ],
@@ -193,11 +181,11 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
         marker_cfg.prim_path = "/Visuals/RightEEFrameTransformer"
         self.scene.right_ee_frame = FrameTransformerCfg(
             prim_path="{ENV_REGEX_NS}/Robot/openarm_right_hand",
-            debug_vis=False,
+            debug_vis=True,
             visualizer_cfg=marker_cfg,
             target_frames=[
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/openarm_right_ee_tcp",
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_right_hand",
                     name="right_end_effector",
                 ),
             ],

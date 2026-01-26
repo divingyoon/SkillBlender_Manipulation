@@ -14,6 +14,7 @@
 
 from isaaclab.assets import ArticulationCfg, AssetBaseCfg, RigidObjectCfg
 import isaaclab.sim as sim_utils
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.sim.schemas.schemas_cfg import RigidBodyPropertiesCfg
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
@@ -21,7 +22,7 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.utils import configclass
-from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 from openarm.tasks.manager_based.openarm_manipulation.assets.openarm_bimanual import (
@@ -140,18 +141,20 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             ),
         )
 
+        # Use the palm link as the end effector for the left arm.
         self.actions.left_arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_joint[1-7]"],
-            body_name="openarm_left_ee_tcp",
+            body_name="openarm_left_hand",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
             scale=0.3,
         )
 
+        # Use the palm link as the end effector for the right arm.
         self.actions.right_arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_joint[1-7]"],
-            body_name="openarm_right_ee_tcp",
+            body_name="openarm_right_hand",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
             scale=0.3,
         )
@@ -168,8 +171,9 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             use_default_offset=True,
         )
 
-        self.commands.left_object_pose.body_name = "openarm_left_ee_tcp"
-        self.commands.right_object_pose.body_name = "openarm_right_ee_tcp"
+        # Commands should target the palm frames instead of the finger-tip TCP.
+        self.commands.left_object_pose.body_name = "openarm_left_hand"
+        self.commands.right_object_pose.body_name = "openarm_right_hand"
 
         marker_cfg = FRAME_MARKER_CFG.copy()
         marker_cfg.markers["frame"].scale = (0.1, 0.1, 0.1)
@@ -180,8 +184,9 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
+                # Visualize the palm frame itself as the end effector.
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/openarm_left_ee_tcp",
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_left_hand",
                     name="left_end_effector",
                 ),
             ],
@@ -192,8 +197,9 @@ class Pouring3EnvCfg(Pouring3BaseEnvCfg):
             debug_vis=False,
             visualizer_cfg=marker_cfg,
             target_frames=[
+                # Visualize the palm frame itself as the end effector.
                 FrameTransformerCfg.FrameCfg(
-                    prim_path="{ENV_REGEX_NS}/Robot/openarm_right_ee_tcp",
+                    prim_path="{ENV_REGEX_NS}/Robot/openarm_right_hand",
                     name="right_end_effector",
                 ),
             ],

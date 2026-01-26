@@ -72,9 +72,10 @@ class Pouring3SceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
+    # Use palm frames for end effector in commands.
     left_object_pose = mdp.PhaseSwitchPoseCommandCfg(
         asset_name="robot",
-        body_name="openarm_left_ee_tcp",
+        body_name="openarm_left_hand",
         source_asset_cfg=SceneEntityCfg("object"),
         target_asset_cfg=SceneEntityCfg("object"),
         resampling_time_range=(4.0, 4.0),
@@ -95,7 +96,7 @@ class CommandsCfg:
 
     right_object_pose = mdp.PhaseSwitchPoseCommandCfg(
         asset_name="robot",
-        body_name="openarm_right_ee_tcp",
+        body_name="openarm_right_hand",
         source_asset_cfg=SceneEntityCfg("object2"),
         target_asset_cfg=SceneEntityCfg("object2"),
         resampling_time_range=(4.0, 4.0),
@@ -152,8 +153,9 @@ class ObservationsCfg:
         object_obs = ObsTerm(
             func=mdp.object_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                # Use palm frames for relative vectors in object observations.
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
                 "command_name": "left_object_pose",
                 "use_command_pos": True,
             },
@@ -161,8 +163,9 @@ class ObservationsCfg:
         object2_obs = ObsTerm(
             func=mdp.object2_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                # Use palm frames for relative vectors in object2 observations.
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
                 "command_name": "right_object_pose",
                 "use_command_pos": True,
             },
@@ -198,8 +201,9 @@ class ObservationsCfg:
         object_obs = ObsTerm(
             func=mdp.object_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                # Use palm frames for relative vectors in low-level object observations.
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
                 "command_name": "left_object_pose",
                 "use_command_pos": True,
             },
@@ -207,8 +211,9 @@ class ObservationsCfg:
         object2_obs = ObsTerm(
             func=mdp.object2_obs,
             params={
-                "left_eef_link_name": "openarm_left_ee_tcp",
-                "right_eef_link_name": "openarm_right_ee_tcp",
+                # Use palm frames for relative vectors in low-level object2 observations.
+                "left_eef_link_name": "openarm_left_hand",
+                "right_eef_link_name": "openarm_right_hand",
                 "command_name": "right_object_pose",
                 "use_command_pos": True,
             },
@@ -258,8 +263,10 @@ class EventCfg:
         params={
             "left_cup_name": "object",
             "right_cup_name": "object2",
-            "left_tcp_body_name": "openarm_left_ee_tcp",
-            "right_tcp_body_name": "openarm_right_ee_tcp",
+            # Target the palm links when resetting TCP to cups.  These frames
+            # correspond to the 2‑finger gripper's palm rather than the finger-tip TCP.
+            "left_tcp_body_name": "openarm_left_hand",
+            "right_tcp_body_name": "openarm_right_hand",
             "offset": (-0.1, 0.0, 0.05),
             "ik_iters": 7,
             "ik_lambda": 0.5,
@@ -294,19 +301,19 @@ class RewardsCfg:
     )
     left_reaching_object = RewTerm(
         func=mdp.phase_reach_xy_reward,
-        params={"eef_link_name": "openarm_left_ee_tcp", "object_cfg": SceneEntityCfg("object"), "std": 0.05},
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("object"), "std": 0.05},
         weight=3.0,
     )
     right_reaching_object = RewTerm(
         func=mdp.phase_reach_xy_reward,
-        params={"eef_link_name": "openarm_right_ee_tcp", "object_cfg": SceneEntityCfg("object2"), "std": 0.05},
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("object2"), "std": 0.05},
         weight=3.0,
     )
     left_wrong_cup_penalty = RewTerm(
         func=mdp.phase_wrong_cup_penalty,
         weight=-0.2,
         params={
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object2"),
         },
     )
@@ -314,7 +321,7 @@ class RewardsCfg:
         func=mdp.phase_wrong_cup_penalty,
         weight=-0.2,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object"),
         },
     )
@@ -322,7 +329,7 @@ class RewardsCfg:
         func=mdp.phase_tcp_x_axis_alignment,
         weight=3.0,
         params={
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
             "hand": "left",
         },
@@ -331,7 +338,7 @@ class RewardsCfg:
         func=mdp.phase_tcp_x_axis_alignment,
         weight=3.0,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object2"),
             "hand": "right",
         },
@@ -340,7 +347,7 @@ class RewardsCfg:
         func=mdp.phase_grasp_reward,
         weight=3.0,
         params={
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
         },
     )
@@ -348,7 +355,7 @@ class RewardsCfg:
         func=mdp.phase_grasp_reward,
         weight=3.0,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object2"),
         },
     )
@@ -360,7 +367,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
+                "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -378,7 +385,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
+                "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
@@ -450,7 +457,7 @@ class RewardsCfg:
     left_hold_offset = RewTerm(
         func=mdp.hold_at_offset_reward,
         params={
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
             "offset_z": 0.2,
             "grasp_distance": 0.02,
@@ -464,7 +471,7 @@ class RewardsCfg:
     right_hold_offset = RewTerm(
         func=mdp.hold_at_offset_reward,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object2"),
             "offset_z": 0.2,
             "grasp_distance": 0.02,
@@ -488,7 +495,7 @@ class RewardsCfg:
         weight=0.0,
         params={
             "std": 0.1,
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
         },
     )

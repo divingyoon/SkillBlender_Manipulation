@@ -254,7 +254,7 @@ class RewardsCfg:
     phase_params_left = {
         "eef_link_name": "openarm_left_ee_tcp",
         "lift_height": 0.1,
-        "reach_distance": 0.10,
+        "reach_distance": 0.05
         "align_threshold": 0.0,
         "grasp_distance": 0.05,
         "close_threshold": 0.6,
@@ -264,7 +264,7 @@ class RewardsCfg:
     phase_params_right = {
         "eef_link_name": "openarm_right_ee_tcp",
         "lift_height": 0.1,
-        "reach_distance": 0.10
+        "reach_distance": 0.05
         "align_threshold": 0.0,
         "grasp_distance": 0.05,
         "close_threshold": 0.6,
@@ -274,12 +274,12 @@ class RewardsCfg:
     # Fine-grained variants (mainly different reach_distance)
     phase_params_left_fine = {
         **phase_params_left,
-        "reach_distance": 0.07,
+        "reach_distance": 0.03
     }
 
     phase_params_right_fine = {
         **phase_params_right,
-        "reach_distance": 0.07,
+        "reach_distance": 0.03
     }
 
     # ─── Reaching rewards (Phase 0, 1 active) ───────────────────────────────────
@@ -288,7 +288,7 @@ class RewardsCfg:
         params={
             "std": 0.1,
             "object_cfg": SceneEntityCfg("object"),
-            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),  # 변경된 프림 이름
         },
         weight=5.0,
     )
@@ -298,7 +298,7 @@ class RewardsCfg:
         params={
             "std": 0.1,
             "object_cfg": SceneEntityCfg("object2"),
-            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),  # 변경된 프림 이름
         },
         weight=5.0,
     )
@@ -334,7 +334,7 @@ class RewardsCfg:
             "minimal_height": 0.04,
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("openarm_left_hand"),  # 변경된 프림 이름
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": phase_params_left,
@@ -349,7 +349,7 @@ class RewardsCfg:
             "minimal_height": 0.04,
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("openarm_right_hand"),  # 변경된 프림 이름
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": phase_params_right,
@@ -365,7 +365,7 @@ class RewardsCfg:
             "minimal_height": 0.04,
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("openarm_left_hand"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": phase_params_left_fine,
@@ -380,7 +380,7 @@ class RewardsCfg:
             "minimal_height": 0.04,
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+            "ee_frame_cfg": SceneEntityCfg("openarm_right_hand"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": phase_params_right_fine,

@@ -604,7 +604,7 @@ def _update_pour_phase(
 
     left_phase = _update_pour_hand_phase(
         env,
-        "openarm_left_ee_tcp",
+        "openarm_left_hand",
         SceneEntityCfg("object"),
         lift_height,
         reach_distance,
@@ -615,7 +615,7 @@ def _update_pour_phase(
     )
     right_phase = _update_pour_hand_phase(
         env,
-        "openarm_right_ee_tcp",
+        "openarm_right_hand",
         SceneEntityCfg("object2"),
         lift_height,
         reach_distance,

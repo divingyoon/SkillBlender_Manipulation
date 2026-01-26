@@ -31,7 +31,7 @@ class OpenArmGrasp2gIKEnvCfg(grasp2g_joint_cfg.OpenArmGrasp2gEnvCfg):
         self.actions.left_arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_joint[1-7]"],
-            body_name="openarm_left_ee_tcp",
+            body_name="openarm_left_hand",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
             scale=0.2,
         )
@@ -40,7 +40,7 @@ class OpenArmGrasp2gIKEnvCfg(grasp2g_joint_cfg.OpenArmGrasp2gEnvCfg):
         self.actions.right_arm_action = DifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_joint[1-7]"],
-            body_name="openarm_right_ee_tcp",
+            body_name="openarm_right_hand",
             controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
             scale=0.2,
         )

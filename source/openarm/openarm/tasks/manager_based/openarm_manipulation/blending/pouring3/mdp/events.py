@@ -140,11 +140,16 @@ def reset_robot_tcp_to_cups(
     env_ids: Sequence[int] | None,
     left_cup_name: str = "object",
     right_cup_name: str = "object2",
-    left_tcp_body_name: str = "openarm_left_ee_tcp",
-    right_tcp_body_name: str = "openarm_right_ee_tcp",
+    # Use the palm (hand) link as the TCP by default.  These frames correspond
+    # to the 2‑finger gripper's "palm" rather than the finger‐tip TCP, which
+    # reduces the chance of the gripper splitting the cup during resets.
+    left_tcp_body_name: str = "openarm_left_hand",
+    right_tcp_body_name: str = "openarm_right_hand",
     left_joint_names: Sequence[str] | None = None,
     right_joint_names: Sequence[str] | None = None,
     mirror_signs: Sequence[float] | None = None,
+    # Default offset from the cup to the palm.  You may need to adjust this
+    # empirically since the palm is closer to the wrist than the original TCP.
     offset: tuple[float, float, float] = (-0.1, 0.0, 0.05),
     ik_method: str = "dls",
     ik_lambda: float = 0.5,

@@ -510,5 +510,5 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
             gpu_max_rigid_contact_count=2**23,
             gpu_max_rigid_patch_count=2**23,
             gpu_max_num_partitions=8,
-            gpu_collision_stack_size=1000000000,
+            gpu_collision_stack_size=2**24,
         )

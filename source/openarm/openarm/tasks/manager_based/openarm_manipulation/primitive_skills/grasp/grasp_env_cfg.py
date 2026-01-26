@@ -144,37 +144,12 @@ class ObservationsCfg:
 class EventCfg:
     """Configuration for events."""
 
-    # 1. Reset scene to default state first (same as reach task)
+    # 1. Reset scene to default state first
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    # 2. Reset cup positions (SAME as reach task)
-    reset_cup_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {
-                "x": (0.15, 0.15), "y": (0.1, 0.1), "z": (0.0, 0.0),
-                "yaw": (-math.pi / 2, -math.pi / 2),
-            },
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("cup"),
-        },
-    )
-    reset_cup2_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
-        mode="reset",
-        params={
-            "pose_range": {
-                "x": (0.15, 0.15), "y": (-0.1, -0.1), "z": (0.0, 0.0),
-                "yaw": (-math.pi / 2, -math.pi / 2),
-            },
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("cup2"),
-        },
-    )
-
-    # 3. Roll-out reset: Set robot joints from reach terminal states
-    reset_joints_from_reach = EventTerm(
+    # 2. Roll-out reset: Set robot joints AND cup positions from reach terminal states
+    # This now handles BOTH robot and cup reset for consistency
+    reset_from_reach = EventTerm(
         func=mdp.reset_from_reach_terminal_states,
         mode="reset",
         params={
@@ -182,62 +157,175 @@ class EventCfg:
             "left_gripper_joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
             "right_gripper_joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
             "gripper_open_position": 0.04,
+            "reset_cups": True,
+            "cup_cfg_name": "cup",
+            "cup2_cfg_name": "cup2",
         },
     )
 
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP.
+    """Reward terms for the MDP (grasp_2g style phase-based rewards).
 
-    Grasp reward structure:
-    1. Fine positioning: Get TCP precisely to grasp point
-    2. Finger closing: Close gripper when in position
-    3. Lift confirmation: Small lift to verify stable grasp
+    Phase-based reward structure:
+    - Phase 0: Reaching (EEF approaching object)
+    - Phase 1: Grasping (closing gripper when near)
+    - Phase 2: Lifting (object being lifted)
+    - Phase 3: Holding (stable grasp maintained)
     """
 
-    # Lift success reward - based on new grasp_success_with_hold function
+    # === REACHING REWARDS (Phase 0, 1 active) ===
+    left_reaching_object = RewTerm(
+        func=mdp.object_ee_distance_tanh,
+        params={
+            "std": 0.1,
+            "eef_link_name": "openarm_left_ee_tcp",
+            "object_cfg": SceneEntityCfg("cup"),
+        },
+        weight=5.0,
+    )
+    right_reaching_object = RewTerm(
+        func=mdp.object_ee_distance_tanh,
+        params={
+            "std": 0.1,
+            "eef_link_name": "openarm_right_ee_tcp",
+            "object_cfg": SceneEntityCfg("cup2"),
+        },
+        weight=5.0,
+    )
+
+    # === LIFTING REWARDS (Phase 2, 3 active) ===
+    left_lifting_object = RewTerm(
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=15.0,
+    )
+    right_lifting_object = RewTerm(
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=15.0,
+    )
+
+    # === GRASP REWARDS (Phase 1, 2 active) ===
+    left_grasp = RewTerm(
+        func=mdp.phase_grasp_reward,
+        params={
+            "eef_link_name": "openarm_left_ee_tcp",
+            "object_cfg": SceneEntityCfg("cup"),
+            "reach_radius": 0.05,
+            "close_threshold": 0.4,
+            "phase_weights": [0.0, 1.0, 1.0, 0.5],
+            "phase_params": {
+                "eef_link_name": "openarm_left_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=3.0,
+    )
+    right_grasp = RewTerm(
+        func=mdp.phase_grasp_reward,
+        params={
+            "eef_link_name": "openarm_right_ee_tcp",
+            "object_cfg": SceneEntityCfg("cup2"),
+            "reach_radius": 0.05,
+            "close_threshold": 0.4,
+            "phase_weights": [0.0, 1.0, 1.0, 0.5],
+            "phase_params": {
+                "eef_link_name": "openarm_right_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=3.0,
+    )
+
+    # === PHASE LOGGING (weight=0) ===
+    left_grasp_phase = RewTerm(
+        func=mdp.grasp_phase_value,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_params": {
+                "eef_link_name": "openarm_left_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=0.0,
+    )
+    right_grasp_phase = RewTerm(
+        func=mdp.grasp_phase_value,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_params": {
+                "eef_link_name": "openarm_right_ee_tcp",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+            },
+        },
+        weight=0.0,
+    )
+
+    # === FINAL SUCCESS REWARDS ===
     lift_success = RewTerm(
         func=mdp.grasp_success_with_hold,
-        weight=5.0,
+        weight=10.0,
         params={
-            "lift_threshold": 0.1,
+            "lift_threshold": 0.05,
             "eef_link_name_left": "openarm_left_ee_tcp",
             "eef_link_name_right": "openarm_right_ee_tcp",
             "object_cfg_left": SceneEntityCfg("cup"),
             "object_cfg_right": SceneEntityCfg("cup2"),
-            "contact_distance": 0.02,
-            "min_closure": 0.7,
+            "contact_distance": 0.05,
+            "min_closure": 0.5,
         }
     )
 
-    # Continuous hold reward
     hold_reward = RewTerm(
         func=mdp.continuous_hold_reward,
-        weight=0.5,
+        weight=1.0,
         params={
-            "lift_threshold": 0.1,
+            "lift_threshold": 0.05,
             "eef_link_name_left": "openarm_left_ee_tcp",
             "eef_link_name_right": "openarm_right_ee_tcp",
             "object_cfg_left": SceneEntityCfg("cup"),
             "object_cfg_right": SceneEntityCfg("cup2"),
-            "contact_distance": 0.02,
-            "min_closure": 0.7,
+            "contact_distance": 0.05,
+            "min_closure": 0.5,
         }
     )
 
-    # Drop penalty
-    drop_penalty_term = RewTerm(
-        func=mdp.drop_penalty,
-        weight=1.0,
-        params={
-            "penalty_scale": -10.0,
-            "height_drop_threshold": 0.05,
-            "object_cfg_left": SceneEntityCfg("cup"),
-            "object_cfg_right": SceneEntityCfg("cup2"),
-        }
-    )
-    
-    # Regularization
+    # === REGULARIZATION ===
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(

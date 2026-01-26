@@ -168,6 +168,18 @@ def main() -> int:
         print(f"[INFO] Success threshold: {args.success_threshold}m")
         print(f"[INFO] Using {num_envs} parallel environments")
 
+        # IMPORTANT: Buffer to store states BEFORE reset happens
+        # Isaac Lab resets the environment inside step() when done=True,
+        # so we need to capture the state from the PREVIOUS step
+        prev_joint_pos = robot.data.joint_pos.clone()
+        prev_joint_vel = robot.data.joint_vel.clone()
+        prev_left_obj_pos = left_obj.data.root_pos_w.clone() if left_obj is not None else None
+        prev_left_obj_quat = left_obj.data.root_quat_w.clone() if left_obj is not None else None
+        prev_right_obj_pos = right_obj.data.root_pos_w.clone() if right_obj is not None else None
+        prev_right_obj_quat = right_obj.data.root_quat_w.clone() if right_obj is not None else None
+        prev_left_eef_pos = robot.data.body_pos_w[:, left_eef_idx].clone() if left_eef_idx is not None else None
+        prev_right_eef_pos = robot.data.body_pos_w[:, right_eef_idx].clone() if right_eef_idx is not None else None
+
         while episode_count < args.num_episodes:
             with torch.inference_mode():
                 actions = _unwrap_actions(policy(obs))
@@ -181,18 +193,18 @@ def main() -> int:
                     if episode_count >= args.num_episodes:
                         break
 
-                    # Check success (EEF close to objects)
+                    # Check success using PREVIOUS step's state (before reset)
                     is_success = True
 
                     if left_eef_idx is not None and left_obj is not None:
-                        left_eef_pos = robot.data.body_pos_w[idx, left_eef_idx]
-                        left_obj_pos = left_obj.data.root_pos_w[idx]
+                        left_eef_pos = prev_left_eef_pos[idx]
+                        left_obj_pos = prev_left_obj_pos[idx]
                         left_dist = torch.norm(left_eef_pos - left_obj_pos)
                         is_success = is_success and (left_dist < args.success_threshold)
 
                     if right_eef_idx is not None and right_obj is not None:
-                        right_eef_pos = robot.data.body_pos_w[idx, right_eef_idx]
-                        right_obj_pos = right_obj.data.root_pos_w[idx]
+                        right_eef_pos = prev_right_eef_pos[idx]
+                        right_obj_pos = prev_right_obj_pos[idx]
                         right_dist = torch.norm(right_eef_pos - right_obj_pos)
                         is_success = is_success and (right_dist < args.success_threshold)
 
@@ -201,47 +213,65 @@ def main() -> int:
                     if is_success:
                         success_count += 1
 
-                        # Save terminal state
+                        # Save terminal state from PREVIOUS step (before reset)
                         terminal_states["joint_pos"].append(
-                            robot.data.joint_pos[idx].cpu().clone()
+                            prev_joint_pos[idx].cpu().clone()
                         )
                         terminal_states["joint_vel"].append(
-                            robot.data.joint_vel[idx].cpu().clone()
+                            prev_joint_vel[idx].cpu().clone()
                         )
 
                         if left_obj is not None:
                             # Save local position (subtract env_origin)
-                            local_pos = left_obj.data.root_pos_w[idx] - env.unwrapped.scene.env_origins[idx]
+                            local_pos = prev_left_obj_pos[idx] - env.unwrapped.scene.env_origins[idx]
                             terminal_states["object_pos"].append(
                                 local_pos.cpu().clone()
                             )
                             terminal_states["object_quat"].append(
-                                left_obj.data.root_quat_w[idx].cpu().clone()
+                                prev_left_obj_quat[idx].cpu().clone()
                             )
 
                         if right_obj is not None:
                             # Save local position (subtract env_origin)
-                            local_pos2 = right_obj.data.root_pos_w[idx] - env.unwrapped.scene.env_origins[idx]
+                            local_pos2 = prev_right_obj_pos[idx] - env.unwrapped.scene.env_origins[idx]
                             terminal_states["object2_pos"].append(
                                 local_pos2.cpu().clone()
                             )
                             terminal_states["object2_quat"].append(
-                                right_obj.data.root_quat_w[idx].cpu().clone()
+                                prev_right_obj_quat[idx].cpu().clone()
                             )
 
                         if left_eef_idx is not None:
+                            # Save local position (subtract env_origin) for consistency
+                            left_eef_local = prev_left_eef_pos[idx] - env.unwrapped.scene.env_origins[idx]
                             terminal_states["left_eef_pos"].append(
-                                robot.data.body_pos_w[idx, left_eef_idx].cpu().clone()
+                                left_eef_local.cpu().clone()
                             )
                         if right_eef_idx is not None:
+                            # Save local position (subtract env_origin) for consistency
+                            right_eef_local = prev_right_eef_pos[idx] - env.unwrapped.scene.env_origins[idx]
                             terminal_states["right_eef_pos"].append(
-                                robot.data.body_pos_w[idx, right_eef_idx].cpu().clone()
+                                right_eef_local.cpu().clone()
                             )
 
                     if episode_count >= next_report:
                         print(f"[INFO] Episodes: {episode_count}/{args.num_episodes}, "
                               f"Success: {success_count} ({100*success_count/episode_count:.1f}%)")
                         next_report += 100
+
+            # Update buffers with current state for next iteration
+            prev_joint_pos = robot.data.joint_pos.clone()
+            prev_joint_vel = robot.data.joint_vel.clone()
+            if left_obj is not None:
+                prev_left_obj_pos = left_obj.data.root_pos_w.clone()
+                prev_left_obj_quat = left_obj.data.root_quat_w.clone()
+            if right_obj is not None:
+                prev_right_obj_pos = right_obj.data.root_pos_w.clone()
+                prev_right_obj_quat = right_obj.data.root_quat_w.clone()
+            if left_eef_idx is not None:
+                prev_left_eef_pos = robot.data.body_pos_w[:, left_eef_idx].clone()
+            if right_eef_idx is not None:
+                prev_right_eef_pos = robot.data.body_pos_w[:, right_eef_idx].clone()
 
         # Convert lists to tensors
         for key in terminal_states:

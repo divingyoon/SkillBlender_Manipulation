@@ -212,31 +212,36 @@ class EventCfg:
 
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
-    reset_object_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+    # Reset robot from reach terminal states (Data Swapping)
+    reset_robot_from_reach = EventTerm(
+        func=mdp.reset_robot_from_terminal_states,
         mode="reset",
         params={
-            "pose_range": {
-                # world-frame ranges
-                "x": (0.2, 0.2),
-                "y": (0.1, 0.1),
-                "z": (0.05, 0.05),
-            },#left object
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object"),
+            "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
+            "asset_cfg": SceneEntityCfg("robot"),
         },
     )
-    reset_object2_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+
+    # Reset objects from reach terminal states
+    reset_object_from_reach = EventTerm(
+        func=mdp.reset_object_from_terminal_states,
         mode="reset",
         params={
-            "pose_range": {
-                "x": (0.2, 0.2),
-                "y": (-0.1, -0.1),
-                "z": (0.05, 0.05),
-            },#right object
-            "velocity_range": {},
-            "asset_cfg": SceneEntityCfg("object2"),
+            "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
+            "object_cfg": SceneEntityCfg("object"),
+            "pos_key": "object_pos",
+            "quat_key": "object_quat",
+        },
+    )
+
+    reset_object2_from_reach = EventTerm(
+        func=mdp.reset_object_from_terminal_states,
+        mode="reset",
+        params={
+            "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
+            "object_cfg": SceneEntityCfg("object2"),
+            "pos_key": "object2_pos",
+            "quat_key": "object2_quat",
         },
     )
 
@@ -245,54 +250,83 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    # ─── Shared phase parameters ────────────────────────────────────────────────
+    phase_params_left = {
+        "eef_link_name": "openarm_left_ee_tcp",
+        "lift_height": 0.1,
+        "reach_distance": 0.10,
+        "align_threshold": 0.0,
+        "grasp_distance": 0.05,
+        "close_threshold": 0.6,
+        "hold_duration": 2.0,
+    }
+
+    phase_params_right = {
+        "eef_link_name": "openarm_right_ee_tcp",
+        "lift_height": 0.1,
+        "reach_distance": 0.10
+        "align_threshold": 0.0,
+        "grasp_distance": 0.05,
+        "close_threshold": 0.6,
+        "hold_duration": 2.0,
+    }
+
+    # Fine-grained variants (mainly different reach_distance)
+    phase_params_left_fine = {
+        **phase_params_left,
+        "reach_distance": 0.07,
+    }
+
+    phase_params_right_fine = {
+        **phase_params_right,
+        "reach_distance": 0.07,
+    }
+
+    # ─── Reaching rewards (Phase 0, 1 active) ───────────────────────────────────
     left_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=1.0,
-    )
-    right_reaching_object = RewTerm(
-        func=mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=1.0,
+        params={
+            "std": 0.1,
+            "object_cfg": SceneEntityCfg("object"),
+            "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
+        },
+        weight=5.0,
     )
 
+    right_reaching_object = RewTerm(
+        func=mdp.object_ee_distance,
+        params={
+            "std": 0.1,
+            "object_cfg": SceneEntityCfg("object2"),
+            "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
+        },
+        weight=5.0,
+    )
+
+    # ─── Lifting rewards (Phase 2, 3 active) ────────────────────────────────────
     left_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_left,
         },
         weight=15.0,
     )
+
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_right,
         },
         weight=15.0,
     )
 
+    # ─── Object goal tracking (coarse) ──────────────────────────────────────────
     left_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -303,18 +337,11 @@ class RewardsCfg:
             "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_left,
         },
         weight=16.0,
     )
+
     right_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -325,19 +352,12 @@ class RewardsCfg:
             "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_right,
         },
         weight=16.0,
     )
 
+    # ─── Object goal tracking (fine-grained) ────────────────────────────────────
     left_object_goal_tracking_fine_grained = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -348,18 +368,11 @@ class RewardsCfg:
             "ee_frame_cfg": SceneEntityCfg("left_ee_frame"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_left_fine,
         },
         weight=5.0,
     )
+
     right_object_goal_tracking_fine_grained = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -370,53 +383,35 @@ class RewardsCfg:
             "ee_frame_cfg": SceneEntityCfg("right_ee_frame"),
             "reach_std": 0.1,
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_right_fine,
         },
         weight=5.0,
     )
 
+    # ─── Phase logging (debug, weight = 0) ──────────────────────────────────────
     left_grasp2g_phase = RewTerm(
         func=mdp.grasp2g_phase_value,
         params={
             "object_cfg": SceneEntityCfg("object"),
-            "phase_params": {
-                "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=0.0,
-    )
-    right_grasp2g_phase = RewTerm(
-        func=mdp.grasp2g_phase_value,
-        params={
-            "object_cfg": SceneEntityCfg("object2"),
-            "phase_params": {
-                "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
-                "close_threshold": 0.6,
-                "hold_duration": 2.0,
-            },
+            "phase_params": phase_params_left_fine,  # or phase_params_left if preferred
         },
         weight=0.0,
     )
 
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
+    right_grasp2g_phase = RewTerm(
+        func=mdp.grasp2g_phase_value,
+        params={
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_params": phase_params_right_fine,
+        },
+        weight=0.0,
+    )
+
+    # ─── Regularization terms ───────────────────────────────────────────────────
+    action_rate = RewTerm(
+        func=mdp.action_rate_l2,
+        weight=-1e-4,
+    )
 
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,

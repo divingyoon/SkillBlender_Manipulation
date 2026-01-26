@@ -14,13 +14,137 @@
 
 from __future__ import annotations
 
-from typing import Sequence
+import os
+from typing import Sequence, TYPE_CHECKING
 
 import torch
 
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, quat_mul, quat_from_euler_xyz, sample_uniform
+
+if TYPE_CHECKING:
+    from isaaclab.envs import ManagerBasedRLEnv
+
+
+# Global cache for terminal states
+_TERMINAL_STATES_CACHE: dict = {}
+
+
+def load_terminal_states(path: str, device: str) -> dict | None:
+    """Load and cache terminal states from file."""
+    if path not in _TERMINAL_STATES_CACHE:
+        if os.path.exists(path):
+            print(f"[events] Loading terminal states from: {path}")
+            data = torch.load(path, map_location=device, weights_only=False)
+            # Move all tensors to device
+            for key in data:
+                if isinstance(data[key], torch.Tensor):
+                    data[key] = data[key].to(device)
+            _TERMINAL_STATES_CACHE[path] = data
+            print(f"[events] Loaded {len(data.get('joint_pos', []))} terminal states")
+        else:
+            print(f"[events] Warning: Terminal states file not found: {path}")
+            _TERMINAL_STATES_CACHE[path] = None
+    return _TERMINAL_STATES_CACHE.get(path)
+
+
+def reset_robot_from_terminal_states(
+    env: "ManagerBasedRLEnv",
+    env_ids: torch.Tensor,
+    terminal_states_path: str,
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+) -> None:
+    """Reset robot joints from pre-saved terminal states.
+
+    This function samples random terminal states from a saved file
+    and uses them to initialize the robot's joint positions/velocities.
+    """
+    # Load terminal states (cached after first load)
+    terminal_states = load_terminal_states(terminal_states_path, str(env.device))
+
+    if terminal_states is None or len(terminal_states.get("joint_pos", [])) == 0:
+        print(f"[events] No terminal states available, using default reset")
+        return
+
+    asset = env.scene[asset_cfg.name]
+    num_states = len(terminal_states["joint_pos"])
+
+    # Sample random indices for each environment being reset
+    random_indices = torch.randint(0, num_states, (len(env_ids),), device=env.device)
+
+    # Get sampled joint positions and velocities
+    sampled_joint_pos = terminal_states["joint_pos"][random_indices]
+    sampled_joint_vel = terminal_states["joint_vel"][random_indices]
+
+    # Handle dimension mismatch if terminal states have different joint count
+    current_joint_dim = asset.data.joint_pos.shape[1]
+    saved_joint_dim = sampled_joint_pos.shape[1]
+
+    if saved_joint_dim != current_joint_dim:
+        print(f"[events] Warning: Joint dimension mismatch. "
+              f"Saved: {saved_joint_dim}, Current: {current_joint_dim}. Using minimum.")
+        min_dim = min(saved_joint_dim, current_joint_dim)
+        sampled_joint_pos = sampled_joint_pos[:, :min_dim]
+        sampled_joint_vel = sampled_joint_vel[:, :min_dim]
+
+        # Pad with default values if needed
+        if saved_joint_dim < current_joint_dim:
+            default_pos = asset.data.default_joint_pos[env_ids]
+            default_vel = asset.data.default_joint_vel[env_ids]
+            sampled_joint_pos = torch.cat([
+                sampled_joint_pos,
+                default_pos[:, saved_joint_dim:]
+            ], dim=1)
+            sampled_joint_vel = torch.cat([
+                sampled_joint_vel,
+                default_vel[:, saved_joint_dim:]
+            ], dim=1)
+
+    # Set joint positions and velocities
+    asset.write_joint_state_to_sim(sampled_joint_pos, sampled_joint_vel, env_ids=env_ids)
+
+
+def reset_object_from_terminal_states(
+    env: "ManagerBasedRLEnv",
+    env_ids: torch.Tensor,
+    terminal_states_path: str,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    pos_key: str = "object_pos",
+    quat_key: str = "object_quat",
+) -> None:
+    """Reset object pose from pre-saved terminal states."""
+    terminal_states = load_terminal_states(terminal_states_path, str(env.device))
+
+    if terminal_states is None:
+        return
+
+    if pos_key not in terminal_states or len(terminal_states[pos_key]) == 0:
+        return
+
+    obj = env.scene[object_cfg.name]
+    num_states = len(terminal_states[pos_key])
+
+    # Sample random indices
+    random_indices = torch.randint(0, num_states, (len(env_ids),), device=env.device)
+
+    # Get sampled positions and quaternions
+    sampled_pos = terminal_states[pos_key][random_indices]
+    sampled_quat = terminal_states[quat_key][random_indices]
+
+    # Convert local position to world position
+    world_pos = sampled_pos + env.scene.env_origins[env_ids]
+
+    # Set object pose
+    obj.write_root_pose_to_sim(
+        torch.cat([world_pos, sampled_quat], dim=-1),
+        env_ids=env_ids
+    )
+    # Zero velocity
+    obj.write_root_velocity_to_sim(
+        torch.zeros((len(env_ids), 6), device=env.device),
+        env_ids=env_ids
+    )
 
 
 def reset_bimanual_objects_symmetric(

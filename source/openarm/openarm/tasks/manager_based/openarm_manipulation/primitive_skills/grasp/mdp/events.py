@@ -198,12 +198,15 @@ def reset_from_reach_terminal_states(
     left_gripper_joint_names: list[str] = ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
     right_gripper_joint_names: list[str] = ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
     gripper_open_position: float = 0.04,
+    reset_cups: bool = True,
+    cup_cfg_name: str = "cup",
+    cup2_cfg_name: str = "cup2",
 ):
     """
-    Reset robot joints from pre-recorded terminal states of a successful reach policy.
+    Reset robot joints AND cup positions from pre-recorded terminal states of a successful reach policy.
 
-    NOTE: This only resets JOINT POSITIONS. Cup positions should be reset separately
-    using the same events as the reach task.
+    IMPORTANT: This now resets BOTH joint positions AND cup positions to ensure consistency.
+    The terminal states contain the exact cup positions that correspond to the saved joint positions.
 
     Args:
         env: The environment instance.
@@ -212,18 +215,24 @@ def reset_from_reach_terminal_states(
         left_gripper_joint_names: Names of the left gripper joints.
         right_gripper_joint_names: Names of the right gripper joints.
         gripper_open_position: The position to set gripper joints to (open).
+        reset_cups: Whether to also reset cup positions from terminal states.
+        cup_cfg_name: Name of the left cup in scene config.
+        cup2_cfg_name: Name of the right cup in scene config.
     """
+    print(f"[DEBUG] reset_from_reach_terminal_states called with {len(env_ids)} env_ids")
     if len(env_ids) == 0:
         return
 
     # Load saved terminal states
     if not hasattr(env, "_reach_terminal_states_buffer"):
         try:
-            env._reach_terminal_states_buffer = torch.load(terminal_states_path, map_location=env.device)
+            env._reach_terminal_states_buffer = torch.load(terminal_states_path, map_location=env.device, weights_only=False)
             # Transfer all states to the correct device
             for key, value in env._reach_terminal_states_buffer.items():
-                env._reach_terminal_states_buffer[key] = value.to(env.device)
+                if isinstance(value, torch.Tensor):
+                    env._reach_terminal_states_buffer[key] = value.to(env.device)
             print(f"[INFO] Loaded {env._reach_terminal_states_buffer['joint_pos'].shape[0]} reach terminal states")
+            print(f"[INFO] Available keys: {list(env._reach_terminal_states_buffer.keys())}")
         except FileNotFoundError:
             print(f"Warning: Reach terminal states file not found at {terminal_states_path}. "
                   "Roll-out reset will not function correctly.")
@@ -241,21 +250,69 @@ def reset_from_reach_terminal_states(
         print("Warning: No reach terminal states available for roll-out reset.")
         return
 
-    # Randomly select states
-    if num_available_states < len(env_ids):
-        state_indices = torch.randint(0, num_available_states, (len(env_ids),), device=env.device)
-    else:
-        state_indices = torch.randperm(num_available_states, device=env.device)[:len(env_ids)]
+    # Randomly select states - STORE indices for cup reset to use same states
+    state_indices = torch.randint(0, num_available_states, (len(env_ids),), device=env.device)
 
-    # Set robot joint positions (ONLY joints, not cup positions)
+    # Store selected indices for this reset batch
+    if not hasattr(env, "_current_reset_state_indices"):
+        env._current_reset_state_indices = {}
+    env._current_reset_state_indices[tuple(env_ids.tolist())] = state_indices
+
+    # Set robot joint positions
     joint_pos_to_set = terminal_states["joint_pos"][state_indices]
     joint_vel_to_set = terminal_states["joint_vel"][state_indices] if "joint_vel" in terminal_states else torch.zeros_like(joint_pos_to_set)
+
+    # Debug: Print first env's joint positions and EEF positions
+    if len(env_ids) > 0:
+        print(f"[DEBUG] Setting joint_pos[0]: {joint_pos_to_set[0, :7].tolist()}")  # First 7 joints (left arm)
+        if "left_eef_pos" in terminal_states:
+            eef_pos = terminal_states["left_eef_pos"][state_indices]
+            print(f"[DEBUG] Expected left EEF pos: {eef_pos[0].tolist()}")
 
     env.scene["robot"].write_joint_state_to_sim(
         joint_pos_to_set,
         joint_vel_to_set,
         env_ids=env_ids
     )
+
+    # Reset cup positions from terminal states (CRITICAL for consistency!)
+    if reset_cups:
+        # Reset left cup (cup/object)
+        if "object_pos" in terminal_states and cup_cfg_name in env.scene.keys():
+            cup = env.scene[cup_cfg_name]
+            cup_pos = terminal_states["object_pos"][state_indices]
+            cup_quat = terminal_states["object_quat"][state_indices]
+            # Convert local position to world position
+            world_pos = cup_pos + env.scene.env_origins[env_ids]
+
+            # Debug: Print cup position
+            if len(env_ids) > 0:
+                print(f"[DEBUG] Setting cup local_pos: {cup_pos[0].tolist()}, world_pos: {world_pos[0].tolist()}")
+
+            cup.write_root_pose_to_sim(
+                torch.cat([world_pos, cup_quat], dim=-1),
+                env_ids=env_ids
+            )
+            cup.write_root_velocity_to_sim(
+                torch.zeros((len(env_ids), 6), device=env.device),
+                env_ids=env_ids
+            )
+
+        # Reset right cup (cup2/object2)
+        if "object2_pos" in terminal_states and cup2_cfg_name in env.scene.keys():
+            cup2 = env.scene[cup2_cfg_name]
+            cup2_pos = terminal_states["object2_pos"][state_indices]
+            cup2_quat = terminal_states["object2_quat"][state_indices]
+            # Convert local position to world position
+            world_pos2 = cup2_pos + env.scene.env_origins[env_ids]
+            cup2.write_root_pose_to_sim(
+                torch.cat([world_pos2, cup2_quat], dim=-1),
+                env_ids=env_ids
+            )
+            cup2.write_root_velocity_to_sim(
+                torch.zeros((len(env_ids), 6), device=env.device),
+                env_ids=env_ids
+            )
 
     # Ensure grippers are open after robot reset
     reset_gripper_open(env, env_ids, left_gripper_joint_names, gripper_open_position)

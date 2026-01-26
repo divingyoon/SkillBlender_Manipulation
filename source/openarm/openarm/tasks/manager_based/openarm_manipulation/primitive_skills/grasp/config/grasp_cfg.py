@@ -108,13 +108,13 @@ class GraspObjectEnvCfg(GraspEnvCfg):
 
         cup_usd = f"{OPENARM_ROOT_DIR}/usds/openarm_bimanual/cup.usd"
 
-        # Cup for left arm - positioned for pre-grasp
-        # Initial position places cup where left arm's pre-grasp pose can reach
+        # Cup for left arm - positioned to match reach task reset
+        # Fixed position: same as reach reset (x=0.15, y=0.1, yaw=-pi/2)
         self.scene.cup = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Cup",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.3, 0.1, 0.0],
-                rot=[1.0, 0.0, 0.0, 0.0],  # Upright
+                pos=[0.15, 0.1, 0.0],  # Fixed: match reach task
+                rot=[0.707, 0.0, 0.0, 0.707],  # yaw = -pi/2 (match reach task)
             ),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
@@ -133,12 +133,13 @@ class GraspObjectEnvCfg(GraspEnvCfg):
             ),
         )
 
-        # Cup for right arm
+        # Cup for right arm - positioned to match reach task reset
+        # Fixed position: same as reach reset (x=0.15, y=-0.1, yaw=-pi/2)
         self.scene.cup2 = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Cup2",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.3, -0.1, 0.0],
-                rot=[1.0, 0.0, 0.0, 0.0],  # Upright
+                pos=[0.15, -0.1, 0.0],  # Fixed: match reach task
+                rot=[0.707, 0.0, 0.0, 0.707],  # yaw = -pi/2 (match reach task)
             ),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,

@@ -14,7 +14,7 @@
 
 import gymnasium as gym
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.ReachIK.config import agents as reach_agents
+from openarm.tasks.manager_based.openarm_manipulation.primitive_skills.ReachIK.config import agents as reach_agents
 
 
 gym.register(

@@ -15,27 +15,22 @@
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.utils import configclass
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.ReachIK.config import joint_pos_env_cfg as reach_joint_cfg
-from openarm.tasks.manager_based.openarm_manipulation.assets.openarm_bimanual import OPEN_ARM_HIGH_PD_CFG
+from openarm.tasks.manager_based.openarm_manipulation.primitive_skills.PourIK.config import (
+    joint_pos_env_cfg as grasp2g_joint_cfg,
+)
 from .. import mdp
 
 
 @configclass
-class ReachIKIKEnvCfg(reach_joint_cfg.ReachIKJointPosEnvCfg):
+class PourIKIKEnvCfg(grasp2g_joint_cfg.PourIKJointPosEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
 
         # Quick toggles for diagnosis
-        enable_orientation_constraint =False
+        enable_orientation_constraint = False
         enable_nullspace = True
         enable_joint_limit_avoidance = True
-
-        # Keep the high-PD robot for stable IK tracking, preserve init_state from parent
-        self.scene.robot = OPEN_ARM_HIGH_PD_CFG.replace(
-            prim_path="{ENV_REGEX_NS}/Robot",
-            init_state=self.scene.robot.init_state,
-        )
 
         # DualHead를 위해 Left → Right 순서로 배치
         # [0:6] left_arm (IK pose), [6:8] left_hand, [8:14] right_arm (IK pose), [14:16] right_hand
@@ -62,7 +57,7 @@ class ReachIKIKEnvCfg(reach_joint_cfg.ReachIKJointPosEnvCfg):
             joint_limit_eps=1.0e-3,
             joint_limit_clamp=50.0,
         )
-        # Left Hand - JointPosition (gripper는 IK가 아닌 직접 제어)
+        # Left hand (gripper)
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_finger_joint.*"],
@@ -91,7 +86,7 @@ class ReachIKIKEnvCfg(reach_joint_cfg.ReachIKJointPosEnvCfg):
             joint_limit_eps=1.0e-3,
             joint_limit_clamp=50.0,
         )
-        # Right Hand - JointPosition (gripper는 IK가 아닌 직접 제어)
+        # Right hand (gripper)
         self.actions.right_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_finger_joint.*"],

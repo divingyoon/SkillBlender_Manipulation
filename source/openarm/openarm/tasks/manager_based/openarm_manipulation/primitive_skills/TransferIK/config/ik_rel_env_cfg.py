@@ -15,14 +15,14 @@
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
 from isaaclab.utils import configclass
 
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.GraspIK.config import (
+from openarm.tasks.manager_based.openarm_manipulation.primitive_skills.TransferIK.config import (
     joint_pos_env_cfg as grasp2g_joint_cfg,
 )
 from .. import mdp
 
 
 @configclass
-class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
+class TransferIKIKEnvCfg(grasp2g_joint_cfg.TransferIKJointPosEnvCfg):
     def __post_init__(self):
         # post init of parent
         super().__post_init__()

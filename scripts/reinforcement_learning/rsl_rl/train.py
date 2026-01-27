@@ -53,6 +53,18 @@ parser.add_argument(
 parser.add_argument(
     "--swap_lr_prob", type=float, default=0.5, help="Probability to swap each environment per episode."
 )
+parser.add_argument(
+    "--warmstart_ckpt",
+    type=str,
+    default=None,
+    help="Optional checkpoint for on-demand warmstart rollout at every reset.",
+)
+parser.add_argument(
+    "--warmstart_steps",
+    type=int,
+    default=0,
+    help="Number of warmstart steps to rollout after each reset (requires --warmstart_ckpt).",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -125,6 +137,41 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import openarm.tasks  # noqa: F401
 from isaaclab.utils.math import combine_frame_transforms, quat_error_magnitude
+
+
+def _unwrap_actions(action):
+    """Unwrap nested action dictionaries."""
+    if isinstance(action, dict):
+        for key in ("actions", "action", "actions_mean", "policy"):
+            if key in action:
+                return _unwrap_actions(action[key])
+        if len(action) == 1:
+            return _unwrap_actions(next(iter(action.values())))
+    if isinstance(action, (tuple, list)) and len(action) == 1:
+        return _unwrap_actions(action[0])
+    return action
+
+
+class WarmStartWrapper(gym.Wrapper):
+    """Roll out a warmstart policy for a few steps after each reset."""
+
+    def __init__(self, env: gym.Env, policy, policy_nn, steps: int):
+        super().__init__(env)
+        self._policy = policy
+        self._policy_nn = policy_nn
+        self._steps = int(steps)
+
+    def reset(self, **kwargs):
+        obs = self.env.reset(**kwargs)
+        if self._steps <= 0:
+            return obs
+        for _ in range(self._steps):
+            with torch.inference_mode():
+                actions = _unwrap_actions(self._policy(obs))
+                obs, _, dones, _ = self.env.step(actions)
+                if self._policy_nn is not None:
+                    self._policy_nn.reset(dones)
+        return obs
 
 
 class EpisodeLogWrapper(gym.Wrapper):
@@ -547,6 +594,23 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         clip_actions=agent_cfg.clip_actions,
         swap_prob=args_cli.swap_lr_prob,
     )
+
+    # optional warmstart rollout after each reset
+    if args_cli.warmstart_ckpt and args_cli.warmstart_steps > 0:
+        print(f"[INFO] Warmstart rollout enabled: ckpt={args_cli.warmstart_ckpt}, steps={args_cli.warmstart_steps}")
+        if agent_cfg.class_name == "OnPolicyRunner":
+            warm_runner = OnPolicyRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+        elif agent_cfg.class_name == "DistillationRunner":
+            warm_runner = DistillationRunner(env, agent_cfg.to_dict(), log_dir=None, device=agent_cfg.device)
+        else:
+            raise ValueError(f"Unsupported runner class: {agent_cfg.class_name}")
+        warm_runner.load(args_cli.warmstart_ckpt)
+        warm_policy = warm_runner.get_inference_policy(device=env.unwrapped.device)
+        try:
+            warm_policy_nn = warm_runner.alg.policy
+        except AttributeError:
+            warm_policy_nn = warm_runner.alg.actor_critic
+        env = WarmStartWrapper(env, warm_policy, warm_policy_nn, args_cli.warmstart_steps)
 
     # create runner from rsl-rl
     if agent_cfg.class_name == "OnPolicyRunner":

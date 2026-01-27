@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
-from isaaclab.envs.mdp.actions.actions_cfg import DifferentialInverseKinematicsActionCfg
 from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation.bimanual.reach_ik.config import joint_pos_env_cfg as reach_joint_cfg
@@ -38,12 +37,25 @@ class OpenArmReachIKEnvCfg(reach_joint_cfg.OpenArmReachEnvCfg):
         # dof_split_index = 8 (left: 0~7, right: 8~15)
 
         # Left arm IK (relative)
-        self.actions.left_arm_action = DifferentialInverseKinematicsActionCfg(
+        self.actions.left_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_joint[1-7]"],
             body_name="openarm_left_hand",
-            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.5,
+            controller=DifferentialIKControllerCfg(
+                command_type="pose",
+                use_relative_mode=True,
+                ik_method="dls",
+                ik_params={"lambda_val": 0.05},
+            ),
+            scale=0.1,
+            orientation_constraint=True,
+            orientation_command_name="left_object_pose",
+            orientation_object_axis=(0.0, 1.0, 0.0),
+            orientation_roll=0.0,
+            nullspace_gain=0.1,
+            joint_limit_avoidance_gain=0.005,
+            joint_limit_eps=1.0e-3,
+            joint_limit_clamp=50.0,
         )
         # Left Hand - JointPosition (gripper는 IK가 아닌 직접 제어)
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
@@ -54,12 +66,25 @@ class OpenArmReachIKEnvCfg(reach_joint_cfg.OpenArmReachEnvCfg):
         )
 
         # Right arm IK (relative)
-        self.actions.right_arm_action = DifferentialInverseKinematicsActionCfg(
+        self.actions.right_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_joint[1-7]"],
             body_name="openarm_right_hand",
-            controller=DifferentialIKControllerCfg(command_type="pose", use_relative_mode=True, ik_method="dls"),
-            scale=0.5,
+            controller=DifferentialIKControllerCfg(
+                command_type="pose",
+                use_relative_mode=True,
+                ik_method="dls",
+                ik_params={"lambda_val": 0.05},
+            ),
+            scale=0.1,
+            orientation_constraint=True,
+            orientation_command_name="right_object_pose",
+            orientation_object_axis=(0.0, 1.0, 0.0),
+            orientation_roll=0.0,
+            nullspace_gain=0.1,
+            joint_limit_avoidance_gain=0.005,
+            joint_limit_eps=1.0e-3,
+            joint_limit_clamp=50.0,
         )
         # Right Hand - JointPosition (gripper는 IK가 아닌 직접 제어)
         self.actions.right_hand_action = mdp.JointPositionActionCfg(

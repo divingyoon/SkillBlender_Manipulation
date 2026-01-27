@@ -254,7 +254,7 @@ class RewardsCfg:
     phase_params_left = {
         "eef_link_name": "openarm_left_ee_tcp",
         "lift_height": 0.1,
-        "reach_distance": 0.05
+        "reach_distance": 0.05,
         "align_threshold": 0.0,
         "grasp_distance": 0.05,
         "close_threshold": 0.6,
@@ -264,7 +264,7 @@ class RewardsCfg:
     phase_params_right = {
         "eef_link_name": "openarm_right_ee_tcp",
         "lift_height": 0.1,
-        "reach_distance": 0.05
+        "reach_distance": 0.05,
         "align_threshold": 0.0,
         "grasp_distance": 0.05,
         "close_threshold": 0.6,

@@ -1,0 +1,51 @@
+--- git status ---
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Changes not staged for commit:
+  (use "git add <file>..." to update what will be committed)
+  (use "git restore <file>..." to discard changes in working directory)
+	modified:   SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/blending/pouring/pouring_env_cfg.py
+
+no changes added to commit (use "git add" and/or "git commit -a") 
+
+
+--- git diff ---
+diff --git a/SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/blending/pouring/pouring_env_cfg.py b/SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/blending/pouring/pouring_env_cfg.py
+index e837bde..3bc8beb 100644
+--- a/SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/blending/pouring/pouring_env_cfg.py
++++ b/SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/blending/pouring/pouring_env_cfg.py
+@@ -33,6 +33,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+ 
+ from . import mdp
+ from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
++from openarm.tasks.manager_based.openarm_manipulation.bimanual.reach import mdp as reach_mdp
+ 
+ 
+ @configclass
+@@ -149,14 +150,14 @@ class ObservationsCfg:
+             params={"object_cfg": SceneEntityCfg("object2")},
+         )
+         object_obs = ObsTerm(
+-            func=mdp.object_obs,
++            func=reach_mdp.object_obs,
+             params={
+                 "left_eef_link_name": "openarm_left_ee_tcp",
+                 "right_eef_link_name": "openarm_right_ee_tcp",
+             },
+         )
+         object2_obs = ObsTerm(
+-            func=mdp.object2_obs,
++            func=reach_mdp.object2_obs,
+             params={
+                 "left_eef_link_name": "openarm_left_ee_tcp",
+                 "right_eef_link_name": "openarm_right_ee_tcp",
+@@ -510,7 +511,7 @@ class TerminationsCfg:
+ class PouringBaseEnvCfg(ManagerBasedRLEnvCfg):
+     """Configuration for the bimanual pouring blending environment."""
+ 
+-    scene: PouringSceneCfg = PouringSceneCfg(num_envs=2048*1, env_spacing=2.5)
++    scene: PouringSceneCfg = PouringSceneCfg(num_envs=2048*2, env_spacing=2.5)
+     observations: ObservationsCfg = ObservationsCfg()
+     actions: ActionsCfg = ActionsCfg()
+     rewards: RewardsCfg = RewardsCfg()

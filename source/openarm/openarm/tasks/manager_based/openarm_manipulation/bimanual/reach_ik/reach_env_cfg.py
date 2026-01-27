@@ -83,7 +83,7 @@ class ReachSceneCfg(InteractiveSceneCfg):
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_object_pose = mdp.UniformPoseCommandCfg(
+    left_object_pose = mdp.YAxisAlignedPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(4.0, 4.0),
@@ -98,7 +98,7 @@ class CommandsCfg:
         ),
     )
 
-    right_object_pose = mdp.UniformPoseCommandCfg(
+    right_object_pose = mdp.YAxisAlignedPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(4.0, 4.0),
@@ -278,26 +278,8 @@ class RewardsCfg:
 
     # task terms
     left_end_effector_position_tracking = RewTerm(
-        func=mdp.position_command_error,
-        weight=-0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "left_object_pose",
-        },
-    )
-
-    right_end_effector_position_tracking = RewTerm(
-        func=mdp.position_command_error,
-        weight=-0.2,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
-            "command_name": "right_object_pose",
-        },
-    )
-
-    left_end_effector_position_tracking_fine_grained = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "std": 0.1,
@@ -305,9 +287,9 @@ class RewardsCfg:
         },
     )
 
-    right_end_effector_position_tracking_fine_grained = RewTerm(
+    right_end_effector_position_tracking = RewTerm(
         func=mdp.position_command_error_tanh,
-        weight=0.1,
+        weight=0.5,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
             "std": 0.1,
@@ -316,20 +298,23 @@ class RewardsCfg:
     )
 
     # Orientation tracking - EE 축을 object 축과 일치시키기
+    # To align hand +X with object +Z, use mdp.hand_x_align_object_z_reward.
+    # If you want the old pose-tracking reward, swap func back to mdp.orientation_command_error_tanh.
     left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.orientation_command_error,
-        weight=-0.1,
+        func=mdp.hand_x_align_object_z_reward,
+        weight=0.5,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
+            # Change this to "right_object_pose" if you intentionally want left hand aligned to right target.
             "command_name": "left_object_pose",
         },
     )
 
     right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.orientation_command_error,
-        weight=-0.1,
+        func=mdp.hand_x_align_object_z_reward,
+        weight=0.5,
         params={
-            "asset_cfg": SceneEntityCfg("robot", body_names=MISSING),
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
         },
     )
@@ -346,7 +331,7 @@ class RewardsCfg:
     )
 
     # action penalty
-    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.0001)
+    action_rate = RewTerm(func=mdp.action_rate_l2, weight=-0.001)
     joint_vel = RewTerm(
         func=mdp.joint_vel_l2,
         weight=-0.0001,

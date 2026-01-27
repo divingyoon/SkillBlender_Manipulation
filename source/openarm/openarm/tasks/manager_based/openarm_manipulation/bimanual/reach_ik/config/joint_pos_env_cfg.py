@@ -92,6 +92,7 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
                 collision_props=sim_utils.CollisionPropertiesCfg(
                     collision_enabled=False,  # 로봇과 충돌 비활성화
                 ),
+                visible=False,
             ),
         )
         self.scene.object = RigidObjectCfg(
@@ -120,6 +121,7 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
                 collision_props=sim_utils.CollisionPropertiesCfg(
                     collision_enabled=False,  # 로봇과 충돌 비활성화
                 ),
+                visible=False
             ),
         )
         self.scene.object2 = RigidObjectCfg(
@@ -130,13 +132,11 @@ class OpenArmReachEnvCfg(ReachEnvCfg):
 
         # override rewards - position tracking
         self.rewards.left_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.left_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_left_hand"]
         self.rewards.right_end_effector_position_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
-        self.rewards.right_end_effector_position_tracking_fine_grained.params["asset_cfg"].body_names = ["openarm_right_hand"]
 
-        # override rewards - orientation tracking (EE 축을 object 축과 일치)
-        self.rewards.left_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
-        self.rewards.right_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
+        # # override rewards - orientation tracking (EE 축을 object 축과 일치)
+        # self.rewards.left_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_left_hand"]
+        # self.rewards.right_end_effector_orientation_tracking.params["asset_cfg"].body_names = ["openarm_right_hand"]
 
         # override actions
         self.actions.left_arm_action = mdp.JointPositionActionCfg(

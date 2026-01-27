@@ -118,6 +118,22 @@ def orientation_command_error(env: ManagerBasedRLEnv, command_name: str, asset_c
     return quat_error_magnitude(curr_quat_w, des_quat_w)
 
 
+def orientation_command_error_tanh(
+    env: ManagerBasedRLEnv, std: float, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward tracking orientation using the tanh kernel.
+
+    The function computes the shortest-path orientation error and maps it with a tanh kernel.
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]  # type: ignore
+    error = quat_error_magnitude(curr_quat_w, des_quat_w)
+    return 1 - torch.tanh(error / std)
+
+
 def orientation_z_axis_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize misalignment of the body z-axis with the desired z-axis."""
     asset: RigidObject = env.scene[asset_cfg.name]
@@ -134,6 +150,29 @@ def orientation_z_axis_error(env: ManagerBasedRLEnv, command_name: str, asset_cf
     cos_sim = torch.sum(curr_z * des_z, dim=1)
     return 1.0 - cos_sim
 
+
+def hand_x_align_object_z_reward(
+    env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward aligning hand +X axis with command/object +Z axis.
+
+    Returns a [0, 1] reward using (1 + cos(theta)) / 2.
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]  # type: ignore
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    x_axis = x_axis.repeat(curr_quat_w.shape[0], 1)
+    z_axis = z_axis.repeat(curr_quat_w.shape[0], 1)
+
+    hand_x = quat_apply(curr_quat_w, x_axis)
+    obj_z = quat_apply(des_quat_w, z_axis)
+    cos_sim = torch.sum(hand_x * obj_z, dim=1)
+    return 0.5 * (1.0 + cos_sim)
 
 def any_axis_orientation_error(env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg) -> torch.Tensor:
     """Penalize if none of the body's principal axes align with the desired principal axes.

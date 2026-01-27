@@ -116,6 +116,30 @@ def hand_x_align_object_z_reward(
     return 0.5 * (1.0 + cos_sim)
 
 
+def hand_z_align_object_y_reward(
+    env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward aligning hand +Z axis with command/object +Y axis.
+
+    Returns a [0, 1] reward using (1 + cos(theta)) / 2.
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]  # type: ignore
+
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    z_axis = z_axis.repeat(curr_quat_w.shape[0], 1)
+    y_axis = y_axis.repeat(curr_quat_w.shape[0], 1)
+
+    hand_z = quat_apply(curr_quat_w, z_axis)
+    obj_y = quat_apply(des_quat_w, y_axis)
+    cos_sim = torch.sum(hand_z * obj_y, dim=1)
+    return 0.5 * (1.0 + cos_sim)
+
+
 def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
     """Compute normalized closure amount for the hand associated with the given link."""
     # identify which hand is being used to access the appropriate action term

@@ -78,35 +78,23 @@ class GraspIKSceneCfg(InteractiveSceneCfg):
 class GraspIKCommandsCfg:
     """Command terms for the MDP."""
 
-    left_object_pose = mdp.YAxisAlignedPoseCommandCfg(
-          asset_name="robot",
-          body_name=MISSING,
-          resampling_time_range=(5.0, 5.0),
-          debug_vis=True,
-          ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.3, 0.5),
-              pos_y=(0.1, 0.3),
-              pos_z=(0.25, 0.55),
-              roll=(0.0, 0.0),
-              pitch=(0.0, 0.0),
-              yaw=(0.0, 0.0),
-          ),
-      )
+    left_object_pose = mdp.ObjectPoseCommandCfg(
+        asset_name="robot",
+        asset_cfg=SceneEntityCfg("object"),
+        resampling_time_range=(5.0, 5.0),
+        pre_grasp_offset=(0.0, 0.0, 0.20),
+        hold_offset=(0.0, 0.0, 0.20),
+        lift_threshold_z=0.05,
+    )
 
-    right_object_pose = mdp.YAxisAlignedPoseCommandCfg(
-          asset_name="robot",
-          body_name=MISSING,
-          resampling_time_range=(5.0, 5.0),
-          debug_vis=True,
-          ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.3, 0.5),
-              pos_y=(-0.3, -0.1),
-              pos_z=(0.25, 0.55),
-              roll=(0.0, 0.0),
-              pitch=(0.0, 0.0),
-              yaw=(0.0, 0.0),
-          ),
-      )
+    right_object_pose = mdp.ObjectPoseCommandCfg(
+        asset_name="robot",
+        asset_cfg=SceneEntityCfg("object2"),
+        resampling_time_range=(5.0, 5.0),
+        pre_grasp_offset=(0.0, 0.0, 0.20),
+        hold_offset=(0.0, 0.0, 0.20),
+        lift_threshold_z=0.05,
+    )
 
 
 
@@ -273,7 +261,7 @@ class GraspIKRewardsCfg:
     right_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=1.0,
+        weight=2.0,
     )
 
     # Align hand +X with object +Z using command orientation.
@@ -289,6 +277,22 @@ class GraspIKRewardsCfg:
     right_end_effector_orientation_tracking = RewTerm(
         func=mdp.hand_x_align_object_z_reward,
         weight=0.5,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
+            "command_name": "right_object_pose",
+        },
+    )
+    left_end_effector_z_to_object_y = RewTerm(
+        func=mdp.hand_z_align_object_y_reward,
+        weight=0.25,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
+            "command_name": "left_object_pose",
+        },
+    )
+    right_end_effector_z_to_object_y = RewTerm(
+        func=mdp.hand_z_align_object_y_reward,
+        weight=0.25,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
@@ -468,6 +472,14 @@ class GraspIKTerminationsCfg:
     """Termination terms for the MDP."""
 
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
+    object_tipped = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"object_name": "object", "min_upright_dot": 0.5},
+    )
+    object2_tipped = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"object_name": "object2", "min_upright_dot": 0.5},
+    )
     # joint_limit_near = DoneTerm(
     #     func=mdp.joint_limit_near_or_min_margin,
     #     params={

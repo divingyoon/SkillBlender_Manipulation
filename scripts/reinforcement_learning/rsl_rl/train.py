@@ -124,6 +124,198 @@ from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 
 import openarm.tasks  # noqa: F401
+from isaaclab.utils.math import combine_frame_transforms, quat_error_magnitude
+
+
+class EpisodeLogWrapper(gym.Wrapper):
+    """Log per-episode reward terms and command stats to a file."""
+
+    def __init__(
+        self,
+        env: gym.Env,
+        log_path: str,
+        command_names: tuple[str, str],
+        eef_names: tuple[str, str],
+    ):
+        super().__init__(env)
+        self._log_path = log_path
+        self._command_names = command_names
+        self._eef_names = eef_names
+        self._fh = open(self._log_path, "a", encoding="utf-8")
+        self._limit_margin_threshold = 0.1
+        self._pos_success_thresh = 0.05
+        self._ori_success_thresh = 0.2
+
+    def close(self):
+        if self._fh is not None:
+            self._fh.flush()
+            self._fh.close()
+            self._fh = None
+        return super().close()
+
+    def step(self, action):
+        obs, rew, terminated, truncated, extras = self.env.step(action)
+        log_data = extras.get("log", {})
+        if log_data:
+            env_unwrapped = self.env.unwrapped
+            step_count = getattr(env_unwrapped, "common_step_counter", None)
+            cmd_stats = self._get_command_stats(env_unwrapped)
+            ee_stats = self._get_ee_stats(env_unwrapped)
+            action_stats = self._get_action_stats(env_unwrapped)
+            joint_stats = self._get_joint_limit_stats(env_unwrapped)
+            parts = [f"step={step_count}"]
+            parts.extend(f"{k}={float(v):.6f}" for k, v in log_data.items())
+            parts.extend(cmd_stats)
+            parts.extend(ee_stats)
+            parts.extend(action_stats)
+            parts.extend(joint_stats)
+            self._fh.write(" ".join(parts) + "\n")
+            self._fh.flush()
+        return obs, rew, terminated, truncated, extras
+
+    def _get_command_stats(self, env_unwrapped) -> list[str]:
+        stats = []
+        if not hasattr(env_unwrapped, "command_manager"):
+            return stats
+        left_name, right_name = self._command_names
+        for name in (left_name, right_name):
+            try:
+                cmd = env_unwrapped.command_manager.get_command(name)
+            except Exception:
+                continue
+            pos = cmd[:, :3].mean(dim=0)
+            pos_std = cmd[:, :3].std(dim=0)
+            quat = cmd[:, 3:7].mean(dim=0)
+            stats.append(
+                f"{name}_pos_mu=({pos[0]:.3f},{pos[1]:.3f},{pos[2]:.3f})"
+            )
+            stats.append(
+                f"{name}_pos_std=({pos_std[0]:.3f},{pos_std[1]:.3f},{pos_std[2]:.3f})"
+            )
+            stats.append(
+                f"{name}_quat_mu=({quat[0]:.3f},{quat[1]:.3f},{quat[2]:.3f},{quat[3]:.3f})"
+            )
+        return stats
+
+    def _get_ee_stats(self, env_unwrapped) -> list[str]:
+        stats = []
+        if not hasattr(env_unwrapped, "scene") or not hasattr(env_unwrapped, "command_manager"):
+            return stats
+        robot = env_unwrapped.scene["robot"]
+        body_names = robot.data.body_names
+        root_pos_w = robot.data.root_pos_w
+        root_quat_w = robot.data.root_quat_w
+        left_cmd, right_cmd = self._command_names
+        left_eef, right_eef = self._eef_names
+        for eef_name, cmd_name, side in ((left_eef, left_cmd, "left"), (right_eef, right_cmd, "right")):
+            try:
+                eef_idx = body_names.index(eef_name)
+            except ValueError:
+                continue
+            ee_pos_w = robot.data.body_pos_w[:, eef_idx]
+            ee_quat_w = robot.data.body_quat_w[:, eef_idx]
+            try:
+                cmd = env_unwrapped.command_manager.get_command(cmd_name)
+            except Exception:
+                continue
+            des_pos_b = cmd[:, :3]
+            des_quat_b = cmd[:, 3:7]
+            des_pos_w, des_quat_w = combine_frame_transforms(root_pos_w, root_quat_w, des_pos_b, des_quat_b)
+            pos_err = torch.norm(ee_pos_w - des_pos_w, dim=1)
+            ori_err = quat_error_magnitude(ee_quat_w, des_quat_w)
+            ee_pos_mu = ee_pos_w.mean(dim=0)
+            des_pos_mu = des_pos_w.mean(dim=0)
+            stats.append(f"{side}_pos_err_mu={pos_err.mean():.6f}")
+            stats.append(f"{side}_pos_err_std={pos_err.std():.6f}")
+            stats.append(f"{side}_ori_err_mu={ori_err.mean():.6f}")
+            stats.append(f"{side}_ori_err_std={ori_err.std():.6f}")
+            stats.append(
+                f"{side}_success_rate={(pos_err < self._pos_success_thresh).float().mean():.3f}"
+            )
+            stats.append(
+                f"{side}_ori_success_rate={(ori_err < self._ori_success_thresh).float().mean():.3f}"
+            )
+            stats.append(
+                f"{side}_ee_pos_mu=({ee_pos_mu[0]:.3f},{ee_pos_mu[1]:.3f},{ee_pos_mu[2]:.3f})"
+            )
+            stats.append(
+                f"{side}_cmd_pos_mu=({des_pos_mu[0]:.3f},{des_pos_mu[1]:.3f},{des_pos_mu[2]:.3f})"
+            )
+            stats.append(
+                f"{side}_ee_pos_0=({ee_pos_w[0,0]:.3f},{ee_pos_w[0,1]:.3f},{ee_pos_w[0,2]:.3f})"
+            )
+            stats.append(
+                f"{side}_ee_quat_0=({ee_quat_w[0,0]:.3f},{ee_quat_w[0,1]:.3f},{ee_quat_w[0,2]:.3f},{ee_quat_w[0,3]:.3f})"
+            )
+            stats.append(
+                f"{side}_cmd_pos_0=({des_pos_w[0,0]:.3f},{des_pos_w[0,1]:.3f},{des_pos_w[0,2]:.3f})"
+            )
+            stats.append(
+                f"{side}_cmd_quat_0=({des_quat_w[0,0]:.3f},{des_quat_w[0,1]:.3f},{des_quat_w[0,2]:.3f},{des_quat_w[0,3]:.3f})"
+            )
+        return stats
+
+    def _get_action_stats(self, env_unwrapped) -> list[str]:
+        stats = []
+        if not hasattr(env_unwrapped, "action_manager"):
+            return stats
+        for name, side in (("left_arm_action", "left"), ("right_arm_action", "right")):
+            try:
+                term = env_unwrapped.action_manager.get_term(name)
+            except Exception:
+                continue
+            act = term.processed_actions
+            mag = torch.norm(act, dim=1)
+            stats.append(f"{side}_action_mag_mu={mag.mean():.6f}")
+            stats.append(f"{side}_action_mag_std={mag.std():.6f}")
+        return stats
+
+    def _get_joint_limit_stats(self, env_unwrapped) -> list[str]:
+        stats = []
+        if not hasattr(env_unwrapped, "action_manager"):
+            return stats
+        robot = env_unwrapped.scene["robot"]
+        for name, side in (("left_arm_action", "left"), ("right_arm_action", "right")):
+            try:
+                term = env_unwrapped.action_manager.get_term(name)
+            except Exception:
+                continue
+            joint_ids = term._joint_ids
+            q = robot.data.joint_pos[:, joint_ids]
+            limits = robot.data.soft_joint_pos_limits[:, joint_ids, :]
+            q_min = limits[..., 0]
+            q_max = limits[..., 1]
+            span = torch.clamp(q_max - q_min, min=1.0e-6)
+            margin = torch.minimum((q - q_min) / span, (q_max - q) / span)
+            min_margin = margin.min(dim=1).values
+            near = (min_margin < self._limit_margin_threshold).float()
+            stats.append(f"{side}_limit_margin_min_mu={min_margin.mean():.6f}")
+            stats.append(f"{side}_limit_near_rate={near.mean():.3f}")
+
+            # per-joint stats
+            joint_margin_mu = margin.mean(dim=0)
+            joint_near_rate = (margin < self._limit_margin_threshold).float().mean(dim=0)
+            if hasattr(term, "_joint_names"):
+                names = term._joint_names
+            else:
+                names = [f"j{i}" for i in range(joint_margin_mu.numel())]
+            margin_items = ",".join(
+                f"{n}:{joint_margin_mu[i].item():.3f}" for i, n in enumerate(names)
+            )
+            near_items = ",".join(
+                f"{n}:{joint_near_rate[i].item():.2f}" for i, n in enumerate(names)
+            )
+            stats.append(f"{side}_limit_margin_mu_per_joint=({margin_items})")
+            stats.append(f"{side}_limit_near_rate_per_joint=({near_items})")
+            # raw joint positions for env 0 (debug)
+            q0 = q[0]
+            if hasattr(term, "_joint_names"):
+                names = term._joint_names
+            else:
+                names = [f"j{i}" for i in range(q0.numel())]
+            q0_items = ",".join(f"{n}:{q0[i].item():.3f}" for i, n in enumerate(names))
+            stats.append(f"{side}_joint_pos_0=({q0_items})")
+        return stats
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
@@ -296,6 +488,26 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
+
+    # optional simple episode logging (reach_ik / grasp_2g_ik only)
+    task_lower = args_cli.task.lower()
+    if (
+        "reach_ik" in task_lower
+        or "reachik" in task_lower
+        or "grasp_2g_ik" in task_lower
+        or "grasp2gik" in task_lower
+        or "grasp_ik" in task_lower
+        or "graspik" in task_lower
+    ):
+        log_name = f"{task_name}_{os.path.basename(log_dir)}.log"
+        log_path = os.path.join(log_root_path, log_name)
+        print(f"[INFO] Episode log: {log_path}")
+        env = EpisodeLogWrapper(
+            env,
+            log_path,
+            ("left_object_pose", "right_object_pose"),
+            ("openarm_left_hand", "openarm_right_hand"),
+        )
 
     # convert to single-agent instance if required by the RL algorithm
     if isinstance(env.unwrapped, DirectMARLEnv):

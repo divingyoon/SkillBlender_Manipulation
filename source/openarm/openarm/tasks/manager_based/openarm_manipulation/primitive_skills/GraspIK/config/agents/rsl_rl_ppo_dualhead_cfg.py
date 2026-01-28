@@ -46,15 +46,22 @@ class Grasp2gIKDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         # entropy_coef: 정책의 엔트로피에 대한 가중치
         # - 높을수록 더 많은 탐험 (다양한 행동 시도)
         # - 낮을수록 exploitation 위주 (검증된 행동 반복)
-        # - 양손 비대칭 학습 문제 해결: 0.01 → 0.02로 증가하여
-        #   한쪽이 성공해도 다른쪽이 독립적으로 탐험하도록 유도
-        entropy_coef=0.02,
+        # - 양손 비대칭 학습 문제 해결 + 붕괴 방지: 0.02 → 0.03
+        entropy_coef=0.03,
         num_learning_epochs=8,
         num_mini_batches=8,
-        learning_rate=1.0e-4,
+        # [붕괴 방지] Learning rate 감소: 1e-4 → 5e-5
+        # Phase 전환 시 급격한 policy 변화 완화
+        learning_rate=5.0e-5,
         schedule="adaptive",
         gamma=0.99,
-        lam=0.95,
-        desired_kl=0.01,
-        max_grad_norm=1.0,
+        # [붕괴 방지] GAE lambda 감소: 0.95 → 0.9
+        # Value function 오차에 대한 의존도 감소
+        lam=0.9,
+        # [붕괴 방지] KL 목표 완화: 0.01 → 0.02
+        # Adaptive LR 감소 속도 완화 (LR 급감 방지)
+        desired_kl=0.02,
+        # [붕괴 방지] Gradient clipping 강화: 1.0 → 0.5
+        # Phase 전환 시 gradient 폭발 방지
+        max_grad_norm=0.5,
     )

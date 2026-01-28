@@ -430,7 +430,32 @@ def object_lift_progress(
     return torch.clamp(progress, min=0.0, max=1.0)
 
 
-def _update_grasp2g_phase(
+# =============================================================================
+# Phase 기반 보상 시스템 (Grasp Phase)
+# =============================================================================
+#
+# [Phase 구조 설명]
+# 양손(left/right)이 각각 독립적인 Phase를 가짐:
+#   - Grasp_phase_left: 왼손의 현재 Phase
+#   - Grasp_phase_right: 오른손의 현재 Phase
+#
+# [Phase 전이 조건]
+#   Phase 0 (Reaching): 초기 상태, 물체에 접근 중
+#       ↓ reach_ok: EEF가 물체에 reach_distance(0.05m) 이내 도달
+#   Phase 1 (Grasping): 물체 근처에서 파지 시도 중
+#       ↓ grasp_ok: EEF가 grasp_distance(0.02m) 이내 + 그리퍼 closure > close_threshold(0.6)
+#   Phase 2 (Lifting): 물체를 잡고 들어올리는 중
+#       ↓ lift_ok: 물체 높이 > lift_height(0.1m)
+#   Phase 3 (Holding): 물체를 목표 높이까지 들어올림, 유지 중
+#
+# [Phase별 보상 활성화 예시]
+#   phase_weights = [1.0, 0.5, 0.0, 0.0]  → Phase 0에서 100%, Phase 1에서 50%
+#   phase_weights = [0.0, 0.0, 1.0, 1.0]  → Phase 2,3에서만 100%
+#
+# =============================================================================
+
+
+def _update_Grasp_phase(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
     object_cfg: SceneEntityCfg,
@@ -441,29 +466,50 @@ def _update_grasp2g_phase(
     close_threshold: float,
     hold_duration: float,
 ) -> torch.Tensor:
-    """Update phase based on reach -> grasp -> lift conditions."""
-    if "left" in eef_link_name:
-        phase_attr = "grasp2g_phase_left"
-    elif "right" in eef_link_name:
-        phase_attr = "grasp2g_phase_right"
-    else:
-        phase_attr = "grasp2g_phase"
+    """Phase 상태 업데이트 (reach → grasp → lift → hold).
 
+    Args:
+        eef_link_name: "left" 또는 "right"를 포함하면 해당 손의 Phase 추적
+        reach_distance: Phase 0→1 전이 거리 (기본 0.05m)
+        grasp_distance: Phase 1→2 전이 거리 (기본 0.02m)
+        close_threshold: Phase 1→2 전이 그리퍼 closure (기본 0.6)
+        lift_height: Phase 2→3 전이 높이 (기본 0.1m)
+
+    Returns:
+        각 환경의 현재 Phase (0, 1, 2, 3)
+    """
+    # 좌/우 손 별도 Phase 추적
+    if "left" in eef_link_name:
+        phase_attr = "Grasp_phase_left"
+    elif "right" in eef_link_name:
+        phase_attr = "Grasp_phase_right"
+    else:
+        phase_attr = "Grasp_phase"
+
+    # Phase 초기화
     if not hasattr(env, phase_attr):
         setattr(env, phase_attr, torch.zeros(env.num_envs, device=env.device, dtype=torch.long))
 
     phase = getattr(env, phase_attr)
+
+    # 에피소드 리셋 시 Phase 초기화
     if hasattr(env, "reset_buf"):
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
+    # Phase 전이 조건 체크
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     grasp_ok = _grasp_success(env, eef_link_name, object_cfg, grasp_distance, close_threshold)
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
 
+    # Phase 전이 (순차적, 역방향 불가)
+    # Phase 0 → 1: 물체에 충분히 접근
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
+    # Phase 1 → 2: 파지 성공 (가깝고 + 그리퍼 닫힘)
     phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)
+    # Phase 2 → 3: 들어올리기 성공
     phase = torch.where((phase == 2) & lift_ok, torch.tensor(3, device=env.device), phase)
+
     setattr(env, phase_attr, phase)
     return phase
 
@@ -476,7 +522,7 @@ def phase_eef_to_object_distance(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -499,7 +545,7 @@ def phase_eef_to_object_orientation(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -521,7 +567,7 @@ def phase_grasp_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -548,7 +594,7 @@ def phase_object_goal_distance_with_ee(
     phase_params: dict,
 ) -> torch.Tensor:
     """Phase-gated goal tracking with EE proximity."""
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         phase_params["eef_link_name"],
         object_cfg,
@@ -591,7 +637,7 @@ def phase_gripper_open_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -613,7 +659,7 @@ def phase_reach_preclose_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -651,7 +697,7 @@ def phase_closed_far_reach_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,
@@ -673,7 +719,7 @@ def phase_lift_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         phase_params["eef_link_name"],
         object_cfg,
@@ -696,7 +742,7 @@ def phase_hold_reward(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         phase_params["eef_link_name"],
         object_cfg,
@@ -711,13 +757,13 @@ def phase_hold_reward(
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 
-def grasp2g_phase_value(
+def Grasp_phase_value(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     phase_params: dict,
 ) -> torch.Tensor:
     """Return the per-hand phase as a float for logging."""
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         phase_params["eef_link_name"],
         object_cfg,
@@ -739,7 +785,7 @@ def phase_joint_vel_l2(
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
-    phase = _update_grasp2g_phase(
+    phase = _update_Grasp_phase(
         env,
         eef_link_name,
         object_cfg,

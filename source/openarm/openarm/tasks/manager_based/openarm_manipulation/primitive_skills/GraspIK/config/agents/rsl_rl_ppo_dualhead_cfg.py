@@ -47,20 +47,20 @@ class Grasp2gIKDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         # - 높을수록 더 많은 탐험 (다양한 행동 시도)
         # - 낮을수록 exploitation 위주 (검증된 행동 반복)
         # - 양손 비대칭 학습 문제 해결 + 붕괴 방지: 0.02 → 0.03
-        entropy_coef=0.03,
-        num_learning_epochs=8,
-        num_mini_batches=8,
+        entropy_coef=0.01,
+        num_learning_epochs=5,
+        num_mini_batches=10,
         # [붕괴 방지] Learning rate 감소: 1e-4 → 5e-5
         # Phase 전환 시 급격한 policy 변화 완화
-        learning_rate=5.0e-5,
+        learning_rate=1.0e-4,
         schedule="adaptive",
         gamma=0.99,
         # [붕괴 방지] GAE lambda 감소: 0.95 → 0.9
         # Value function 오차에 대한 의존도 감소
-        lam=0.9,
+        lam=0.95,
         # [붕괴 방지] KL 목표 완화: 0.01 → 0.02
         # Adaptive LR 감소 속도 완화 (LR 급감 방지)
-        desired_kl=0.02,
+        desired_kl=0.01,
         # [붕괴 방지] Gradient clipping 강화: 1.0 → 0.5
         # Phase 전환 시 gradient 폭발 방지
         max_grad_norm=0.5,

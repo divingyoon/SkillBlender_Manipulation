@@ -15,9 +15,3 @@ log/*
 
 # Now, ignore the contents of the rsl_rl directory
 log/rsl_rl/*
-
-# Finally, un-ignore the specific directories you want to track
-!log/rsl_rl/openarm_bi_grasp_2g/
-!log/rsl_rl/openarm_bi_grasp_2g_ik/
-!log/rsl_rl/openarm_bi_reach/
-!log/rsl_rl/openarm_bi_reach_ik/

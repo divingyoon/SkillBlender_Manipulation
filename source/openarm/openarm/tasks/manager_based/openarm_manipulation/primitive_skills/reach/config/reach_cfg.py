@@ -52,17 +52,17 @@ class ReachObjectEnvCfg(ReachEnvCfg):
                 pos=[0.0, 0.0, -0.25],
                 rot=[1.0, 0.0, 0.0, 0.0],
                 joint_pos={ # Initial positions for bimanual robot, controlling only left arm
-                    "openarm_left_joint1": -0.31204933,
+                    "openarm_left_joint1": 0.2,
                     "openarm_left_joint2": -0.42612678,
                     "openarm_left_joint3": 0.32234982,
-                    "openarm_left_joint4": 0.43979153,
+                    "openarm_left_joint4": 1.53979153,
                     "openarm_left_joint5": 0.0,
-                    "openarm_left_joint6": -0.25350952,
+                    "openarm_left_joint6": 0.25350952,
                     "openarm_left_joint7": -0.827409,
-                    "openarm_right_joint1": 0.31204933, 
+                    "openarm_right_joint1": -0.2, 
                     "openarm_right_joint2": 0.42612678,
                     "openarm_right_joint3": -0.32234982,
-                    "openarm_right_joint4": 0.43979153,
+                    "openarm_right_joint4": 1.53979153,
                     "openarm_right_joint5": 0.0,
                     "openarm_right_joint6": -0.25350952,
                     "openarm_right_joint7": 0.827409,
@@ -98,7 +98,7 @@ class ReachObjectEnvCfg(ReachEnvCfg):
         self.scene.cup = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Cup",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.3, 0.1, 0.0],
+                pos=[0.15, 0.1, 0.0],
                 rot=[1.0, 0.0, 0.0, 0.0],
             ),
             spawn=UsdFileCfg(
@@ -120,7 +120,7 @@ class ReachObjectEnvCfg(ReachEnvCfg):
         self.scene.cup2 = RigidObjectCfg(
             prim_path="{ENV_REGEX_NS}/Cup2",
             init_state=RigidObjectCfg.InitialStateCfg(
-                pos=[0.3, -0.1, 0.0],
+                pos=[0.15, -0.1, 0.0],
                 rot=[1.0, 0.0, 0.0, 0.0],
             ),
             spawn=UsdFileCfg(
@@ -157,7 +157,7 @@ class ReachObjectEnvCfg(ReachEnvCfg):
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_finger_joint.*"],
-            scale=0.8,
+            scale=0.0,
             use_default_offset=True,
         )
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
@@ -177,7 +177,7 @@ class ReachObjectEnvCfg(ReachEnvCfg):
         self.actions.right_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_finger_joint.*"],
-            scale=0.8,
+            scale=0.0,
             use_default_offset=True,
         )
 

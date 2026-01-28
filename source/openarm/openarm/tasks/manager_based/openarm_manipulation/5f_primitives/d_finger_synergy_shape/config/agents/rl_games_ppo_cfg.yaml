@@ -1,0 +1,95 @@
+# Copyright 2025 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# rl_games PPO configuration for Primitive D: Finger Synergy Shape
+# Matches hyperparameters from rsl_rl_ppo_cfg.py
+
+params:
+  seed: 42
+
+  # environment wrapper clipping
+  env:
+    clip_observations: 100.0
+    clip_actions: 1.0
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [128, 64]  # Matches actor_hidden_dims/critic_hidden_dims
+      activation: elu
+      d2rl: False
+
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  load_checkpoint: False
+  load_path: ''
+
+  config:
+    name: primitive_d_finger_synergy_shape
+    env_name: rlgpu
+    device: 'cuda:0'
+    device_name: 'cuda:0'
+    multi_gpu: False
+    ppo: True
+    mixed_precision: False
+    normalize_input: False  # empirical_normalization=False
+    normalize_value: False
+    value_bootstrap: True
+    num_actors: -1
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95  # lam=0.95
+    learning_rate: 5e-4
+    lr_schedule: adaptive
+    schedule_type: legacy
+    kl_threshold: 0.01  # desired_kl=0.01
+    score_to_win: 100000
+    max_epochs: 10000  # max_iterations=800
+    save_best_after: 100
+    save_frequency: 100  # save_interval=100
+    print_stats: True
+    grad_norm: 1.0
+    entropy_coef: 0.005
+    truncate_grads: True
+    e_clip: 0.2
+    horizon_length: 24  # num_steps_per_env=24
+    minibatch_size: 32768  # 4096 * 24 / 4
+    mini_epochs: 5  # num_learning_epochs=5
+    critic_coef: 1
+    clip_value: True
+    clip_actions: False
+    bounds_loss_coef: 0.0001

@@ -2,6 +2,7 @@ pyproject.toml
 setup.py
 sbm/__init__.py
 sbm/rl/__init__.py
+sbm/rl/actor_critic_dual_head.py
 sbm/rl/actor_critic_hierarchical.py
 sbm/rl/register_rsl_rl.py
 sbm/rl/rl_cfg.py

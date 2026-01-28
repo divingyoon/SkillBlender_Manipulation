@@ -188,24 +188,24 @@ class RewardsCfg:
 
     reaching_left_cup = RewTerm(
         func=mdp.tcp_distance_to_target,
-        params={"tcp_body_name": "openarm_left_ee_tcp", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
+        params={"tcp_body_name": "openarm_left_hand", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
         weight=1.0,
     )
     
     reaching_right_cup2 = RewTerm(
         func=mdp.tcp_distance_to_target,
-        params={"tcp_body_name": "openarm_right_ee_tcp", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
+        params={"tcp_body_name": "openarm_right_hand", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
         weight=1.0,
     )
 
     tcp_forward_alignment_left = RewTerm(
         func=mdp.tcp_z_axis_to_target_alignment,
-        params={"tcp_body_name": "openarm_left_ee_tcp", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
+        params={"tcp_body_name": "openarm_left_hand", "target_cfg": SceneEntityCfg("cup"), "offset": [0.0, 0.0, 0.02]},
         weight=0.5,
     )
     tcp_forward_alignment_right = RewTerm(
         func=mdp.tcp_z_axis_to_target_alignment,
-        params={"tcp_body_name": "openarm_right_ee_tcp", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
+        params={"tcp_body_name": "openarm_right_hand", "target_cfg": SceneEntityCfg("cup2"), "offset": [0.0, 0.0, 0.02]},
         weight=0.5,
     )
 
@@ -234,6 +234,18 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
+    # Penalty when a cup tips over.
+    cup_tip_penalty = RewTerm(
+        func=mdp.cup_tipped,
+        weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0},
+    )
+    cup2_tip_penalty = RewTerm(
+        func=mdp.cup_tipped,
+        weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
+    )
+
 
 @configclass
 class TerminationsCfg:
@@ -248,6 +260,14 @@ class TerminationsCfg:
     cup2_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
         params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")},
+    )
+    cup_tipping = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0},
+    )
+    cup2_tipping = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
     )
 
 

@@ -91,7 +91,7 @@ from isaaclab.envs import (
 )
 from isaaclab.utils.assets import retrieve_file_path
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
+from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
 from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
 
@@ -340,6 +340,11 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     obs = env.get_observations()
     timestep = 0
     step_count = 0
+    # prepare joint logging (exclude finger joints)
+    robot = env.unwrapped.scene["robot"]
+    joint_names = robot.data.joint_names
+    non_finger_joint_ids = [i for i, name in enumerate(joint_names) if "finger" not in name]
+    episode_counts = torch.zeros(env.unwrapped.num_envs, dtype=torch.int64, device=env.unwrapped.device)
     # simulate environment
     while simulation_app.is_running():
         start_time = time.time()
@@ -353,10 +358,37 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                 output = policy_nn.act_inference_hrl(obs)
                 masks = output.get("masks")
             # env stepping
-            obs, _, dones, _ = env.step(actions)
+            obs, _, dones, extras = env.step(actions)
             if step_count % 200 == 0:
                 _log_left_right_metrics(env)
             step_count += 1
+            # print non-finger joint positions at episode end
+            done_mask = dones.squeeze(-1).to(dtype=torch.bool)
+            if done_mask.any():
+                done_env_ids = done_mask.nonzero(as_tuple=False).squeeze(-1)
+                if isinstance(extras, dict) and "terminal_joint_pos" in extras and "terminal_env_ids" in extras:
+                    term_ids = extras["terminal_env_ids"].to(device=done_env_ids.device)
+                    term_pos = extras["terminal_joint_pos"]
+                    # align terminal positions with done env ids
+                    idx_map = {int(env_id): i for i, env_id in enumerate(term_ids.tolist())}
+                    keep = [idx_map.get(int(env_id), None) for env_id in done_env_ids.tolist()]
+                    valid = [i for i, k in enumerate(keep) if k is not None]
+                    if valid:
+                        sel = torch.tensor([keep[i] for i in valid], device=term_pos.device, dtype=torch.long)
+                        joint_pos = term_pos[sel][:, non_finger_joint_ids].detach().cpu()
+                        env_ids_for_print = [done_env_ids[i].item() for i in valid]
+                    else:
+                        joint_pos = robot.data.joint_pos[done_env_ids][:, non_finger_joint_ids].detach().cpu()
+                        env_ids_for_print = done_env_ids.tolist()
+                else:
+                    joint_pos = robot.data.joint_pos[done_env_ids][:, non_finger_joint_ids].detach().cpu()
+                    env_ids_for_print = done_env_ids.tolist()
+                for idx, env_id in enumerate(env_ids_for_print):
+                    episode_counts[env_id] += 1
+                    print(
+                        f"[EP{int(episode_counts[env_id])}] env={env_id} non_finger_joint_pos="
+                        f"{joint_pos[idx].tolist()}"
+                    )
             # reset recurrent states for episodes that have terminated
             policy_nn.reset(dones)
             if blend_vis_enabled and masks is not None:

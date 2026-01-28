@@ -1,0 +1,98 @@
+# Copyright 2025 Enactic, Inc.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# rl_games PPO configuration for Primitive B: Contact Force Hold
+# Matches hyperparameters from rsl_rl_ppo_cfg.py
+
+params:
+  seed: 42
+
+  # environment wrapper clipping
+  env:
+    clip_observations: 100.0
+    clip_actions: 1.0
+
+  algo:
+    name: a2c_continuous
+
+  model:
+    name: continuous_a2c_logstd
+
+  network:
+    name: actor_critic
+    separate: False
+    space:
+      continuous:
+        mu_activation: None
+        sigma_activation: None
+
+        mu_init:
+          name: default
+        sigma_init:
+          name: const_initializer
+          val: 0
+        fixed_sigma: True
+    mlp:
+      units: [256, 128, 64]  # Matches actor_hidden_dims/critic_hidden_dims
+      activation: elu
+      d2rl: False
+
+      initializer:
+        name: default
+      regularizer:
+        name: None
+
+  load_checkpoint: False
+  load_path: ''
+
+  config:
+    name: primitive_b_contact_force_hold
+    env_name: rlgpu
+    device: 'cuda:0'
+    device_name: 'cuda:0'
+    multi_gpu: False
+    ppo: True
+    mixed_precision: False
+    normalize_input: True  # empirical_normalization=True (important for force obs)
+    normalize_value: True
+    value_bootstrap: False
+    num_actors: -1
+    reward_shaper:
+      scale_value: 1.0
+    normalize_advantage: True
+    gamma: 0.99
+    tau: 0.95  # lam=0.95
+    learning_rate: 1e-4  # Lower LR for stability
+    lr_schedule: adaptive
+    schedule_type: legacy
+    kl_threshold: 0.008  # desired_kl=0.008
+    score_to_win: 100000
+    max_epochs: 200000  # max_iterations=2000
+    save_best_after: 200
+    save_frequency: 200  # save_interval=200
+    print_stats: True
+    grad_norm: 1.0
+    entropy_coef: 0.01  # Higher entropy for exploration
+    truncate_grads: True
+    e_clip: 0.2
+    horizon_length: 32  # num_steps_per_env=32
+    minibatch_size: 4
+    # minibatch_size: 2048  # divisible by 64*32 and 4096*32
+    # minibatch_size: 32768
+    mini_epochs: 8  # num_learning_epochs=8
+    critic_coef: 1
+    clip_value: True
+    clip_actions: False
+    seq_len: 4
+    bounds_loss_coef: 0.0001

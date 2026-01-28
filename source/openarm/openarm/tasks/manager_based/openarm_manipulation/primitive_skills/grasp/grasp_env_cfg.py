@@ -149,17 +149,43 @@ class EventCfg:
 
     # 2. Roll-out reset: Set robot joints AND cup positions from reach terminal states
     # This now handles BOTH robot and cup reset for consistency
-    reset_from_reach = EventTerm(
-        func=mdp.reset_from_reach_terminal_states,
+    # reset_from_reach = EventTerm(
+    #     func=mdp.reset_from_reach_terminal_states,
+    #     mode="reset",
+    #     params={
+    #         "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
+    #         "left_gripper_joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
+    #         "right_gripper_joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
+    #         "gripper_open_position": 0.04,
+    #         "reset_cups": True,
+    #         "cup_cfg_name": "cup",
+    #         "cup2_cfg_name": "cup2",
+    #     },
+    # )
+    reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
+
+    reset_cup_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "terminal_states_path": "/home/user/rl_ws/SkillBlender_Manipulation/data/reach_terminal_states.pt",
-            "left_gripper_joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"],
-            "right_gripper_joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"],
-            "gripper_open_position": 0.04,
-            "reset_cups": True,
-            "cup_cfg_name": "cup",
-            "cup2_cfg_name": "cup2",
+            "pose_range": {
+                "x": (0.15, 0.15), "y": (0.1, 0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("cup"),
+        },
+    )
+    reset_cup2_position = EventTerm(
+        func=mdp.reset_root_state_uniform,
+        mode="reset",
+        params={
+            "pose_range": {
+                "x": (0.15, 0.15), "y": (-0.1, -0.1), "z": (0.0, 0.0),
+                "yaw": (-math.pi / 2, -math.pi / 2),
+            },
+            "velocity_range": {},
+            "asset_cfg": SceneEntityCfg("cup2"),
         },
     )
 
@@ -179,7 +205,7 @@ class RewardsCfg:
         func=mdp.object_ee_distance_tanh,
         params={
             "std": 0.1,
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
         },
         weight=5.0,
@@ -188,7 +214,7 @@ class RewardsCfg:
         func=mdp.object_ee_distance_tanh,
         params={
             "std": 0.1,
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
         },
         weight=5.0,
@@ -198,44 +224,45 @@ class RewardsCfg:
     left_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
-            "lift_height": 0.1,
+            "lift_height": 0.03,
             "object_cfg": SceneEntityCfg("cup"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_ee_tcp",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
             },
         },
-        weight=15.0,
+        weight=20.0,
     )
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
-            "lift_height": 0.1,
+            "lift_height": 0.03,
             "object_cfg": SceneEntityCfg("cup2"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_ee_tcp",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "grasp_distance": 0.02,
                 "close_threshold": 0.6,
             },
         },
-        weight=15.0,
+        weight=20.0,
     )
 
     # === GRASP REWARDS (Phase 1, 2 active) ===
     left_grasp = RewTerm(
         func=mdp.phase_grasp_reward,
         params={
-            "eef_link_name": "openarm_left_ee_tcp",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
             "reach_radius": 0.05,
             "close_threshold": 0.4,
+            "closure_max": 0.44,
             "phase_weights": [0.0, 1.0, 1.0, 0.5],
             "phase_params": {
                 "eef_link_name": "openarm_left_ee_tcp",
@@ -245,15 +272,16 @@ class RewardsCfg:
                 "close_threshold": 0.6,
             },
         },
-        weight=3.0,
+        weight=5.0,
     )
     right_grasp = RewTerm(
         func=mdp.phase_grasp_reward,
         params={
-            "eef_link_name": "openarm_right_ee_tcp",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
             "reach_radius": 0.05,
             "close_threshold": 0.4,
+            "closure_max": 0.44,
             "phase_weights": [0.0, 1.0, 1.0, 0.5],
             "phase_params": {
                 "eef_link_name": "openarm_right_ee_tcp",
@@ -263,7 +291,27 @@ class RewardsCfg:
                 "close_threshold": 0.6,
             },
         },
+        weight=5.0,
+    )
+
+    # === GRIPPER CLOSURE PENALTY ===
+    left_closure_penalty = RewTerm(
+        func=mdp.closure_amount_penalty,
         weight=3.0,
+        params={
+            "eef_link_name": "openarm_left_ee_tcp",
+            "threshold": 0.44,
+            "penalty_scale": -1.0,
+        },
+    )
+    right_closure_penalty = RewTerm(
+        func=mdp.closure_amount_penalty,
+        weight=3.0,
+        params={
+            "eef_link_name": "openarm_right_ee_tcp",
+            "threshold": 0.44,
+            "penalty_scale": -1.0,
+        },
     )
 
     # === PHASE LOGGING (weight=0) ===
@@ -301,7 +349,7 @@ class RewardsCfg:
         func=mdp.grasp_success_with_hold,
         weight=10.0,
         params={
-            "lift_threshold": 0.05,
+            "lift_threshold": 0.1,
             "eef_link_name_left": "openarm_left_ee_tcp",
             "eef_link_name_right": "openarm_right_ee_tcp",
             "object_cfg_left": SceneEntityCfg("cup"),
@@ -315,7 +363,7 @@ class RewardsCfg:
         func=mdp.continuous_hold_reward,
         weight=1.0,
         params={
-            "lift_threshold": 0.05,
+            "lift_threshold": 0.1,
             "eef_link_name_left": "openarm_left_ee_tcp",
             "eef_link_name_right": "openarm_right_ee_tcp",
             "object_cfg_left": SceneEntityCfg("cup"),
@@ -334,6 +382,18 @@ class RewardsCfg:
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
 
+    # Penalty when a cup tips over.
+    cup_tip_penalty = RewTerm(
+        func=mdp.cup_tipped,
+        weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0},
+    )
+    cup2_tip_penalty = RewTerm(
+        func=mdp.cup_tipped,
+        weight=-10.0,
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
+    )
+
 
 @configclass
 class TerminationsCfg:
@@ -349,6 +409,14 @@ class TerminationsCfg:
         func=mdp.root_height_below_minimum,
         params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")},
     )
+    cup_tipping = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0},
+    )
+    cup2_tipping = DoneTerm(
+        func=mdp.cup_tipped,
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
+    )
 
 
 @configclass
@@ -356,6 +424,11 @@ class GraspEnvCfg(ManagerBasedRLEnvCfg):
     """Configuration for the grasp task."""
 
     _task_id = "Grasp-v1"
+    # Debug settings (used by reward functions)
+    debug_grasp_left: bool = True
+    debug_grasp_left_interval: int = 200
+    debug_grasp_right: bool = True
+    debug_grasp_right_interval: int = 200
 
     scene: GraspSceneCfg = GraspSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

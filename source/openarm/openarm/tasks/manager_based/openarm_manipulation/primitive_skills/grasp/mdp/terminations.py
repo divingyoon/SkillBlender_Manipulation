@@ -18,10 +18,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+import math
 import torch
 
 from isaaclab.assets import RigidObject
 from isaaclab.managers import SceneEntityCfg
+from isaaclab.utils.math import quat_apply
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -67,3 +69,21 @@ def grasp_success(
     setattr(env, attr_name, hold_counter)
 
     return hold_counter > hold_duration
+
+
+def cup_tipped(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    max_tilt_deg: float = 45.0,
+) -> torch.Tensor:
+    """Terminate if the cup tilts beyond the allowed angle from world-up."""
+    cup = env.scene[asset_cfg.name]
+    cup_quat_w = cup.data.root_quat_w
+    # Cup local z-axis in world frame.
+    z_axis_local = torch.tensor([0.0, 0.0, 1.0], device=env.device).expand_as(cup.data.root_pos_w)
+    z_axis_world = quat_apply(cup_quat_w, z_axis_local)
+    # Compare with world-up.
+    world_up = torch.tensor([0.0, 0.0, 1.0], device=env.device).expand_as(cup.data.root_pos_w)
+    dot = torch.sum(z_axis_world * world_up, dim=-1)
+    cos_thresh = math.cos(math.radians(max_tilt_deg))
+    return dot < cos_thresh

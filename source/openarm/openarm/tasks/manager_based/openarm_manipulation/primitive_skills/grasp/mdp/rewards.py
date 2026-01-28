@@ -45,28 +45,30 @@ def _object_eef_distance(
     body_pos_w = env.scene["robot"].data.body_pos_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
-    return torch.norm(object_pos - eef_pos, dim=1)
+    dist = torch.norm(object_pos - eef_pos, dim=1)
+    return dist - 0.1
 
 
 def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
-    """Compute normalized closure amount for the hand associated with the given link."""
+    """Compute normalized closure amount for the hand associated with the given link.
+
+    Uses actual joint positions (not actions) so that "open" -> 0, "closed" -> 1.
+    """
+    robot = env.scene["robot"]
     if "left" in eef_link_name:
-        hand_term = env.action_manager.get_term("left_hand_action")
+        joint_names = ["openarm_left_finger_joint1", "openarm_left_finger_joint2"]
     elif "right" in eef_link_name:
-        hand_term = env.action_manager.get_term("right_hand_action")
+        joint_names = ["openarm_right_finger_joint1", "openarm_right_finger_joint2"]
     else:
         return torch.zeros(env.num_envs, device=env.device)
 
-    hand_action = hand_term.processed_actions
+    joint_indices = [robot.data.joint_names.index(name) for name in joint_names]
+    joint_pos = robot.data.joint_pos[:, joint_indices].mean(dim=1)
+    default_pos = robot.data.default_joint_pos[:, joint_indices].mean(dim=1)
 
-    if isinstance(hand_term._offset, torch.Tensor):
-        default_pos = hand_term._offset.mean(dim=1)
-    else:
-        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
-
-    mean_action = hand_action.mean(dim=1)
+    # Normalize: default(open) -> 0, more closed (smaller) -> 1
     return torch.clamp(
-        (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
+        (default_pos - joint_pos) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
     )
 
 
@@ -129,6 +131,7 @@ def grasp_reward(
     object_cfg: SceneEntityCfg,
     reach_radius: float = 0.03,
     close_threshold: float = 0.5,
+    closure_max: float | None = None,
 ) -> torch.Tensor:
     """Reward for grasping: close gripper when near object.
 
@@ -141,6 +144,28 @@ def grasp_reward(
     close_scale = 0.15
     dist_score = torch.sigmoid((reach_radius - eef_dist) / dist_scale)
     close_score = torch.sigmoid((closure_amount - close_threshold) / close_scale)
+    if closure_max is not None:
+        # Suppress reward if closure exceeds the specified max.
+        close_score = close_score * (closure_amount <= closure_max).to(close_score.dtype)
+
+    # Optional debug: print left/right closure and close_score for env0 during training.
+    if "left" in eef_link_name:
+        debug_enabled = getattr(env.cfg, "debug_grasp_left", False)
+        interval = int(getattr(env.cfg, "debug_grasp_left_interval", 200))
+        label = "left"
+    elif "right" in eef_link_name:
+        debug_enabled = getattr(env.cfg, "debug_grasp_right", False)
+        interval = int(getattr(env.cfg, "debug_grasp_right_interval", 200))
+        label = "right"
+    else:
+        debug_enabled = False
+        interval = 0
+        label = None
+    if debug_enabled and interval > 0 and env.common_step_counter % interval == 0:
+        print(
+            f"[DEBUG][grasp_reward] env0 {label} closure_amount="
+            f"{closure_amount[0].item():.4f} close_score={close_score[0].item():.4f}"
+        )
 
     return dist_score * close_score
 
@@ -249,6 +274,17 @@ def _is_gripper_in_contact(
     is_closed_enough = closure > min_closure
 
     return is_close & is_closed_enough
+
+
+def closure_amount_penalty(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    threshold: float = 0.44,
+    penalty_scale: float = -1.0,
+) -> torch.Tensor:
+    """Penalty when closure amount exceeds a threshold."""
+    closure = _hand_closure_amount(env, eef_link_name)
+    return (closure > threshold).float() * penalty_scale
 
 
 def grasp_success_with_hold(
@@ -442,7 +478,7 @@ def object_ee_distance_tanh(
 ) -> torch.Tensor:
     """Reward the agent for reaching the object using tanh-kernel."""
     distance = _object_eef_distance(env, eef_link_name, object_cfg)
-    return 1 - torch.tanh(distance / std)
+    return 1 - torch.tanh((distance-0.1) / std)
 
 
 def object_lift_progress(
@@ -485,6 +521,7 @@ def phase_grasp_reward(
     object_cfg: SceneEntityCfg,
     reach_radius: float,
     close_threshold: float,
+    closure_max: float | None,
     phase_weights: list[float],
     phase_params: dict,
 ) -> torch.Tensor:
@@ -498,7 +535,7 @@ def phase_grasp_reward(
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
     )
-    reward = grasp_reward(env, eef_link_name, object_cfg, reach_radius, close_threshold)
+    reward = grasp_reward(env, eef_link_name, object_cfg, reach_radius, close_threshold, closure_max)
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 

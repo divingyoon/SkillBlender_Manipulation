@@ -63,21 +63,21 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 rot=[1.0, 0.0, 0.0, 0.0],
                 joint_pos={
                     # Pre-grasp pose for left arm (similar to reach end pose)
-                    "openarm_left_joint1": -0.557392,
-                    "openarm_left_joint2": -0.098327,
-                    "openarm_left_joint3": 0.042375,
-                    "openarm_left_joint4": 0.004948,
-                    "openarm_left_joint5": -0.044618,
-                    "openarm_left_joint6": -0.072074,
-                    "openarm_left_joint7": -0.709090,
+                    "openarm_left_joint1": 0.300486,
+                    "openarm_left_joint2": -0.570495,
+                    "openarm_left_joint3": 0.427031,
+                    "openarm_left_joint4": 1.190171,
+                    "openarm_left_joint5": 0.078319,
+                    "openarm_left_joint6": 0.320923,
+                    "openarm_left_joint7": -0.458213,
                     # Pre-grasp pose for right arm (mirrored)
-                    "openarm_right_joint1": 0.557392,
-                    "openarm_right_joint2": 0.152403,
-                    "openarm_right_joint3": -0.357480,
-                    "openarm_right_joint4": 0.075468,
-                    "openarm_right_joint5": -0.052993,
-                    "openarm_right_joint6": -0.058325,
-                    "openarm_right_joint7": 0.592470,
+                    "openarm_right_joint1": -0.342796,
+                    "openarm_right_joint2": 0.318423,
+                    "openarm_right_joint3": -0.166521,
+                    "openarm_right_joint4": 1.117697,
+                    "openarm_right_joint5": 0.058273,
+                    "openarm_right_joint6": -0.075380,
+                    "openarm_right_joint7": 0.553087,
                     # Grippers fully open
                     "openarm_left_finger_joint1": 0.044,
                     "openarm_left_finger_joint2": 0.052,
@@ -114,7 +114,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
             prim_path="{ENV_REGEX_NS}/Cup",
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=[0.15, 0.1, 0.0],  # Fixed: match reach task
-                rot=[0.707, 0.0, 0.0, 0.707],  # yaw = -pi/2 (match reach task)
+                rot=[1.0, 0.0, 0.0, 0.0],  # yaw = -pi/2 (match reach task)
             ),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
@@ -139,7 +139,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
             prim_path="{ENV_REGEX_NS}/Cup2",
             init_state=RigidObjectCfg.InitialStateCfg(
                 pos=[0.15, -0.1, 0.0],  # Fixed: match reach task
-                rot=[0.707, 0.0, 0.0, 0.707],  # yaw = -pi/2 (match reach task)
+                rot=[1.0, 0.0, 0.0, 0.0],  # yaw = -pi/2 (match reach task)
             ),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
@@ -170,7 +170,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.1,
+            scale=0.06,
             use_default_offset=True
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
@@ -190,7 +190,7 @@ class GraspObjectEnvCfg(GraspEnvCfg):
                 "openarm_right_joint6",
                 "openarm_right_joint7",
             ],
-            scale=0.1,
+            scale=0.06,
             use_default_offset=True
         )
         self.actions.right_hand_action = mdp.JointPositionActionCfg(

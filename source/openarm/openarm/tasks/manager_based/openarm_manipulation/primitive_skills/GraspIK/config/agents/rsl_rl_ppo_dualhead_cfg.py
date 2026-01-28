@@ -28,7 +28,7 @@ class Grasp2gIKDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     resume = False
     empirical_normalization = False
     policy = SbmDualHeadActorCriticCfg(
-        init_noise_std=1.0,
+        init_noise_std=0.5,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
         actor_hidden_dims=[512, 256],

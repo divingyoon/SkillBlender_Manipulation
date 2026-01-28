@@ -316,6 +316,15 @@ class EpisodeLogWrapper(gym.Wrapper):
             mag = torch.norm(act, dim=1)
             stats.append(f"{side}_action_mag_mu={mag.mean():.6f}")
             stats.append(f"{side}_action_mag_std={mag.std():.6f}")
+            # Raw/unscaled actions if available (debug for sudden spikes)
+            for attr, label in (("raw_actions", "raw"), ("actions", "in"), ("unscaled_actions", "unscaled")):
+                if hasattr(term, attr):
+                    raw = getattr(term, attr)
+                    if raw is not None:
+                        raw_mag = torch.norm(raw, dim=1)
+                        stats.append(f"{side}_action_{label}_mag_mu={raw_mag.mean():.6f}")
+                        stats.append(f"{side}_action_{label}_mag_std={raw_mag.std():.6f}")
+                    break
         return stats
 
     def _get_joint_limit_stats(self, env_unwrapped) -> list[str]:
@@ -363,6 +372,22 @@ class EpisodeLogWrapper(gym.Wrapper):
                 names = [f"j{i}" for i in range(q0.numel())]
             q0_items = ",".join(f"{n}:{q0[i].item():.3f}" for i, n in enumerate(names))
             stats.append(f"{side}_joint_pos_0=({q0_items})")
+            # Joint velocity stats
+            if hasattr(robot.data, "joint_vel"):
+                qd = robot.data.joint_vel[:, joint_ids]
+                qd_mag = torch.norm(qd, dim=1)
+                stats.append(f"{side}_joint_vel_mag_mu={qd_mag.mean():.6f}")
+                stats.append(f"{side}_joint_vel_mag_std={qd_mag.std():.6f}")
+            # Default pose distance (null-space attractor diagnostic)
+            if hasattr(robot.data, "default_joint_pos"):
+                q_ref = robot.data.default_joint_pos[:, joint_ids]
+                dq = q - q_ref
+                dq_abs = torch.abs(dq)
+                stats.append(f"{side}_joint_def_abs_mu={dq_abs.mean():.6f}")
+                stats.append(f"{side}_joint_def_abs_std={dq_abs.std():.6f}")
+                dq0 = dq[0]
+                dq0_items = ",".join(f"{n}:{dq0[i].item():.3f}" for i, n in enumerate(names))
+                stats.append(f"{side}_joint_def_delta_0=({dq0_items})")
         return stats
 
 # PLACEHOLDER: Extension template (do not remove this comment)

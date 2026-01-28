@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from isaaclab.controllers.differential_ik_cfg import DifferentialIKControllerCfg
+from isaaclab.assets import ArticulationCfg
 from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation.primitive_skills.GraspIK.config import (
@@ -24,6 +25,9 @@ from .. import mdp
 
 @configclass
 class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
+    # Toggle relative vs absolute IK commands
+    use_relative_mode: bool = True
+
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
@@ -33,10 +37,36 @@ class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
         enable_nullspace = True
         enable_joint_limit_avoidance = True
 
-        # Keep the high-PD robot for stable IK tracking, preserve init_state from parent
+        # Keep the high-PD robot for stable IK tracking, use joint_pos_env_cfg init_state
         self.scene.robot = OPEN_ARM_HIGH_PD_CFG.replace(
             prim_path="{ENV_REGEX_NS}/Robot",
-            init_state=self.scene.robot.init_state,
+            init_state=ArticulationCfg.InitialStateCfg(
+                pos=[0.0, 0.0, -0.25],
+                rot=[1.0, 0.0, 0.0, 0.0],
+                joint_pos={
+                    # Pre-grasp pose for left arm (similar to reach end pose)
+                    "openarm_left_joint1": -0.5,
+                    "openarm_left_joint2": -0.5,
+                    "openarm_left_joint3": 0.6,
+                    "openarm_left_joint4": 0.7,
+                    "openarm_left_joint5": 0.0,
+                    "openarm_left_joint6": 0.0,
+                    "openarm_left_joint7": -1.0,
+                    # Pre-grasp pose for right arm (mirrored)
+                    "openarm_right_joint1": 0.5,
+                    "openarm_right_joint2": 0.5,
+                    "openarm_right_joint3": -0.6,
+                    "openarm_right_joint4": 0.7,
+                    "openarm_right_joint5": 0.0,
+                    "openarm_right_joint6": 0.0,
+                    "openarm_right_joint7": 1.0,
+                    # Grippers fully open
+                    "openarm_left_finger_joint1": 0.044,
+                    "openarm_left_finger_joint2": 0.052,
+                    "openarm_right_finger_joint1": 0.044,
+                    "openarm_right_finger_joint2": 0.052,
+                },
+            ),
         )
 
         # DualHead를 위해 Left → Right 순서로 배치
@@ -50,17 +80,17 @@ class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
             body_name="openarm_left_hand",
             controller=DifferentialIKControllerCfg(
                 command_type="pose",
-                use_relative_mode=True,
+                use_relative_mode=self.use_relative_mode,
                 ik_method="dls",
                 ik_params={"lambda_val": 0.05},
             ),
-            scale=0.1,
+            scale=0.05,
             orientation_constraint=enable_orientation_constraint,
             orientation_command_name="left_object_pose",
             orientation_object_axis=(0.0, 1.0, 0.0),
             orientation_roll=0.0,
             nullspace_gain=0.1 if enable_nullspace else 0.0,
-            joint_limit_avoidance_gain=0.005 if enable_joint_limit_avoidance else 0.0,
+            joint_limit_avoidance_gain=0.1 if enable_joint_limit_avoidance else 0.0,
             joint_limit_eps=1.0e-3,
             joint_limit_clamp=50.0,
         )
@@ -79,17 +109,17 @@ class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
             body_name="openarm_right_hand",
             controller=DifferentialIKControllerCfg(
                 command_type="pose",
-                use_relative_mode=True,
+                use_relative_mode=self.use_relative_mode,
                 ik_method="dls",
                 ik_params={"lambda_val": 0.05},
             ),
-            scale=0.1,
+            scale=0.05,
             orientation_constraint=enable_orientation_constraint,
             orientation_command_name="right_object_pose",
             orientation_object_axis=(0.0, 1.0, 0.0),
             orientation_roll=0.0,
             nullspace_gain=0.1 if enable_nullspace else 0.0,
-            joint_limit_avoidance_gain=0.005 if enable_joint_limit_avoidance else 0.0,
+            joint_limit_avoidance_gain=0.1 if enable_joint_limit_avoidance else 0.0,
             joint_limit_eps=1.0e-3,
             joint_limit_clamp=50.0,
         )

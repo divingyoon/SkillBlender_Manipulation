@@ -43,8 +43,7 @@ def object_obs(
     object_ang_vel = env.scene["object"].data.root_ang_vel_w
 
     left_eef_to_object = object_pos - left_eef_pos
-    right_eef_to_object = object_pos - right_eef_pos
-
+    # Only include the left hand relative vector to reduce left/right coupling.
     return torch.cat(
         (
             object_pos,
@@ -52,7 +51,6 @@ def object_obs(
             object_lin_vel,
             object_ang_vel,
             left_eef_to_object,
-            right_eef_to_object,
         ),
         dim=1,
     )
@@ -105,16 +103,15 @@ def object2_obs(
     object_lin_vel = env.scene["object2"].data.root_lin_vel_w
     object_ang_vel = env.scene["object2"].data.root_ang_vel_w
 
-    left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
 
+    # Only include the right hand relative vector to reduce left/right coupling.
     return torch.cat(
         (
             object_pos,
             object_quat,
             object_lin_vel,
             object_ang_vel,
-            left_eef_to_object,
             right_eef_to_object,
         ),
         dim=1,

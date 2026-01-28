@@ -82,7 +82,7 @@ class GraspIKCommandsCfg:
         asset_name="robot",
         asset_cfg=SceneEntityCfg("object"),
         resampling_time_range=(5.0, 5.0),
-        pre_grasp_offset=(0.0, 0.0, 0.20),
+        pre_grasp_offset=(0.0, 0.0, 0.0),
         hold_offset=(0.0, 0.0, 0.20),
         lift_threshold_z=0.05,
     )
@@ -91,7 +91,7 @@ class GraspIKCommandsCfg:
         asset_name="robot",
         asset_cfg=SceneEntityCfg("object2"),
         resampling_time_range=(5.0, 5.0),
-        pre_grasp_offset=(0.0, 0.0, 0.20),
+        pre_grasp_offset=(0.0, 0.0, 0.0),
         hold_offset=(0.0, 0.0, 0.20),
         lift_threshold_z=0.05,
     )
@@ -218,7 +218,7 @@ class GraspIKEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.3), "y": (0.1, 0.1), "z": (0.0, 0.0),
+                "x": (0.25, 0.25), "y": (0.1, 0.1), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -230,7 +230,7 @@ class GraspIKEventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.3, 0.3), "y": (-0.1, -0.1), "z": (0.0, 0.0),
+                "x": (0.25, 0.25), "y": (-0.1, -0.1), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -272,26 +272,26 @@ class GraspIKRewardsCfg:
     left_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=4.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
+        weight=5.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
     )
     right_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=4.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
+        weight=5.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
     )
 
     # Orientation 보상 (손 방향 정렬)
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
-        weight=0.5,  # 기존 0.5 → 0.75 (Phase 밸런싱)
+        weight=0.2,  # 기존 0.5 → 0.75 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -302,15 +302,15 @@ class GraspIKRewardsCfg:
     )
     right_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
-        weight=0.5,  # 기존 0.5 → 0.75 (Phase 밸런싱)
+        weight=0.2,  # 기존 0.5 → 0.75 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -326,10 +326,10 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -345,10 +345,10 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -362,14 +362,14 @@ class GraspIKRewardsCfg:
     # 오른손이 너무 일찍 그리퍼를 닫는 문제 해결
     left_gripper_open = RewTerm(
         func=mdp.phase_gripper_open_reward,
-        weight=2.0,
+        weight=1.0,
         params={
             "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [1.0, 0.5, 0.0, 0.0],  # Phase 0: 100%, Phase 1: 50%, Phase 2-3: 비활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -380,14 +380,14 @@ class GraspIKRewardsCfg:
     )
     right_gripper_open = RewTerm(
         func=mdp.phase_gripper_open_reward,
-        weight=2.0,
+        weight=1.0,
         params={
             "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [1.0, 0.5, 0.0, 0.0],  # Phase 0: 100%, Phase 1: 50%, Phase 2-3: 비활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -402,14 +402,14 @@ class GraspIKRewardsCfg:
     # 닫고 있으면 보상 → 유지하도록 학습
     left_gripper_close = RewTerm(
         func=mdp.phase_gripper_close_reward,
-        weight=2.0,
+        weight=1.0,
         params={
             "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [0.0, 0.5, 1.0, 1.0],  # Phase 0: 비활성화, Phase 1: 50%, Phase 2-3: 100%
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -420,14 +420,14 @@ class GraspIKRewardsCfg:
     )
     right_gripper_close = RewTerm(
         func=mdp.phase_gripper_close_reward,
-        weight=2.0,
+        weight=1.0,
         params={
             "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [0.0, 0.5, 1.0, 1.0],  # Phase 0: 비활성화, Phase 1: 50%, Phase 2-3: 100%
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -443,12 +443,12 @@ class GraspIKRewardsCfg:
     left_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
-            "lift_height": 0.1,
+            "lift_height": 0.03,
             "object_cfg": SceneEntityCfg("object"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -461,12 +461,12 @@ class GraspIKRewardsCfg:
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
-            "lift_height": 0.1,
+            "lift_height": 0.03,
             "object_cfg": SceneEntityCfg("object2"),
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -476,7 +476,7 @@ class GraspIKRewardsCfg:
         },
         weight=8.0,  # 기존 15.0 → 8.0 (Phase 밸런싱)
     )
-
+    # ─── Object goal tracking (coarse) ──────────────────────────────────────────
     left_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -489,7 +489,7 @@ class GraspIKRewardsCfg:
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -511,7 +511,7 @@ class GraspIKRewardsCfg:
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.05,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -521,7 +521,8 @@ class GraspIKRewardsCfg:
         },
         weight=8.0,  # 기존 16.0 → 8.0 (Phase 밸런싱)
     )
-
+    
+    # ─── Object goal tracking (fine-grained) ────────────────────────────────────
     left_object_goal_tracking_fine_grained = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -534,7 +535,7 @@ class GraspIKRewardsCfg:
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -556,7 +557,7 @@ class GraspIKRewardsCfg:
             "phase_weights": [0.0, 0.0, 1.0, 1.0],  # Phase 2-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -576,7 +577,7 @@ class GraspIKRewardsCfg:
             "object_cfg": SceneEntityCfg("object"),
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -592,7 +593,7 @@ class GraspIKRewardsCfg:
             "object_cfg": SceneEntityCfg("object2"),
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
+                "lift_height": 0.03,
                 "reach_distance": 0.07,
                 "align_threshold": 0.0,
                 "grasp_distance": 0.02,
@@ -640,15 +641,15 @@ class GraspIKTerminationsCfg:
         func=mdp.cup_tipped,
         params={"object_name": "object2", "min_upright_dot": 0.5},
     )
-    # joint_limit_near = DoneTerm(
-    #     func=mdp.joint_limit_near_or_min_margin,
-    #     params={
-    #         "asset_cfg": SceneEntityCfg("robot"),
-    #         "margin_threshold": 0.001,
-    #         "near_rate_threshold": 0.98,
-    #         "warmup_steps": 1000,
-    #     },
-    # )
+    joint_limit_near = DoneTerm(
+        func=mdp.joint_limit_near_or_min_margin,
+        params={
+            "asset_cfg": SceneEntityCfg("robot"),
+            "margin_threshold": 0.001,
+            "near_rate_threshold": 0.98,
+            "warmup_steps": 1000,
+        },
+    )
 
     object_dropping = DoneTerm(
         func=mdp.root_height_below_minimum,
@@ -666,12 +667,12 @@ class GraspIKCurriculumCfg:
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "action_rate", "weight": 0, "num_steps": 10000},
     )
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "joint_vel", "weight": 0, "num_steps": 10000},
     )
 
 
@@ -705,6 +706,8 @@ class GraspIKEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 60.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
+        # Disable IK-based TCP reset; keep init_state pose on reset.
+        self.events.reset_robot_tcp_to_cups = None
         # Command-only high-level observations (drop real object positions).
         self.observations.policy.object_position = None
         self.observations.policy.object2_position = None

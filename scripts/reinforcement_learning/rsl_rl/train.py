@@ -255,6 +255,8 @@ class EpisodeLogWrapper(gym.Wrapper):
         root_quat_w = robot.data.root_quat_w
         left_cmd, right_cmd = self._command_names
         left_eef, right_eef = self._eef_names
+        # Collect per-side stats, then add left/right symmetry deltas if both are available.
+        side_cache = {}
         for eef_name, cmd_name, side in ((left_eef, left_cmd, "left"), (right_eef, right_cmd, "right")):
             try:
                 eef_idx = body_names.index(eef_name)
@@ -301,6 +303,25 @@ class EpisodeLogWrapper(gym.Wrapper):
             stats.append(
                 f"{side}_cmd_quat_0=({des_quat_w[0,0]:.3f},{des_quat_w[0,1]:.3f},{des_quat_w[0,2]:.3f},{des_quat_w[0,3]:.3f})"
             )
+            side_cache[side] = {
+                "ee_pos_w": ee_pos_w,
+                "cmd_pos_w": des_pos_w,
+            }
+
+        # Symmetry diagnostics (x/z should match, y should be opposite).
+        if "left" in side_cache and "right" in side_cache:
+            l_ee = side_cache["left"]["ee_pos_w"]
+            r_ee = side_cache["right"]["ee_pos_w"]
+            l_cmd = side_cache["left"]["cmd_pos_w"]
+            r_cmd = side_cache["right"]["cmd_pos_w"]
+            ee_dx = (l_ee[:, 0] - r_ee[:, 0]).mean()
+            ee_dy = (l_ee[:, 1] + r_ee[:, 1]).mean()
+            ee_dz = (l_ee[:, 2] - r_ee[:, 2]).mean()
+            cmd_dx = (l_cmd[:, 0] - r_cmd[:, 0]).mean()
+            cmd_dy = (l_cmd[:, 1] + r_cmd[:, 1]).mean()
+            cmd_dz = (l_cmd[:, 2] - r_cmd[:, 2]).mean()
+            stats.append(f"ee_sym_d(x,y,z)_mu=({ee_dx:.3f},{ee_dy:.3f},{ee_dz:.3f})")
+            stats.append(f"cmd_sym_d(x,y,z)_mu=({cmd_dx:.3f},{cmd_dy:.3f},{cmd_dz:.3f})")
         return stats
 
     def _get_action_stats(self, env_unwrapped) -> list[str]:
@@ -342,6 +363,9 @@ class EpisodeLogWrapper(gym.Wrapper):
             limits = robot.data.soft_joint_pos_limits[:, joint_ids, :]
             q_min = limits[..., 0]
             q_max = limits[..., 1]
+            # Log mean joint limits to verify left/right symmetry.
+            q_min_mu = q_min.mean(dim=0)
+            q_max_mu = q_max.mean(dim=0)
             span = torch.clamp(q_max - q_min, min=1.0e-6)
             margin = torch.minimum((q - q_min) / span, (q_max - q) / span)
             min_margin = margin.min(dim=1).values
@@ -362,8 +386,16 @@ class EpisodeLogWrapper(gym.Wrapper):
             near_items = ",".join(
                 f"{n}:{joint_near_rate[i].item():.2f}" for i, n in enumerate(names)
             )
+            min_items = ",".join(
+                f"{n}:{q_min_mu[i].item():.3f}" for i, n in enumerate(names)
+            )
+            max_items = ",".join(
+                f"{n}:{q_max_mu[i].item():.3f}" for i, n in enumerate(names)
+            )
             stats.append(f"{side}_limit_margin_mu_per_joint=({margin_items})")
             stats.append(f"{side}_limit_near_rate_per_joint=({near_items})")
+            stats.append(f"{side}_limit_min_mu_per_joint=({min_items})")
+            stats.append(f"{side}_limit_max_mu_per_joint=({max_items})")
             # raw joint positions for env 0 (debug)
             q0 = q[0]
             if hasattr(term, "_joint_names"):

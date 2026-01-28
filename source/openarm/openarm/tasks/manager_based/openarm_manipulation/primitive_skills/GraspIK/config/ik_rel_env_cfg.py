@@ -27,13 +27,15 @@ from .. import mdp
 class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
     # Toggle relative vs absolute IK commands
     use_relative_mode: bool = True
+    # Toggle IK vs joint position control for arms
+    use_joint_controller: bool = True
 
     def __post_init__(self):
         # post init of parent
         super().__post_init__()
 
         # Quick toggles for diagnosis
-        enable_orientation_constraint = False
+        enable_orientation_constraint = True
         enable_nullspace = True
         enable_joint_limit_avoidance = True
 
@@ -73,27 +75,36 @@ class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
         # [0:6] left_arm (IK pose), [6:8] left_hand, [8:14] right_arm (IK pose), [14:16] right_hand
         # dof_split_index = 8 (left: 0~7, right: 8~15)
 
-        # Left arm IK (relative)
-        self.actions.left_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
-            asset_name="robot",
-            joint_names=["openarm_left_joint[1-7]"],
-            body_name="openarm_left_hand",
-            controller=DifferentialIKControllerCfg(
-                command_type="pose",
-                use_relative_mode=self.use_relative_mode,
-                ik_method="dls",
-                ik_params={"lambda_val": 0.05},
-            ),
-            scale=0.05,
-            orientation_constraint=enable_orientation_constraint,
-            orientation_command_name="left_object_pose",
-            orientation_object_axis=(0.0, 1.0, 0.0),
-            orientation_roll=0.0,
-            nullspace_gain=0.1 if enable_nullspace else 0.0,
-            joint_limit_avoidance_gain=0.1 if enable_joint_limit_avoidance else 0.0,
-            joint_limit_eps=1.0e-3,
-            joint_limit_clamp=50.0,
-        )
+        if self.use_joint_controller:
+            # Left arm joint position control
+            self.actions.left_arm_action = mdp.JointPositionActionCfg(
+                asset_name="robot",
+                joint_names=["openarm_left_joint[1-7]"],
+                scale=0.2,
+                use_default_offset=True,
+            )
+        else:
+            # Left arm IK (relative/absolute)
+            self.actions.left_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
+                asset_name="robot",
+                joint_names=["openarm_left_joint[1-7]"],
+                body_name="openarm_left_hand",
+                controller=DifferentialIKControllerCfg(
+                    command_type="pose",
+                    use_relative_mode=self.use_relative_mode,
+                    ik_method="dls",
+                    ik_params={"lambda_val": 0.05},
+                ),
+                scale=0.1,
+                orientation_constraint=enable_orientation_constraint,
+                orientation_command_name="left_object_pose",
+                orientation_object_axis=(0.0, 1.0, 0.0),
+                orientation_roll=0.0,
+                nullspace_gain=0.1 if enable_nullspace else 0.0,
+                joint_limit_avoidance_gain=0.25 if enable_joint_limit_avoidance else 0.0,
+                joint_limit_eps=1.0e-3,
+                joint_limit_clamp=50.0,
+            )
         # Left hand (gripper)
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
@@ -102,27 +113,36 @@ class GraspIKIKEnvCfg(grasp2g_joint_cfg.GraspIKJointPosEnvCfg):
             use_default_offset=True,
         )
 
-        # Right arm IK (relative)
-        self.actions.right_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
-            asset_name="robot",
-            joint_names=["openarm_right_joint[1-7]"],
-            body_name="openarm_right_hand",
-            controller=DifferentialIKControllerCfg(
-                command_type="pose",
-                use_relative_mode=self.use_relative_mode,
-                ik_method="dls",
-                ik_params={"lambda_val": 0.05},
-            ),
-            scale=0.05,
-            orientation_constraint=enable_orientation_constraint,
-            orientation_command_name="right_object_pose",
-            orientation_object_axis=(0.0, 1.0, 0.0),
-            orientation_roll=0.0,
-            nullspace_gain=0.1 if enable_nullspace else 0.0,
-            joint_limit_avoidance_gain=0.1 if enable_joint_limit_avoidance else 0.0,
-            joint_limit_eps=1.0e-3,
-            joint_limit_clamp=50.0,
-        )
+        if self.use_joint_controller:
+            # Right arm joint position control
+            self.actions.right_arm_action = mdp.JointPositionActionCfg(
+                asset_name="robot",
+                joint_names=["openarm_right_joint[1-7]"],
+                scale=0.2,
+                use_default_offset=True,
+            )
+        else:
+            # Right arm IK (relative/absolute)
+            self.actions.right_arm_action = mdp.ConstrainedDifferentialInverseKinematicsActionCfg(
+                asset_name="robot",
+                joint_names=["openarm_right_joint[1-7]"],
+                body_name="openarm_right_hand",
+                controller=DifferentialIKControllerCfg(
+                    command_type="pose",
+                    use_relative_mode=self.use_relative_mode,
+                    ik_method="dls",
+                    ik_params={"lambda_val": 0.05},
+                ),
+                scale=0.1,
+                orientation_constraint=enable_orientation_constraint,
+                orientation_command_name="right_object_pose",
+                orientation_object_axis=(0.0, -1.0, 0.0),
+                orientation_roll=0.0,
+                nullspace_gain=0.1 if enable_nullspace else 0.0,
+                joint_limit_avoidance_gain=0.25 if enable_joint_limit_avoidance else 0.0,
+                joint_limit_eps=1.0e-3,
+                joint_limit_clamp=50.0,
+            )
         # Right hand (gripper)
         self.actions.right_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",

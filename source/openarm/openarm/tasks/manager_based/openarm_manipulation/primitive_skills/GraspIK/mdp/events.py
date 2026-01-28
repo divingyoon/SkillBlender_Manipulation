@@ -110,6 +110,39 @@ def reset_root_state_uniform_robot_frame(
     asset.write_root_velocity_to_sim(velocities, env_ids=env_ids)
 
 
+def reset_root_state_uniform_world(
+    env,
+    env_ids: Sequence[int],
+    pose_range: dict[str, tuple[float, float]],
+    velocity_range: dict[str, tuple[float, float]],
+    asset_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+) -> None:
+    """Reset asset root using a pose sampled in world frame (no default-root offset)."""
+    asset: RigidObject = env.scene[asset_cfg.name]
+
+    # poses (world frame relative to env origin)
+    range_list = [pose_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
+    ranges = torch.tensor(range_list, device=asset.device)
+    rand_samples = math_utils.sample_uniform(
+        ranges[:, 0], ranges[:, 1], (len(env_ids), 6), device=asset.device
+    )
+
+    positions = env.scene.env_origins[env_ids] + rand_samples[:, 0:3]
+    orientations = math_utils.quat_from_euler_xyz(
+        rand_samples[:, 3], rand_samples[:, 4], rand_samples[:, 5]
+    )
+
+    # velocities (world frame)
+    range_list_vel = [velocity_range.get(key, (0.0, 0.0)) for key in ["x", "y", "z", "roll", "pitch", "yaw"]]
+    ranges_vel = torch.tensor(range_list_vel, device=asset.device)
+    velocities = math_utils.sample_uniform(
+        ranges_vel[:, 0], ranges_vel[:, 1], (len(env_ids), 6), device=asset.device
+    )
+
+    asset.write_root_pose_to_sim(torch.cat([positions, orientations], dim=-1), env_ids=env_ids)
+    asset.write_root_velocity_to_sim(velocities, env_ids=env_ids)
+
+
 def reset_cup_from_tcp_offset(
     env,
     env_ids: Sequence[int],

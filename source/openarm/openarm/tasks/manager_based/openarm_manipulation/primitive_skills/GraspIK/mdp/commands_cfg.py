@@ -40,6 +40,8 @@ class ObjectPoseCommandCfg(CommandTermCfg):
     hold_offset: tuple[float, float, float] = (0.0, 0.0, 0.10)
     # Z-threshold to determine if the object is considered "lifted"
     lift_threshold_z: float = 0.05
+    # Optional max z clamp for the target command in world frame.
+    max_target_z: float | None = None
 
     def __post_init__(self):
         """Post-initialization."""

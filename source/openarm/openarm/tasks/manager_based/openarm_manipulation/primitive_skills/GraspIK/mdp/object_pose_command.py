@@ -83,6 +83,10 @@ class ObjectPoseCommand(CommandTerm):
 
         # apply the selected offset to the object's position
         cmd_pos_w = obj_pos_w + selected_offset
+        if self.cfg.max_target_z is not None:
+            cmd_pos_w[:, 2] = torch.minimum(
+                cmd_pos_w[:, 2], torch.tensor(self.cfg.max_target_z, device=self.device)
+            )
         cmd_quat_w = obj_quat_w
 
         cmd_pos_b, cmd_quat_b = subtract_frame_transforms(

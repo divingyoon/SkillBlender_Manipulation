@@ -85,6 +85,7 @@ class GraspIKCommandsCfg:
         pre_grasp_offset=(0.0, 0.0, 0.0),
         hold_offset=(0.0, 0.0, 0.20),
         lift_threshold_z=0.05,
+        max_target_z=0.05,
     )
 
     right_object_pose = mdp.ObjectPoseCommandCfg(
@@ -92,8 +93,9 @@ class GraspIKCommandsCfg:
         asset_cfg=SceneEntityCfg("object2"),
         resampling_time_range=(5.0, 5.0),
         pre_grasp_offset=(0.0, 0.0, 0.0),
-        hold_offset=(0.0, 0.0, 0.20),
+        hold_offset=(0.0, -0.0, 0.20),
         lift_threshold_z=0.05,
+        max_target_z=0.05,
     )
 
 
@@ -214,11 +216,11 @@ class GraspIKEventCfg:
     reset_all = EventTerm(func=mdp.reset_scene_to_default, mode="reset")
 
     reset_object_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_root_state_uniform_world,
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.25, 0.25), "y": (0.1, 0.1), "z": (0.0, 0.0),
+                "x": (0.35, 0.35), "y": (0.25, 0.25), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -226,11 +228,11 @@ class GraspIKEventCfg:
         },
     )
     reset_object2_position = EventTerm(
-        func=mdp.reset_root_state_uniform,
+        func=mdp.reset_root_state_uniform_world,
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.25, 0.25), "y": (-0.1, -0.1), "z": (0.0, 0.0),
+                "x": (0.35, 0.35), "y": (-0.25, -0.25), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -667,12 +669,12 @@ class GraspIKCurriculumCfg:
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": 0, "num_steps": 10000},
+        params={"term_name": "action_rate", "weight": -0.0001, "num_steps": 10000},
     )
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel", "weight": 0, "num_steps": 10000},
+        params={"term_name": "joint_vel", "weight": -0.0001, "num_steps": 10000},
     )
 
 
@@ -701,13 +703,26 @@ class GraspIKEnvCfg(ManagerBasedRLEnvCfg):
     enable_wrong_target_penalty: bool = True
 
     def __post_init__(self):
-        self.decimation = 2
+        self.decimation = 4
         self.episode_length_s = 10.0
-        self.sim.dt = 1.0 / 60.0
+        self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
         # Disable IK-based TCP reset; keep init_state pose on reset.
         self.events.reset_robot_tcp_to_cups = None
+        # Reach-only bootstrap: disable grasp/lift/hold rewards.
+        #self.rewards.left_gripper_open = None
+        #self.rewards.right_gripper_open = None
+        self.rewards.left_gripper_close = None
+        self.rewards.right_gripper_close = None
+        self.rewards.left_lifting_object = None
+        self.rewards.right_lifting_object = None
+        self.rewards.left_object_goal_tracking = None
+        self.rewards.right_object_goal_tracking = None
+        self.rewards.left_object_goal_tracking_fine_grained = None
+        self.rewards.right_object_goal_tracking_fine_grained = None
+        self.rewards.left_Grasp_phase = None
+        self.rewards.right_Grasp_phase = None
         # Command-only high-level observations (drop real object positions).
         self.observations.policy.object_position = None
         self.observations.policy.object2_position = None

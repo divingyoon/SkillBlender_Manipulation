@@ -116,6 +116,29 @@ def hand_x_align_object_z_reward(
     return 0.5 * (1.0 + cos_sim)
 
 
+def phase_hand_x_align_object_z_reward(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_Grasp_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = hand_x_align_object_z_reward(env, command_name, asset_cfg)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
 def hand_z_align_object_y_reward(
     env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg
 ) -> torch.Tensor:
@@ -138,6 +161,29 @@ def hand_z_align_object_y_reward(
     obj_y = quat_apply(des_quat_w, y_axis)
     cos_sim = torch.sum(hand_z * obj_y, dim=1)
     return 0.5 * (1.0 + cos_sim)
+
+
+def phase_hand_z_align_object_y_reward(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_Grasp_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = hand_z_align_object_y_reward(env, command_name, asset_cfg)
+    return reward * _phase_weight(phase, phase_weights, env.device)
 
 
 def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:

@@ -272,23 +272,23 @@ class GraspIKRewardsCfg:
     left_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
-        weight=5.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
+        weight=4.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
     )
     right_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=5.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
+        weight=4.0,  # 기존 1.0 → 2.5 (Phase 밸런싱)
     )
 
     # Orientation 보상 (손 방향 정렬)
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
-        weight=0.75,  # 기존 0.5 → 0.75 (Phase 밸런싱)
+        weight=0.5,  # 기존 0.5 → 0.75 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -302,12 +302,12 @@ class GraspIKRewardsCfg:
     )
     right_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
-        weight=0.75,  # 기존 0.5 → 0.75 (Phase 밸런싱)
+        weight=0.5,  # 기존 0.5 → 0.75 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
@@ -321,12 +321,12 @@ class GraspIKRewardsCfg:
     )
     left_end_effector_z_to_object_y = RewTerm(
         func=mdp.phase_hand_z_align_object_y_reward,
-        weight=0.5,  # 기존 0.25 → 0.5 (Phase 밸런싱)
+        weight=0.2,  # 기존 0.25 → 0.5 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -340,12 +340,12 @@ class GraspIKRewardsCfg:
     )
     right_end_effector_z_to_object_y = RewTerm(
         func=mdp.phase_hand_z_align_object_y_reward,
-        weight=0.5,  # 기존 0.25 → 0.5 (Phase 밸런싱)
+        weight=0.2,  # 기존 0.25 → 0.5 (Phase 밸런싱)
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [0.5, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,

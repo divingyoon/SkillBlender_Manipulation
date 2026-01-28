@@ -119,3 +119,25 @@ def object2_obs(
         ),
         dim=1,
     )
+
+
+# =============================================================================
+# Arm Identifier Observations (양손 비대칭 학습 문제 해결용)
+# =============================================================================
+
+def left_arm_identifier(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """좌측 팔 식별자 (one-hot: [1, 0]).
+
+    네트워크가 명시적으로 '좌측 팔'임을 인식하도록 함.
+    양손 비대칭 학습 문제 해결에 도움.
+    """
+    return torch.tensor([[1.0, 0.0]], device=env.device).expand(env.num_envs, -1)
+
+
+def right_arm_identifier(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """우측 팔 식별자 (one-hot: [0, 1]).
+
+    네트워크가 명시적으로 '우측 팔'임을 인식하도록 함.
+    양손 비대칭 학습 문제 해결에 도움.
+    """
+    return torch.tensor([[0.0, 1.0]], device=env.device).expand(env.num_envs, -1)

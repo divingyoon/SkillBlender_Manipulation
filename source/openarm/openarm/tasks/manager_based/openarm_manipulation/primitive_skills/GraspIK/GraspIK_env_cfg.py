@@ -152,6 +152,12 @@ class GraspIKObservationsCfg:
         )
         actions = ObsTerm(func=mdp.last_action)
 
+        # [방법4] 팔 구분자 (Arm Identifier) - 양손 비대칭 학습 문제 해결용
+        # 네트워크가 명시적으로 좌/우 팔을 구분할 수 있도록 one-hot 벡터 추가
+        # enable_arm_identifier=False로 설정하면 비활성화됨
+        left_arm_id = ObsTerm(func=mdp.left_arm_identifier)
+        right_arm_id = ObsTerm(func=mdp.right_arm_identifier)
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -258,10 +264,12 @@ class GraspIKRewardsCfg:
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object"), "ee_frame_cfg": SceneEntityCfg("left_ee_frame")},
         weight=1.0,
     )
+    # [방법1] 보상 가중치 대칭화: 양손에 동일한 보상 신호 제공
+    # 기존 weight=2.0 → 1.0으로 변경하여 좌/우 대칭 학습 유도
     right_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("object2"), "ee_frame_cfg": SceneEntityCfg("right_ee_frame")},
-        weight=2.0,
+        weight=1.0,
     )
 
     # Align hand +X with object +Z using command orientation.
@@ -459,6 +467,22 @@ class GraspIKRewardsCfg:
         weight=0.0,
     )
 
+    # [방법6] 잘못된 목표 페널티 (Wrong Target Penalty)
+    # 좌측 손이 우측 물체로 향하거나, 우측 손이 좌측 물체로 향할 때 페널티 부여
+    # 이를 통해 "전략적 모방" (한 손이 다른 손의 목표를 따라가는 행동)을 방지
+    # enable_wrong_target_penalty=False로 설정하면 비활성화됨
+    wrong_target_penalty = RewTerm(
+        func=mdp.wrong_target_penalty_soft,
+        weight=0.5,
+        params={
+            "left_eef_link_name": "openarm_left_hand",
+            "right_eef_link_name": "openarm_right_hand",
+            "left_object_cfg": SceneEntityCfg("object"),
+            "right_object_cfg": SceneEntityCfg("object2"),
+            "std": 0.1,
+        },
+    )
+
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
@@ -529,6 +553,16 @@ class GraspIKEnvCfg(ManagerBasedRLEnvCfg):
     commands: GraspIKCommandsCfg = GraspIKCommandsCfg()
     curriculum: GraspIKCurriculumCfg = GraspIKCurriculumCfg()
 
+    # [방법4] 팔 구분자 토글 플래그
+    # True: 좌/우 팔 구분자 관측 활성화 (비대칭 학습 문제 해결에 도움)
+    # False: 팔 구분자 비활성화 (기존 동작)
+    enable_arm_identifier: bool = True
+
+    # [방법6] 잘못된 목표 페널티 토글 플래그
+    # True: 손이 잘못된 물체로 향할 때 페널티 활성화 (전략적 모방 방지)
+    # False: 잘못된 목표 페널티 비활성화 (기존 동작)
+    enable_wrong_target_penalty: bool = True
+
     def __post_init__(self):
         self.decimation = 2
         self.episode_length_s = 10.0
@@ -538,6 +572,18 @@ class GraspIKEnvCfg(ManagerBasedRLEnvCfg):
         # Command-only high-level observations (drop real object positions).
         self.observations.policy.object_position = None
         self.observations.policy.object2_position = None
+
+        # [방법4] 팔 구분자 토글 처리
+        # enable_arm_identifier=False이면 팔 구분자 관측 비활성화
+        if not self.enable_arm_identifier:
+            self.observations.policy.left_arm_id = None
+            self.observations.policy.right_arm_id = None
+
+        # [방법6] 잘못된 목표 페널티 토글 처리
+        # enable_wrong_target_penalty=False이면 잘못된 목표 페널티 비활성화
+        if not self.enable_wrong_target_penalty:
+            self.rewards.wrong_target_penalty = None
+
         self.sim.physx = PhysxCfg(
             solver_type=1,  # TGS
             max_position_iteration_count=192,

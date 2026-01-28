@@ -763,3 +763,124 @@ def joints_near_zero(
     asset: RigidObject = env.scene[asset_cfg.name]
     q = asset.data.joint_pos[:, asset_cfg.joint_ids]
     return (torch.abs(q) < threshold).all(dim=1)
+
+
+# =============================================================================
+# [방법6] 목표 방향 페널티 (Wrong Target Penalty)
+# 양손 비대칭 학습 문제 해결: 왼손이 오른쪽 물체로 향하면 페널티
+# =============================================================================
+
+def wrong_target_penalty(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+    distance_threshold: float = 0.15,
+) -> torch.Tensor:
+    """[방법6] 목표 방향 페널티: 손이 잘못된 물체로 향할 때 페널티.
+
+    문제: 양손 학습 시 한쪽(예: 오른손)이 먼저 성공하면,
+          다른쪽(왼손)이 자신의 목표(왼쪽 물체) 대신
+          오른손의 목표(오른쪽 물체)로 향하려는 '전략적 모방' 발생.
+
+    해결: 각 손이 자신의 목표가 아닌 다른 목표에 가까워지면 페널티 부여.
+
+    Args:
+        env: 환경 인스턴스
+        left_eef_link_name: 좌측 엔드-이펙터 링크 이름
+        right_eef_link_name: 우측 엔드-이펙터 링크 이름
+        left_object_cfg: 좌측 손의 목표 물체 (기본: "object")
+        right_object_cfg: 우측 손의 목표 물체 (기본: "object2")
+        distance_threshold: 페널티 시작 거리 (이보다 가까우면 페널티)
+
+    Returns:
+        음의 보상 (페널티). 잘못된 목표에 가까울수록 큰 페널티.
+    """
+    # 엔드-이펙터 위치
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    left_eef_idx = env.scene["robot"].data.body_names.index(left_eef_link_name)
+    right_eef_idx = env.scene["robot"].data.body_names.index(right_eef_link_name)
+    left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
+    right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
+
+    # 물체 위치
+    left_obj_pos = env.scene[left_object_cfg.name].data.root_pos_w - env.scene.env_origins
+    right_obj_pos = env.scene[right_object_cfg.name].data.root_pos_w - env.scene.env_origins
+
+    # 왼손 → 오른쪽 물체 거리 (잘못된 목표)
+    left_to_wrong = torch.norm(left_eef_pos - right_obj_pos, dim=1)
+    # 오른손 → 왼쪽 물체 거리 (잘못된 목표)
+    right_to_wrong = torch.norm(right_eef_pos - left_obj_pos, dim=1)
+
+    # 왼손 → 왼쪽 물체 거리 (올바른 목표)
+    left_to_correct = torch.norm(left_eef_pos - left_obj_pos, dim=1)
+    # 오른손 → 오른쪽 물체 거리 (올바른 목표)
+    right_to_correct = torch.norm(right_eef_pos - right_obj_pos, dim=1)
+
+    # 페널티 계산: 잘못된 목표가 올바른 목표보다 가까우면 페널티
+    # exp(-distance) 형태로 가까울수록 큰 값
+    penalty = torch.zeros(env.num_envs, device=env.device)
+
+    # 왼손이 오른쪽 물체에 너무 가까운 경우 (잘못된 목표 추구)
+    left_wrong_close = left_to_wrong < distance_threshold
+    left_penalty = torch.exp(-left_to_wrong / distance_threshold) * left_wrong_close.float()
+
+    # 오른손이 왼쪽 물체에 너무 가까운 경우 (잘못된 목표 추구)
+    right_wrong_close = right_to_wrong < distance_threshold
+    right_penalty = torch.exp(-right_to_wrong / distance_threshold) * right_wrong_close.float()
+
+    # 추가 조건: 잘못된 목표가 올바른 목표보다 가까울 때만 페널티
+    # (손이 올바른 목표를 향하고 있다면 페널티 없음)
+    left_confused = left_to_wrong < left_to_correct
+    right_confused = right_to_wrong < right_to_correct
+
+    penalty = (left_penalty * left_confused.float()) + (right_penalty * right_confused.float())
+
+    return -penalty  # 음의 보상 (페널티)
+
+
+def wrong_target_penalty_soft(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg = SceneEntityCfg("object"),
+    right_object_cfg: SceneEntityCfg = SceneEntityCfg("object2"),
+    std: float = 0.1,
+) -> torch.Tensor:
+    """[방법6] 소프트 버전: 잘못된 목표에 가까워지는 것을 부드럽게 페널티.
+
+    tanh 커널을 사용하여 부드러운 페널티 적용.
+    항상 활성화되며, 잘못된 목표에 가까울수록 페널티 증가.
+
+    Args:
+        env: 환경 인스턴스
+        left_eef_link_name: 좌측 엔드-이펙터 링크 이름
+        right_eef_link_name: 우측 엔드-이펙터 링크 이름
+        left_object_cfg: 좌측 손의 목표 물체
+        right_object_cfg: 우측 손의 목표 물체
+        std: tanh 커널의 표준편차 (작을수록 급격한 페널티)
+
+    Returns:
+        음의 보상 (페널티). 범위: [-2, 0]
+    """
+    # 엔드-이펙터 위치
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    left_eef_idx = env.scene["robot"].data.body_names.index(left_eef_link_name)
+    right_eef_idx = env.scene["robot"].data.body_names.index(right_eef_link_name)
+    left_eef_pos = body_pos_w[:, left_eef_idx] - env.scene.env_origins
+    right_eef_pos = body_pos_w[:, right_eef_idx] - env.scene.env_origins
+
+    # 물체 위치
+    left_obj_pos = env.scene[left_object_cfg.name].data.root_pos_w - env.scene.env_origins
+    right_obj_pos = env.scene[right_object_cfg.name].data.root_pos_w - env.scene.env_origins
+
+    # 잘못된 목표까지의 거리
+    left_to_wrong = torch.norm(left_eef_pos - right_obj_pos, dim=1)
+    right_to_wrong = torch.norm(right_eef_pos - left_obj_pos, dim=1)
+
+    # tanh 커널: 가까울수록 높은 값 → 높은 페널티
+    left_penalty = 1.0 - torch.tanh(left_to_wrong / std)
+    right_penalty = 1.0 - torch.tanh(right_to_wrong / std)
+
+    return -(left_penalty + right_penalty)  # 음의 보상

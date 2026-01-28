@@ -49,7 +49,12 @@ class _DualHeadActor(nn.Module):
 
 
 class ActorCriticDualHead(nn.Module):
-    """Low-level PPO actor-critic with shared encoder and dual action heads."""
+    """Low-level PPO actor-critic with shared encoder and dual action heads.
+
+    양손 비대칭 학습 문제 해결을 위한 기능 포함:
+    - [방법3] separate_noise_std: 좌/우 독립적 noise std로 독립적 탐험
+    - [방법5] dual_critic: 좌/우 분리된 critic으로 독립적 value 추정
+    """
 
     is_recurrent: bool = False
 
@@ -67,6 +72,10 @@ class ActorCriticDualHead(nn.Module):
         noise_std_type: str = "scalar",
         state_dependent_std: bool = False,
         dof_split_index: int | None = None,
+        # [방법3] 좌/우 독립적 noise std 사용 여부
+        separate_noise_std: bool = True,
+        # [방법5] 좌/우 분리된 critic 사용 여부
+        dual_critic: bool = True,
         **kwargs: dict[str, Any],
     ) -> None:
         if kwargs:
@@ -108,9 +117,17 @@ class ActorCriticDualHead(nn.Module):
         else:
             self.actor_obs_normalizer = torch.nn.Identity()
 
-        # Critic
-        self.critic = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
-        print(f"Critic MLP: {self.critic}")
+        # [방법5] Dual Critic: 좌/우 분리된 critic으로 독립적 value 추정
+        # 양손의 value 추정이 섞이는 것을 방지
+        self.dual_critic = dual_critic
+        if dual_critic:
+            self.critic_left = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
+            self.critic_right = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
+            print(f"Critic DualHead (Left): {self.critic_left}")
+            print(f"Critic DualHead (Right): {self.critic_right}")
+        else:
+            self.critic = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
+            print(f"Critic MLP: {self.critic}")
 
         # Critic observation normalization
         self.critic_obs_normalization = critic_obs_normalization
@@ -119,14 +136,30 @@ class ActorCriticDualHead(nn.Module):
         else:
             self.critic_obs_normalizer = torch.nn.Identity()
 
-        # Action noise
+        # [방법3] Action noise: 좌/우 독립적 noise std로 독립적 탐험 유도
+        # 한쪽이 성공해도 다른쪽이 독립적으로 탐험할 수 있음
         self.noise_std_type = noise_std_type
-        if self.noise_std_type == "scalar":
-            self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
-        elif self.noise_std_type == "log":
-            self.log_std = nn.Parameter(torch.log(init_noise_std * torch.ones(num_actions)))
+        self.separate_noise_std = separate_noise_std
+
+        if separate_noise_std:
+            # 좌/우 독립적 noise std
+            if self.noise_std_type == "scalar":
+                self.std_left = nn.Parameter(init_noise_std * torch.ones(self._left_actions))
+                self.std_right = nn.Parameter(init_noise_std * torch.ones(self._right_actions))
+            elif self.noise_std_type == "log":
+                self.log_std_left = nn.Parameter(torch.log(init_noise_std * torch.ones(self._left_actions)))
+                self.log_std_right = nn.Parameter(torch.log(init_noise_std * torch.ones(self._right_actions)))
+            else:
+                raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
+            print(f"[방법3] Separate Noise Std enabled: left={self._left_actions}, right={self._right_actions}")
         else:
-            raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
+            # 기존 방식: 전체 공유 noise std
+            if self.noise_std_type == "scalar":
+                self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
+            elif self.noise_std_type == "log":
+                self.log_std = nn.Parameter(torch.log(init_noise_std * torch.ones(num_actions)))
+            else:
+                raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
 
         # Action distribution
         self.distribution = None
@@ -152,12 +185,27 @@ class ActorCriticDualHead(nn.Module):
 
     def _update_distribution(self, obs: TensorDict) -> None:
         mean = self.actor(obs)
-        if self.noise_std_type == "scalar":
-            std = self.std.expand_as(mean)
-        elif self.noise_std_type == "log":
-            std = torch.exp(self.log_std).expand_as(mean)
+
+        # [방법3] 좌/우 독립적 noise std 처리
+        if self.separate_noise_std:
+            if self.noise_std_type == "scalar":
+                std_left = self.std_left.expand(mean.shape[0], -1)
+                std_right = self.std_right.expand(mean.shape[0], -1)
+            elif self.noise_std_type == "log":
+                std_left = torch.exp(self.log_std_left).expand(mean.shape[0], -1)
+                std_right = torch.exp(self.log_std_right).expand(mean.shape[0], -1)
+            else:
+                raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}.")
+            std = torch.cat([std_left, std_right], dim=-1)
         else:
-            raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}. Should be 'scalar' or 'log'")
+            # 기존 방식: 전체 공유 noise std
+            if self.noise_std_type == "scalar":
+                std = self.std.expand_as(mean)
+            elif self.noise_std_type == "log":
+                std = torch.exp(self.log_std).expand_as(mean)
+            else:
+                raise ValueError(f"Unknown standard deviation type: {self.noise_std_type}.")
+
         std = torch.clamp(std, min=1e-6)
         self.distribution = Normal(mean, std)
 
@@ -175,7 +223,14 @@ class ActorCriticDualHead(nn.Module):
     def evaluate(self, obs: TensorDict, **kwargs: dict[str, Any]) -> torch.Tensor:
         obs = self.get_critic_obs(obs)
         obs = self.critic_obs_normalizer(obs)
-        return self.critic(obs)
+
+        # [방법5] Dual Critic: 좌/우 critic의 평균값 반환
+        if self.dual_critic:
+            value_left = self.critic_left(obs)
+            value_right = self.critic_right(obs)
+            return (value_left + value_right) / 2.0
+        else:
+            return self.critic(obs)
 
     def get_actor_obs(self, obs: TensorDict) -> torch.Tensor:
         obs_list = [obs[obs_group] for obs_group in self.obs_groups["policy"]]

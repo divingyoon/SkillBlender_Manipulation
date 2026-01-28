@@ -38,7 +38,22 @@ class SbmHierarchicalActorCriticCfg(RslRlPpoActorCriticCfg):
 
 @configclass
 class SbmDualHeadActorCriticCfg(RslRlPpoActorCriticCfg):
-    """Actor-critic config for shared-encoder dual-head low-level PPO."""
+    """Actor-critic config for shared-encoder dual-head low-level PPO.
+
+    양손 비대칭 학습 문제 해결을 위한 옵션:
+    - separate_noise_std: 좌/우 독립적 noise std (방법3)
+    - dual_critic: 좌/우 분리된 critic (방법5)
+    """
 
     class_name: str = "ActorCriticDualHead"
     dof_split_index: int | None = None
+
+    # [방법3] 좌/우 독립적 noise std 사용 여부
+    # True: 좌/우 팔이 독립적으로 탐험 (한쪽 성공이 다른쪽에 영향 안줌)
+    # False: 기존 방식 (전체 공유 noise std)
+    separate_noise_std: bool = True
+
+    # [방법5] 좌/우 분리된 critic 사용 여부
+    # True: 좌/우 각각의 value function 학습 (독립적 value 추정)
+    # False: 기존 방식 (단일 critic)
+    dual_critic: bool = True

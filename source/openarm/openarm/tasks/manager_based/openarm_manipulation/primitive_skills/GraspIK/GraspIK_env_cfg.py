@@ -353,6 +353,46 @@ class GraspIKRewardsCfg:
         },
     )
 
+    # [해결B] 그리퍼 닫기 보상 (Phase 2-3에서 그리퍼를 닫고 유지하도록 유도)
+    # Phase 2-3에서 물체를 들고 있을 때 그리퍼를 열어버리면 떨어뜨림
+    # 닫고 있으면 보상 → 유지하도록 학습
+    left_gripper_close = RewTerm(
+        func=mdp.phase_gripper_close_reward,
+        weight=2.0,
+        params={
+            "eef_link_name": "openarm_left_hand",
+            "object_cfg": SceneEntityCfg("object"),
+            "phase_weights": [0.0, 0.5, 1.0, 1.0],  # Phase 0: 비활성화, Phase 1: 50%, Phase 2-3: 100%
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "align_threshold": 0.0,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+    right_gripper_close = RewTerm(
+        func=mdp.phase_gripper_close_reward,
+        weight=2.0,
+        params={
+            "eef_link_name": "openarm_right_hand",
+            "object_cfg": SceneEntityCfg("object2"),
+            "phase_weights": [0.0, 0.5, 1.0, 1.0],  # Phase 0: 비활성화, Phase 1: 50%, Phase 2-3: 100%
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.05,
+                "align_threshold": 0.0,
+                "grasp_distance": 0.02,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+
     # ==========================================================================
     # Phase 2-3: Lifting & Goal Tracking 보상 (들어올리기)
     # ==========================================================================

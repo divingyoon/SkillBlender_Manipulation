@@ -413,9 +413,25 @@ def _grasp_success(
     grasp_distance: float,
     close_threshold: float,
 ) -> torch.Tensor:
+    """Phase 1 → Phase 2 전이 조건 (OR 조건).
+
+    OR 조건 사용 이유:
+    - 거리가 충분히 가까우면 (dist < grasp_distance) Phase 2 진입
+    - Phase 2에서는 gripper_open_reward가 0이므로 닫아도 페널티 없음
+    - lifting 보상을 받으려면 실제로 들어야 하고, 들려면 닫아야 함
+    - → 자연스럽게 닫고 들어올리는 행동 학습
+
+    Args:
+        grasp_distance: Phase 2 진입 거리 조건
+        close_threshold: Phase 2 진입 그리퍼 closure 조건
+
+    Returns:
+        (거리 < grasp_distance) OR (closure > close_threshold)
+    """
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
     close = _hand_closure_amount(env, eef_link_name)
-    return (dist < grasp_distance) & (close > close_threshold)
+    # AND → OR 변경: 거리가 가까우면 Phase 2 진입, 그리퍼는 자연스럽게 닫히도록
+    return (dist < grasp_distance) | (close > close_threshold)
 
 
 def object_lift_progress(
@@ -618,9 +634,51 @@ def phase_object_goal_distance_with_ee(
 
 
 def gripper_open_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
-    """Reward keeping the gripper open (low closure amount)."""
+    """Reward keeping the gripper open (low closure amount).
+
+    Phase 0-1에서 사용: 접근 중 그리퍼를 열어두도록 유도
+    """
     closure_amount = _hand_closure_amount(env, eef_link_name)
     return 1.0 - closure_amount
+
+
+def gripper_close_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
+    """Reward keeping the gripper closed (high closure amount).
+
+    Phase 2-3에서 사용: 들어올리는 중 그리퍼를 닫고 있도록 유도
+    물체를 떨어뜨리지 않도록 닫기 유지 보상
+    """
+    closure_amount = _hand_closure_amount(env, eef_link_name)
+    return closure_amount  # closure가 높을수록 보상 높음
+
+
+def phase_gripper_close_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated gripper close reward.
+
+    Phase 2-3에서 그리퍼를 닫고 유지하도록 유도:
+    - phase_weights = [0.0, 0.0, 1.0, 1.0] → Phase 2-3에서만 활성화
+    - 물체를 들고 있을 때 그리퍼를 열어버리면 떨어뜨림
+    - 닫고 있으면 보상 → 유지하도록 학습
+    """
+    phase = _update_Grasp_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params["align_threshold"],
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = gripper_close_reward(env, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
 
 
 def reach_preclose_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:

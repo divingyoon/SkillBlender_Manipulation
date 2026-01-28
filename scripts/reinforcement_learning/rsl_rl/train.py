@@ -65,6 +65,7 @@ parser.add_argument(
     default=0,
     help="Number of warmstart steps to rollout after each reset (requires --warmstart_ckpt).",
 )
+parser.add_argument("--log_able", action="store_true", default=False, help="Enable episode logging to a file.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -538,7 +539,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # optional simple episode logging (reach_ik / grasp_2g_ik only)
     task_lower = args_cli.task.lower()
-    if (
+    if args_cli.log_able and (
         "reach_ik" in task_lower
         or "reachik" in task_lower
         or "grasp_2g_ik" in task_lower

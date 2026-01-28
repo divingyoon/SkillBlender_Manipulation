@@ -290,7 +290,7 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [1.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.03,
@@ -309,7 +309,7 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [1.0, 0.5, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.03,
@@ -328,7 +328,7 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_object_pose",
             "object_cfg": SceneEntityCfg("object"),
-            "phase_weights": [0.5, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.03,
@@ -347,7 +347,7 @@ class GraspIKRewardsCfg:
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_object_pose",
             "object_cfg": SceneEntityCfg("object2"),
-            "phase_weights": [0.5, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],  # Phase 1-3에서만 활성화
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.03,
@@ -713,16 +713,17 @@ class GraspIKEnvCfg(ManagerBasedRLEnvCfg):
         # Reach-only bootstrap: disable grasp/lift/hold rewards.
         #self.rewards.left_gripper_open = None
         #self.rewards.right_gripper_open = None
-        self.rewards.left_gripper_close = None
-        self.rewards.right_gripper_close = None
-        self.rewards.left_lifting_object = None
-        self.rewards.right_lifting_object = None
+        # self.rewards.left_gripper_close = None
+        # self.rewards.right_gripper_close = None
+        # self.rewards.left_lifting_object = None
+        # self.rewards.right_lifting_object = None
         self.rewards.left_object_goal_tracking = None
         self.rewards.right_object_goal_tracking = None
         self.rewards.left_object_goal_tracking_fine_grained = None
         self.rewards.right_object_goal_tracking_fine_grained = None
-        self.rewards.left_Grasp_phase = None
-        self.rewards.right_Grasp_phase = None
+        # self.rewards.left_Grasp_phase = None
+        # self.rewards.right_Grasp_phase = None
+
         # Command-only high-level observations (drop real object positions).
         self.observations.policy.object_position = None
         self.observations.policy.object2_position = None

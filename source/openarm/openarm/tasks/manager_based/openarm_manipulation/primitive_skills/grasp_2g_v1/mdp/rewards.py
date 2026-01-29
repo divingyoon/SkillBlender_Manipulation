@@ -362,7 +362,7 @@ def _grasp_success(
 ) -> torch.Tensor:
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
     close = _hand_closure_amount(env, eef_link_name)
-    return (dist < grasp_distance) & (close > close_threshold)
+    return (dist < grasp_distance) | (close > close_threshold)
 
 
 def object_lift_progress(
@@ -404,7 +404,9 @@ def _update_grasp2g_phase(
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
-    grasp_ok = _grasp_success(env, eef_link_name, object_cfg, grasp_distance, close_threshold)
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    close = _hand_closure_amount(env, eef_link_name)
+    grasp_ok = (dist < grasp_distance) | (close > close_threshold)
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
 

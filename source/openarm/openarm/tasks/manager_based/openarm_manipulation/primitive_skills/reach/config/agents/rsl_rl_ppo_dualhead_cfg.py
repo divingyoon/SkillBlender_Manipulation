@@ -35,6 +35,8 @@ class ReachDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         critic_hidden_dims=[512, 256],
         activation="elu",
         dof_split_index=9,
+        separate_noise_std=False,
+        dual_critic=False,
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=2.0,

@@ -18,7 +18,7 @@ from . import agents
 
 gym.register(
     id="grasp2g-v1",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.grasp2g_hold_env:Grasp2gHoldEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmGrasp2gEnvCfg",
@@ -32,7 +32,7 @@ gym.register(
 
 gym.register(
     id="grasp2g-play-v1",
-    entry_point="isaaclab.envs:ManagerBasedRLEnv",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.grasp2g_hold_env:Grasp2gHoldEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmGrasp2gEnvCfg_PLAY",

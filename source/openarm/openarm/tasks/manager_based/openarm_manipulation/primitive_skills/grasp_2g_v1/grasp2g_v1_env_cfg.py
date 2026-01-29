@@ -229,6 +229,41 @@ class RewardsCfg:
         weight=3.0,
     )
 
+    left_object_displacement_penalty = RewTerm(
+        func=mdp.phase_object_root_displacement_penalty,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "scale": 10.0,
+        },
+        weight=-5.0,
+    )
+    right_object_displacement_penalty = RewTerm(
+        func=mdp.phase_object_root_displacement_penalty,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "scale": 10.0,  #컵이 2cm(0.02m) 움직였고 scale=1.0, weight=-1.0이면 보상에 -0.02 추가
+        },
+        weight=-5.0,
+    )
+
     # Orientation 보상 (손 방향 정렬)
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
@@ -241,8 +276,8 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -259,8 +294,8 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -271,12 +306,12 @@ class RewardsCfg:
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 5.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -288,12 +323,12 @@ class RewardsCfg:
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 5.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -310,12 +345,12 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -331,12 +366,12 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -353,12 +388,12 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -374,12 +409,12 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -394,8 +429,8 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -409,8 +444,8 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
@@ -488,7 +523,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     # curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
-        self.decimation = 2
+        self.decimation = 4
         self.episode_length_s = 8.0
         self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation

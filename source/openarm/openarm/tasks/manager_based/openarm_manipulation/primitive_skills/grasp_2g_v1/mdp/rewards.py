@@ -377,6 +377,27 @@ def object_lift_progress(
     return torch.clamp(progress, min=0.0, max=1.0)
 
 
+def _object_root_displacement_from_init(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Compute displacement from per-episode initial root position."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    attr_name = f"_init_root_pos_{object_cfg.name}"
+
+    if not hasattr(env, attr_name):
+        init_pos = obj.data.root_pos_w.clone()
+    else:
+        init_pos = getattr(env, attr_name)
+
+    if hasattr(env, "reset_buf"):
+        reset_mask = env.reset_buf.unsqueeze(1)
+        init_pos = torch.where(reset_mask, obj.data.root_pos_w, init_pos)
+
+    setattr(env, attr_name, init_pos)
+    return torch.linalg.norm(obj.data.root_pos_w - init_pos, dim=1)
+
+
 def _update_grasp2g_phase(
     env: ManagerBasedRLEnv,
     eef_link_name: str,
@@ -518,6 +539,29 @@ def phase_object_goal_distance_with_ee(
         reach_std=reach_std,
     )
     return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def phase_object_root_displacement_penalty(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+    scale: float = 1.0,
+) -> torch.Tensor:
+    """Penalty for moving the object away from its per-episode initial position."""
+    phase = _update_grasp2g_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    displacement = _object_root_displacement_from_init(env, object_cfg) * scale
+    return displacement * _phase_weight(phase, phase_weights, env.device)
 
 
 def gripper_open_reward(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:

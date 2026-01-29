@@ -21,7 +21,7 @@ from isaaclab.assets import RigidObject
 from isaaclab.envs.mdp import joint_vel_l2
 from isaaclab.utils.math import combine_frame_transforms
 from isaaclab.managers import SceneEntityCfg
-from isaaclab.utils.math import quat_apply, quat_error_magnitude
+from isaaclab.utils.math import quat_apply, quat_error_magnitude, quat_mul
 
 if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
@@ -429,7 +429,7 @@ def phase_eef_to_object_distance(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -452,7 +452,7 @@ def phase_eef_to_object_orientation(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -474,7 +474,7 @@ def phase_grasp_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -501,7 +501,7 @@ def phase_object_goal_distance_with_ee(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -544,7 +544,7 @@ def phase_gripper_open_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -566,7 +566,7 @@ def phase_reach_preclose_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -604,7 +604,7 @@ def phase_closed_far_reach_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -626,7 +626,7 @@ def phase_lift_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -649,7 +649,7 @@ def phase_hold_reward(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -670,7 +670,7 @@ def grasp2g_phase_value(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -692,7 +692,7 @@ def phase_joint_vel_l2(
         object_cfg,
         phase_params["lift_height"],
         phase_params["reach_distance"],
-        phase_params["align_threshold"],
+        phase_params.get("align_threshold", 0.0),
         phase_params["grasp_distance"],
         phase_params["close_threshold"],
         phase_params["hold_duration"],
@@ -710,3 +710,50 @@ def joints_near_zero(
     asset: RigidObject = env.scene[asset_cfg.name]
     q = asset.data.joint_pos[:, asset_cfg.joint_ids]
     return (torch.abs(q) < threshold).all(dim=1)
+
+
+def hand_x_align_object_z_reward(
+    env: ManagerBasedRLEnv, command_name: str, asset_cfg: SceneEntityCfg
+) -> torch.Tensor:
+    """Reward aligning hand +X axis with command/object +Z axis.
+
+    Returns a [0, 1] reward using (1 + cos(theta)) / 2.
+    """
+    asset: RigidObject = env.scene[asset_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_quat_b = command[:, 3:7]
+    des_quat_w = quat_mul(asset.data.root_quat_w, des_quat_b)
+    curr_quat_w = asset.data.body_quat_w[:, asset_cfg.body_ids[0]]  # type: ignore
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=curr_quat_w.device, dtype=curr_quat_w.dtype)
+    x_axis = x_axis.repeat(curr_quat_w.shape[0], 1)
+    z_axis = z_axis.repeat(curr_quat_w.shape[0], 1)
+
+    hand_x = quat_apply(curr_quat_w, x_axis)
+    obj_z = quat_apply(des_quat_w, z_axis)
+    cos_sim = torch.sum(hand_x * obj_z, dim=1)
+    return 0.5 * (1.0 + cos_sim)
+
+
+def phase_hand_x_align_object_z_reward(
+    env: ManagerBasedRLEnv,
+    command_name: str,
+    asset_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    phase = _update_grasp2g_phase(
+        env,
+        phase_params["eef_link_name"],
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = hand_x_align_object_z_reward(env, command_name, asset_cfg)
+    return reward * _phase_weight(phase, phase_weights, env.device)

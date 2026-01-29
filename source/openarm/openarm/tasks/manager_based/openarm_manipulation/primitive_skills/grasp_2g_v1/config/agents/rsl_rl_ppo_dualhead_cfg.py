@@ -20,7 +20,7 @@ from sbm.rl import SbmDualHeadActorCriticCfg
 
 @configclass
 class GraspDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 24
+    num_steps_per_env = 30
     max_iterations = 10000
     save_interval = 100
     experiment_name = "openarm_grasp2g_v1_dualhead"
@@ -31,8 +31,8 @@ class GraspDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         init_noise_std=1.0,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
-        actor_hidden_dims=[512, 256],
-        critic_hidden_dims=[512, 256],
+        actor_hidden_dims=[512, 256, 128],
+        critic_hidden_dims=[512, 256, 128],
         activation="elu",
         dof_split_index=9,
     )

@@ -89,9 +89,9 @@ class CommandsCfg:
           resampling_time_range=(5.0, 5.0),
           debug_vis=True,
           ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.3, 0.5),
-              pos_y=(0.1, 0.3),
-              pos_z=(0.25, 0.55),
+              pos_x=(0.2, 0.3),
+              pos_y=(0.15, 0.25),
+              pos_z=(0.2, 0.45),
               roll=(0.0, 0.0),
               pitch=(0.0, 0.0),
               yaw=(0.0, 0.0),
@@ -104,9 +104,9 @@ class CommandsCfg:
           resampling_time_range=(5.0, 5.0),
           debug_vis=True,
           ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.3, 0.5),
-              pos_y=(-0.3, -0.1),
-              pos_z=(0.25, 0.55),
+              pos_x=(0.2, 0.3),
+              pos_y=(-0.25, -0.15),
+              pos_z=(0.2, 0.45),
               roll=(0.0, 0.0),
               pitch=(0.0, 0.0),
               yaw=(0.0, 0.0),
@@ -193,7 +193,7 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.35, 0.35), "y": (0.2, 0.2), "z": (0.0, 0.0),
+                "x": (0.25, 0.25), "y": (0.2, 0.2), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -205,7 +205,7 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.35, 0.35), "y": (-0.2, -0.2), "z": (0.0, 0.0),
+                "x": (0.25, 0.25), "y": (-0.2, -0.2), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -221,14 +221,51 @@ class RewardsCfg:
     left_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "openarm_left_hand"},
-        weight=1.0,
+        weight=3.0,
     )
     right_reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "openarm_right_hand"},
-        weight=1.0,
+        weight=3.0,
     )
 
+    # Orientation 보상 (손 방향 정렬)
+    left_end_effector_orientation_tracking = RewTerm(
+        func=mdp.phase_hand_x_align_object_z_reward,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
+            "command_name": "left_cup_pose",
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+    right_end_effector_orientation_tracking = RewTerm(
+        func=mdp.phase_hand_x_align_object_z_reward,
+        weight=1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
+            "command_name": "right_cup_pose",
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.6,
+                "hold_duration": 2.0,
+            },
+        },
+    )
     left_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
@@ -238,14 +275,13 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
         },
-        weight=15.0,
+        weight=5.0,
     )
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
@@ -256,14 +292,13 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
         },
-        weight=15.0,
+        weight=5.0,
     )
 
     left_object_goal_tracking = RewTerm(
@@ -279,14 +314,13 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
         },
-        weight=16.0,
+        weight=5.0,
     )
     right_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
@@ -301,14 +335,13 @@ class RewardsCfg:
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
-                "reach_distance": 0.05,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
         },
-        weight=16.0,
+        weight=5.0,
     )
 
     left_object_goal_tracking_fine_grained = RewTerm(
@@ -325,8 +358,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
@@ -347,8 +379,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
@@ -364,8 +395,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
@@ -380,8 +410,7 @@ class RewardsCfg:
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
                 "reach_distance": 0.07,
-                "align_threshold": 0.0,
-                "grasp_distance": 0.02,
+                "grasp_distance": 0.05,
                 "close_threshold": 0.6,
                 "hold_duration": 2.0,
             },
@@ -423,17 +452,18 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    """Curriculum terms for the MDP."""
+    # """Curriculum terms for the MDP."""
+    pass
 
-    action_rate = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
-    )
+    # action_rate = CurrTerm(
+    #     func=mdp.modify_reward_weight,
+    #     params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
+    # )
 
-    joint_vel = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
-    )
+    # joint_vel = CurrTerm(
+    #     func=mdp.modify_reward_weight,
+    #     params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
+    # )
 
 
 @configclass
@@ -447,7 +477,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_right: bool = True
     debug_grasp_right_interval: int = 200
     
-    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=2048*1, env_spacing=2.5)
+    scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=10**3, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -455,7 +485,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
 
     commands: CommandsCfg = CommandsCfg()
-    curriculum: CurriculumCfg = CurriculumCfg()
+    # curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         self.decimation = 2

@@ -52,7 +52,7 @@ class Grasp2gIKDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         num_mini_batches=8,
         # [붕괴 방지] Learning rate 감소: 1e-4 → 5e-5
         # Phase 전환 시 급격한 policy 변화 완화
-        learning_rate=1.0e-5,
+        learning_rate=5.0e-4,
         schedule="adaptive",
         gamma=0.99,
         # [붕괴 방지] GAE lambda 감소: 0.95 → 0.9

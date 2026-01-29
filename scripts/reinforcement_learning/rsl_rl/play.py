@@ -53,6 +53,18 @@ parser.add_argument(
     help="Use the pre-trained checkpoint from Nucleus.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument(
+    "--no_export",
+    action="store_true",
+    default=False,
+    help="Disable exporting the policy to JIT/ONNX during play.",
+)
+parser.add_argument(
+    "--use_log_cfg",
+    action="store_true",
+    default=False,
+    help="Load env/agent config from the checkpoint log's params/*.yaml before play.",
+)
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -90,7 +102,8 @@ from isaaclab.envs import (
     multi_agent_to_single_agent,
 )
 from isaaclab.utils.assets import retrieve_file_path
-from isaaclab.utils.dict import print_dict
+from isaaclab.utils.dict import print_dict, update_class_from_dict
+from isaaclab.utils.io import load_yaml
 try:
     from isaaclab_rl.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 except ModuleNotFoundError:
@@ -230,12 +243,6 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # override configurations with non-hydra CLI arguments
     agent_cfg: RslRlBaseRunnerCfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
-    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
-
-    # set the environment seed
-    # note: certain randomizations occur in the environment initialization so we set the seed here
-    env_cfg.seed = agent_cfg.seed
-    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
     # specify directory for logging experiments
     sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
@@ -256,6 +263,27 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # set the log directory for the environment (works for all environment types)
     env_cfg.log_dir = log_dir
+
+    # optionally restore env/agent configs from the training log
+    if args_cli.use_log_cfg:
+        env_cfg_path = os.path.join(log_dir, "params", "env.yaml")
+        if os.path.exists(env_cfg_path):
+            update_class_from_dict(env_cfg, load_yaml(env_cfg_path))
+        else:
+            print(f"[WARN] env config not found at: {env_cfg_path}")
+
+        agent_cfg_path = os.path.join(log_dir, "params", "agent.yaml")
+        if os.path.exists(agent_cfg_path):
+            update_class_from_dict(agent_cfg, load_yaml(agent_cfg_path))
+        else:
+            print(f"[WARN] agent config not found at: {agent_cfg_path}")
+
+    # re-apply CLI overrides after optional log cfg load
+    agent_cfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
+    env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
+    # note: certain randomizations occur in the environment initialization so we set the seed here
+    env_cfg.seed = agent_cfg.seed
+    env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)
@@ -333,9 +361,10 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env_index = None
 
     # export policy to onnx/jit
-    export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
-    export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
-    export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
+    if not args_cli.no_export:
+        export_model_dir = os.path.join(os.path.dirname(resume_path), "exported")
+        export_policy_as_jit(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.pt")
+        export_policy_as_onnx(policy_nn, normalizer=normalizer, path=export_model_dir, filename="policy.onnx")
 
     dt = env.unwrapped.step_dt
 

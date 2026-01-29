@@ -29,6 +29,7 @@ from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
+from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 

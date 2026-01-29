@@ -32,15 +32,26 @@ _BLACKLIST_PKGS = ["utils", ".mdp"]
 import_packages(__name__, _BLACKLIST_PKGS)
 
 # Explicitly import the new 'approach' task config to ensure registration
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.reach.config
-import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.ReachIK.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.approach.config
+
+# bimanual/reach
+import openarm.tasks.manager_based.openarm_manipulation.bimanual.reach.config
+# bimanual/grasp,grasp2g
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.grasp_2g_env_cfg
+
+#primitive skills/grasp_2g_v1
+import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.config
+import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.grasp2g_v1_env_cfg
+
+#primitive skills/reach_ik,grasp_ik,transfer_ik,pour_ik
+import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.ReachIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.GraspIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.TransferIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.PourIK.config
+
+# blending/pouring,pouring1,pouring2,pouring3,pouring4
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring1.config
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring2.config

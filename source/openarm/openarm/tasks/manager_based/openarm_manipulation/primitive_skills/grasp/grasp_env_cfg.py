@@ -430,7 +430,7 @@ class GraspEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_right: bool = True
     debug_grasp_right_interval: int = 200
 
-    scene: GraspSceneCfg = GraspSceneCfg(num_envs=2048, env_spacing=2.5)
+    scene: GraspSceneCfg = GraspSceneCfg(num_envs=2048*1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -439,11 +439,11 @@ class GraspEnvCfg(ManagerBasedRLEnvCfg):
     curriculum = None
 
     # Roll-out setting from markdown - using the simplified approach
-    use_rollout_reset: bool = True
-    reach_checkpoint_path: str = "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_reach/test7_5080/model_9999.pt"
+    # use_rollout_reset: bool = True
+    # reach_checkpoint_path: str = "/home/user/rl_ws/IsaacLab/logs/rsl_rl/openarm_bi_reach/test7_5080/model_9999.pt"
 
     def __post_init__(self):
-        self.decimation = 2
+        self.decimation = 4
         self.episode_length_s = 8.0
         self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation

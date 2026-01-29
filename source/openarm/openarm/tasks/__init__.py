@@ -37,6 +37,7 @@ import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.ReachIK
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.approach.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp.config
 import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.config
+import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.grasp_2g_env_cfg
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.GraspIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.TransferIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.PourIK.config

@@ -24,7 +24,7 @@ class OpenArmReachHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 20000
     save_interval = 100
-    experiment_name = "openarm_bi_reach_hier"
+    experiment_name = "reach2g_hier"
     run_name = ""
     resume = False
     empirical_normalization = False
@@ -36,7 +36,7 @@ class OpenArmReachHierarchicalPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
         # Filter registry to only include skills compatible with this task.
-        skill_dict=load_skill_registry(include=["openarm_bi_reach", "openarm_bi_approach"]),
+        skill_dict=load_skill_registry(include=["reach2g", "openarm_bi_approach"]),
         frame_stack=1,
         command_dim=14,
         command_slice=[42, 56],

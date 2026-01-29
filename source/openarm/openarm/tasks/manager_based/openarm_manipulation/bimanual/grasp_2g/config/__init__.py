@@ -17,7 +17,7 @@ import gymnasium as gym
 from . import agents
 
 gym.register(
-    id="Isaac-Grasp2g-OpenArm-Bi-v0",
+    id="grasp2g-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={
@@ -30,7 +30,7 @@ gym.register(
 )
 
 gym.register(
-    id="Isaac-Grasp2g-OpenArm-Bi-Play-v0",
+    id="grasp2g-play-v0",
     entry_point="isaaclab.envs:ManagerBasedRLEnv",
     disable_env_checker=True,
     kwargs={

@@ -10,7 +10,7 @@ from isaaclab.app import AppLauncher
 
 def build_parser():
     parser = argparse.ArgumentParser(description="Check reset symmetry for bimanual tasks.")
-    parser.add_argument("--task", type=str, default="Isaac-Grasp2g-OpenArm-Bi-v0")
+    parser.add_argument("--task", type=str, default="grasp2g-v0")
     parser.add_argument("--num_resets", type=int, default=50)
     parser.add_argument("--num_envs", type=int, default=None, help="Override env num_envs if supported")
     AppLauncher.add_app_launcher_args(parser)

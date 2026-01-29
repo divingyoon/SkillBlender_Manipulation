@@ -22,7 +22,7 @@ import math
 from isaaclab.app import AppLauncher
 
 parser = argparse.ArgumentParser(description="Print observation term layout and command slice offsets.")
-parser.add_argument("--task", required=True, help="Gym task id, e.g. Isaac-Reach-OpenArm-Bi-v1.")
+parser.add_argument("--task", required=True, help="Gym task id, e.g. reach2g-v1.")
 parser.add_argument("--group", default="policy", help="Observation group name (default: policy).")
 parser.add_argument(
     "--command-terms",

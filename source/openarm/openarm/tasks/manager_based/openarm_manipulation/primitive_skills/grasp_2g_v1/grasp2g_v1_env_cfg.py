@@ -193,7 +193,7 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.45, 0.45), "y": (0.2, 0.2), "z": (0.0, 0.0),
+                "x": (0.35, 0.35), "y": (0.2, 0.2), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},
@@ -205,7 +205,7 @@ class EventCfg:
         mode="reset",
         params={
             "pose_range": {
-                "x": (0.45, 0.45), "y": (-0.2, -0.2), "z": (0.0, 0.0),
+                "x": (0.35, 0.35), "y": (-0.2, -0.2), "z": (0.0, 0.0),
                 "yaw": (-math.pi / 2, -math.pi / 2),
             },
             "velocity_range": {},

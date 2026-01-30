@@ -2,3 +2,4 @@ from .actor_critic_dual_head import ActorCriticDualHead
 from .actor_critic_hierarchical import ActorCriticHierarchical, ActorCriticHierarchicalDualHead
 from .register_rsl_rl import register_rsl_rl
 from .rl_cfg import SbmDualHeadActorCriticCfg, SbmHierarchicalActorCriticCfg
+from .vecenv_wrapper import RslRlVecEnvWrapper

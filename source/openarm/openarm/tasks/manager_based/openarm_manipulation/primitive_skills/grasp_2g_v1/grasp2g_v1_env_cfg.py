@@ -316,7 +316,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
@@ -333,7 +333,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
 
     left_object_goal_tracking = RewTerm(
@@ -355,7 +355,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
     right_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
@@ -376,7 +376,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
 
     left_object_goal_tracking_fine_grained = RewTerm(

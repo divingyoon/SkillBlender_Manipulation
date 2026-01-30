@@ -114,6 +114,82 @@ def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Te
     )
 
 
+def _hand_closure_debug_stats(
+    env: ManagerBasedRLEnv, eef_link_name: str
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return closure amount along with mean action/default for debug logging."""
+    if "left" in eef_link_name:
+        hand_term = env.action_manager.get_term("left_hand_action")
+    elif "right" in eef_link_name:
+        hand_term = env.action_manager.get_term("right_hand_action")
+    else:
+        zeros = torch.zeros(env.num_envs, device=env.device)
+        return zeros, zeros, zeros
+
+    hand_action = hand_term.processed_actions
+    if isinstance(hand_term._offset, torch.Tensor):
+        default_pos = hand_term._offset.mean(dim=1)
+    else:
+        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
+
+    mean_action = hand_action.mean(dim=1)
+    closure = torch.clamp(
+        (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
+    )
+    return closure, mean_action, default_pos
+
+
+def _maybe_log_grasp_debug(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    dist: torch.Tensor,
+    close: torch.Tensor,
+    mean_action: torch.Tensor,
+    default_pos: torch.Tensor,
+) -> None:
+    cfg = getattr(env, "cfg", None)
+    if cfg is None:
+        return
+
+    if "left" in eef_link_name:
+        enabled = getattr(cfg, "debug_grasp_left", False)
+        interval = int(getattr(cfg, "debug_grasp_left_interval", 200))
+        last_key = "_debug_grasp_left_last_step"
+        side = "left"
+    elif "right" in eef_link_name:
+        enabled = getattr(cfg, "debug_grasp_right", False)
+        interval = int(getattr(cfg, "debug_grasp_right_interval", 200))
+        last_key = "_debug_grasp_right_last_step"
+        side = "right"
+    else:
+        return
+
+    if not enabled:
+        return
+    step_count = getattr(env, "common_step_counter", None)
+    if step_count is None:
+        return
+    last_step = getattr(env, last_key, None)
+    if last_step == int(step_count):
+        return
+    if int(step_count) % max(interval, 1) != 0:
+        return
+
+    setattr(env, last_key, int(step_count))
+    close_mean = float(close.mean().item())
+    dist_mean = float(dist.mean().item())
+    action_mean = float(mean_action.mean().item())
+    default_mean = float(default_pos.mean().item())
+    delta_mean = float((default_pos - mean_action).mean().item())
+    print(
+        "[GRASP_DEBUG] "
+        f"step={int(step_count)} side={side} "
+        f"close_mean={close_mean:.3f} dist_mean={dist_mean:.3f} "
+        f"action_mean={action_mean:.4f} default_mean={default_mean:.4f} "
+        f"delta_mean={delta_mean:.4f}"
+    )
+
+
 def eef_to_object_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -426,7 +502,8 @@ def _update_grasp2g_phase(
 
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
-    close = _hand_closure_amount(env, eef_link_name)
+    close, mean_action, default_pos = _hand_closure_debug_stats(env, eef_link_name)
+    _maybe_log_grasp_debug(env, eef_link_name, dist, close, mean_action, default_pos)
     grasp_ok = (dist < grasp_distance) | (close > close_threshold)
     obj: RigidObject = env.scene[object_cfg.name]
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height

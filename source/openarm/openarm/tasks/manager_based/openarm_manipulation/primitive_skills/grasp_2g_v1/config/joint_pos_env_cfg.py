@@ -232,3 +232,5 @@ class OpenArmGrasp2gEnvCfg_PLAY(OpenArmGrasp2gEnvCfg):
         self.scene.num_envs = 50
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
+        # RSL-RL dual-head policy expects concatenated 1D observations.
+        self.observations.policy.concatenate_terms = True

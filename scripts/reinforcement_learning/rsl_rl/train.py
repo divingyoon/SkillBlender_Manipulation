@@ -650,6 +650,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env = RslRlVecEnvWrapper(
         env,
         clip_actions=agent_cfg.clip_actions,
+        swap_lr=args_cli.swap_lr,
         swap_prob=args_cli.swap_lr_prob,
     )
 

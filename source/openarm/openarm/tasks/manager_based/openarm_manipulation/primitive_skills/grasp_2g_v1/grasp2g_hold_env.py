@@ -24,6 +24,7 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.enable_gripper_hold = getattr(self.cfg, "enable_gripper_hold", False)
         self._setup_gripper_hold()
 
     def _setup_gripper_hold(self) -> None:
@@ -66,6 +67,9 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
         return torch.zeros(self.num_envs, device=self.device, dtype=torch.long)
 
     def step(self, action: torch.Tensor):
+        if not self.enable_gripper_hold:
+            return super().step(action)
+
         action = action.to(self.device)
 
         left_phase = self._get_phase("grasp2g_phase_left")
@@ -84,3 +88,7 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
                 action[right_mask, sl] = self._right_close_raw[right_mask]
 
         return super().step(action)
+
+    def set_gripper_hold(self, enabled: bool) -> None:
+        """Toggle gripper hold behavior at runtime."""
+        self.enable_gripper_hold = bool(enabled)

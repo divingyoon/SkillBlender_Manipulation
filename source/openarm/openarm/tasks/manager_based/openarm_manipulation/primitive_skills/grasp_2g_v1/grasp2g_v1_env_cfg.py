@@ -89,9 +89,9 @@ class CommandsCfg:
           resampling_time_range=(5.0, 5.0),
           debug_vis=True,
           ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.2, 0.3),
-              pos_y=(0.15, 0.25),
-              pos_z=(0.2, 0.45),
+              pos_x=(0.25, 0.25),
+              pos_y=(0.2, 0.2),
+              pos_z=(0.2, 0.2),
               roll=(0.0, 0.0),
               pitch=(0.0, 0.0),
               yaw=(0.0, 0.0),
@@ -104,9 +104,9 @@ class CommandsCfg:
           resampling_time_range=(5.0, 5.0),
           debug_vis=True,
           ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.2, 0.3),
-              pos_y=(-0.25, -0.15),
-              pos_z=(0.2, 0.45),
+              pos_x=(0.25, 0.25),
+              pos_y=(-0.2, -0.2),
+              pos_z=(0.2, 0.2),
               roll=(0.0, 0.0),
               pitch=(0.0, 0.0),
               yaw=(0.0, 0.0),
@@ -178,7 +178,7 @@ class ObservationsCfg:
 
         def __post_init__(self):
             self.enable_corruption = True
-            self.concatenate_terms = True
+            self.concatenate_terms = False
 
     policy: PolicyCfg = PolicyCfg()
 
@@ -511,6 +511,8 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_left_interval: int = 200
     debug_grasp_right: bool = True
     debug_grasp_right_interval: int = 200
+
+    enable_gripper_hold: bool = False
     
     scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=10**3, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

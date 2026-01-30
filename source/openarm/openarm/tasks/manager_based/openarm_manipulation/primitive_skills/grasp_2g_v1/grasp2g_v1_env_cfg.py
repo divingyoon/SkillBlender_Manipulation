@@ -530,6 +530,8 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
+        # RSL-RL ActorCritic expects 1D observations.
+        self.observations.policy.concatenate_terms = True
 
         # assign a default physx material to all scene geometries
         # we can also do this per-asset in the scene definition

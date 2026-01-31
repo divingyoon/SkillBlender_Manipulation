@@ -86,7 +86,7 @@ class CommandsCfg:
     left_cup_pose = mdp.WorldPoseCommandCfg(
         asset_name="robot",
         resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.WorldPoseCommandCfg.Ranges(
             pos_x=(0.25, 0.25),
             pos_y=(0.2, 0.2),
@@ -100,7 +100,7 @@ class CommandsCfg:
     right_cup_pose = mdp.WorldPoseCommandCfg(
         asset_name="robot",
         resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.WorldPoseCommandCfg.Ranges(
             pos_x=(0.25, 0.25),
             pos_y=(-0.2, -0.2),

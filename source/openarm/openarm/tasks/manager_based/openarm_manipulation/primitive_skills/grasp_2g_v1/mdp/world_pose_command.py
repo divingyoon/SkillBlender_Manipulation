@@ -69,8 +69,8 @@ class WorldPoseCommand(CommandTerm):
 
         # convert world command to base frame
         cmd_pos_b, cmd_quat_b = subtract_frame_transforms(
-            self.robot.data.root_pos_w,
-            self.robot.data.root_quat_w,
+            self.robot.data.root_pos_w[env_ids],
+            self.robot.data.root_quat_w[env_ids],
             self.pose_command_w[env_ids, :3],
             self.pose_command_w[env_ids, 3:],
         )

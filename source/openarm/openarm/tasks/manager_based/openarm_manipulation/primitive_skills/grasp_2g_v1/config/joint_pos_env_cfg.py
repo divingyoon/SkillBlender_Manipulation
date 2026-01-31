@@ -158,13 +158,13 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.08,
+            scale=0.2,
             use_default_offset=True,
         )
         self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_finger_joint.*"],
-            scale=0.15,
+            scale=0.5,
             use_default_offset=True,
         )
 
@@ -179,14 +179,14 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
                 "openarm_right_joint6",
                 "openarm_right_joint7",
             ],
-            scale=0.08,
+            scale=0.2,
             use_default_offset=True,
         )
 
         self.actions.right_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_finger_joint.*"],
-            scale=0.15,
+            scale=0.5,
             use_default_offset=True,
         )
 

@@ -223,6 +223,47 @@ def _maybe_log_grasp_debug(
     )
 
 
+def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv, interval: int = 200) -> None:
+    cfg = getattr(env, "cfg", None)
+    if cfg is None:
+        return
+    step_count = getattr(env, "common_step_counter", None)
+    if step_count is None:
+        return
+    last_step = getattr(env, "_debug_reach_xyz_last_step", None)
+    if last_step == int(step_count):
+        return
+    if int(step_count) % max(interval, 1) != 0:
+        return
+    setattr(env, "_debug_reach_xyz_last_step", int(step_count))
+
+    offset = getattr(cfg, "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if not isinstance(offset, (list, tuple)) or len(offset) != 3:
+        offset = (0.0, 0.0, 0.0)
+    offset_t = torch.tensor(offset, device=env.device)
+
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    body_names = env.scene["robot"].data.body_names
+
+    def _log(side: str, cup_name: str, hand_name: str):
+        try:
+            eef_idx = body_names.index(hand_name)
+        except ValueError:
+            return
+        obj = env.scene[cup_name].data.root_pos_w + offset_t
+        ee = body_pos_w[:, eef_idx]
+        diff = ee - obj
+        dist_xy = torch.linalg.norm(diff[:, :2], dim=1).mean().item()
+        dist_z = torch.abs(diff[:, 2]).mean().item()
+        print(
+            f"[REACH_XYZ] step={int(step_count)} side={side} "
+            f"dist_xy={dist_xy:.4f} dist_z={dist_z:.4f}"
+        )
+
+    _log("left", "cup", "openarm_left_hand")
+    _log("right", "cup2", "openarm_right_hand")
+
+
 def _maybe_visualize_grasp_targets(env: ManagerBasedRLEnv) -> None:
     cfg = getattr(env, "cfg", None)
     if cfg is None:
@@ -643,6 +684,7 @@ def _update_grasp2g_phase(
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
     _maybe_visualize_grasp_targets(env)
+    _maybe_log_reach_xy_z_debug(env, interval=200)
     # Phase 0 -> 1: reach 게이트 (거리 + 선택적 정렬).
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     dist = _object_eef_distance(env, eef_link_name, object_cfg)

@@ -74,6 +74,9 @@ class RslRlVecEnvWrapper(VecEnv):
             self._build_swap_helpers()
             if not self._swap_obs_term_pairs:
                 self._swap_obs_term_pairs = self._infer_obs_swap_pairs()
+            if self._swap_obs_term_pairs:
+                pairs_str = ", ".join(f"{a}<->{b}" for a, b in self._swap_obs_term_pairs)
+                print(f"[SWAP] obs pairs: {pairs_str}")
             self._sample_swap_mask()
 
         # reset at the start since the RSL-RL runner does not call reset
@@ -200,6 +203,7 @@ class RslRlVecEnvWrapper(VecEnv):
             all_terms.update(term_names)
 
         pairs = set()
+        # left/right naming
         for name in list(all_terms):
             if "left" in name:
                 cand = name.replace("left", "right")
@@ -209,9 +213,34 @@ class RslRlVecEnvWrapper(VecEnv):
                 cand = name.replace("right", "left")
                 if cand in all_terms:
                     pairs.add((cand, name))
+        # handle *_2 suffix patterns
         for name in list(all_terms):
             if name.endswith("2") and name[:-1] in all_terms:
                 pairs.add((name[:-1], name))
+        # handle cup/cup2 with left/right split in the middle (grasp2g naming)
+        for name in list(all_terms):
+            if "cup2" in name:
+                cand = name.replace("cup2", "cup")
+                cand = cand.replace("right", "left")
+                if cand in all_terms:
+                    pairs.add((cand, name))
+            if "cup" in name and "cup2" not in name:
+                cand = name.replace("cup", "cup2")
+                cand = cand.replace("left", "right")
+                if cand in all_terms:
+                    pairs.add((name, cand))
+        # handle object/object2 similarly
+        for name in list(all_terms):
+            if "object2" in name:
+                cand = name.replace("object2", "object")
+                cand = cand.replace("right", "left")
+                if cand in all_terms:
+                    pairs.add((cand, name))
+            if "object" in name and "object2" not in name:
+                cand = name.replace("object", "object2")
+                cand = cand.replace("left", "right")
+                if cand in all_terms:
+                    pairs.add((name, cand))
 
         normalized = []
         for a, b in pairs:

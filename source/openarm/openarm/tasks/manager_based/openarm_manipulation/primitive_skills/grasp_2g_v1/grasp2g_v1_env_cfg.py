@@ -227,7 +227,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-0.2,
+        weight=-0.5,
     )
     right_reaching_object = RewTerm(
         func=mdp.phase_object_ee_distance_error,
@@ -244,14 +244,16 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-0.2,
+        weight=-0.5,
     )
 
-    # Phase 0-1: fine reaching (reach_env_cfg tanh 방식)
+    # Phase 0-1: fine reaching (XY/Z 분리)
     left_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_tanh,
+        func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std": 0.1,
+            "std_xy": 0.05,
+            "std_z": 0.1,
+            "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
@@ -267,9 +269,11 @@ class RewardsCfg:
         weight=5.0,
     )
     right_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_tanh,
+        func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std": 0.1,
+            "std_xy": 0.05,
+            "std_z": 0.1,
+            "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
@@ -301,7 +305,7 @@ class RewardsCfg:
             },
             "scale": 10.0,
         },
-        weight=-3.0,
+        weight=-5.0,
     )
     # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
     right_object_displacement_penalty = RewTerm(
@@ -319,7 +323,7 @@ class RewardsCfg:
             },
             "scale": 10.0,  #컵이 2cm(0.02m) 움직였고 scale=1.0, weight=-1.0이면 보상에 -0.02 추가
         },
-        weight=-3.0,
+        weight=-5.0,
     )
 
     # Phase 0: reach 동안 방향 정렬.

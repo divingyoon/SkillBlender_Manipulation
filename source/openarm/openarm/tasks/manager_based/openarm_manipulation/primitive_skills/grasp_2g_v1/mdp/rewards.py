@@ -53,7 +53,7 @@ def object_ee_distance_tanh(
 ) -> torch.Tensor:
     """Reward the agent for reaching the object using tanh-kernel."""
     distance = _object_eef_distance(env, eef_link_name, object_cfg)
-    return 1 - torch.tanh((distance-0.1) / std)
+    return 1 - torch.tanh(distance / std)
 
 def _object_eef_any_axis_alignment(
     env: ManagerBasedRLEnv,
@@ -223,9 +223,11 @@ def _maybe_log_grasp_debug(
     )
 
 
-def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv, interval: int = 200) -> None:
+def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv) -> None:
     cfg = getattr(env, "cfg", None)
     if cfg is None:
+        return
+    if not getattr(cfg, "debug_reach_reward", False):
         return
     step_count = getattr(env, "common_step_counter", None)
     if step_count is None:
@@ -233,6 +235,7 @@ def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv, interval: int = 200) -> 
     last_step = getattr(env, "_debug_reach_xyz_last_step", None)
     if last_step == int(step_count):
         return
+    interval = int(getattr(cfg, "debug_reach_reward_interval", 200))
     if int(step_count) % max(interval, 1) != 0:
         return
     setattr(env, "_debug_reach_xyz_last_step", int(step_count))
@@ -241,6 +244,10 @@ def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv, interval: int = 200) -> 
     if not isinstance(offset, (list, tuple)) or len(offset) != 3:
         offset = (0.0, 0.0, 0.0)
     offset_t = torch.tensor(offset, device=env.device)
+
+    std_xy = float(getattr(cfg, "grasp2g_reach_std_xy", 0.15))
+    std_z = float(getattr(cfg, "grasp2g_reach_std_z", 0.1))
+    z_weight = float(getattr(cfg, "grasp2g_reach_z_weight", 2.0))
 
     body_pos_w = env.scene["robot"].data.body_pos_w
     body_names = env.scene["robot"].data.body_names
@@ -253,11 +260,18 @@ def _maybe_log_reach_xy_z_debug(env: ManagerBasedRLEnv, interval: int = 200) -> 
         obj = env.scene[cup_name].data.root_pos_w + offset_t
         ee = body_pos_w[:, eef_idx]
         diff = ee - obj
-        dist_xy = torch.linalg.norm(diff[:, :2], dim=1).mean().item()
-        dist_z = torch.abs(diff[:, 2]).mean().item()
+        dist_xy = torch.linalg.norm(diff[:, :2], dim=1)
+        dist_z = torch.abs(diff[:, 2])
+        weighted = dist_xy / std_xy + z_weight * (dist_z / std_z)
+        reward = 1 - torch.tanh(weighted)
+        dist_xy_m = dist_xy.mean().item()
+        dist_z_m = dist_z.mean().item()
+        w_m = weighted.mean().item()
+        r_m = reward.mean().item()
         print(
             f"[REACH_XYZ] step={int(step_count)} side={side} "
-            f"dist_xy={dist_xy:.4f} dist_z={dist_z:.4f}"
+            f"dist_xy={dist_xy_m:.4f} dist_z={dist_z_m:.4f} "
+            f"weighted={w_m:.4f} reward={r_m:.4f}"
         )
 
     _log("left", "cup", "openarm_left_hand")
@@ -336,6 +350,45 @@ def object_ee_distance(
     return 1 - torch.tanh(dist / std)
 
 
+def object_ee_distance_error(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "openarm_left_hand",
+) -> torch.Tensor:
+    """Dense reach error (distance) without kernel scaling."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos = obj.data.root_pos_w
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        obj_pos = obj_pos + torch.tensor(offset, device=obj_pos.device)
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    return torch.norm(obj_pos - ee_w, dim=1)
+
+
+def phase_object_ee_distance_error(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated dense reach error (distance)."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = object_ee_distance_error(env, object_cfg, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
 def object_ee_distance_xyz_weighted(
     env: ManagerBasedRLEnv,
     std_xy: float,
@@ -359,6 +412,84 @@ def object_ee_distance_xyz_weighted(
     dist_z = torch.abs(diff[:, 2])
     weighted = dist_xy / std_xy + z_weight * (dist_z / std_z)
     return 1 - torch.tanh(weighted)
+
+
+def object_ee_reach_sparse(
+    env: ManagerBasedRLEnv,
+    reach_distance: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "openarm_left_hand",
+) -> torch.Tensor:
+    """Sparse reach reward: 1 if within reach_distance, else 0."""
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    return torch.where(dist < reach_distance, 1.0, 0.0)
+
+
+def phase_object_ee_reach_sparse(
+    env: ManagerBasedRLEnv,
+    reach_distance: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated sparse reach reward."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = object_ee_reach_sparse(env, reach_distance, object_cfg, eef_link_name)
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def gripper_hold_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    close_threshold: float,
+    hold_duration: float,
+) -> torch.Tensor:
+    """Reward holding the gripper closed for a minimum duration."""
+    closure = _hand_closure_amount(env, eef_link_name)
+    should_hold = closure > close_threshold
+    attr_name = f"_gripper_hold_counter_{eef_link_name}"
+    if not hasattr(env, attr_name):
+        setattr(env, attr_name, torch.zeros(env.num_envs, device=env.device))
+    counter = getattr(env, attr_name)
+    counter = torch.where(should_hold, counter + env.step_dt, torch.zeros_like(counter))
+    setattr(env, attr_name, counter)
+    return torch.where(counter > hold_duration, 1.0, 0.0)
+
+
+def phase_gripper_hold_reward(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    close_threshold: float,
+    hold_duration: float,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated gripper hold reward."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = gripper_hold_reward(env, eef_link_name, close_threshold, hold_duration)
+    return reward * _phase_weight(phase, phase_weights, env.device)
 
 
 def phase_object_ee_distance_xyz_weighted(
@@ -388,6 +519,35 @@ def phase_object_ee_distance_xyz_weighted(
         std_xy=std_xy,
         std_z=std_z,
         z_weight=z_weight,
+        object_cfg=object_cfg,
+        eef_link_name=eef_link_name,
+    )
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def phase_object_ee_distance_tanh(
+    env: ManagerBasedRLEnv,
+    std: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated reach reward using tanh distance (reach_env_cfg 방식)."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = object_ee_distance_tanh(
+        env,
+        std=std,
         object_cfg=object_cfg,
         eef_link_name=eef_link_name,
     )
@@ -684,7 +844,7 @@ def _update_grasp2g_phase(
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
     _maybe_visualize_grasp_targets(env)
-    _maybe_log_reach_xy_z_debug(env, interval=200)
+    _maybe_log_reach_xy_z_debug(env)
     # Phase 0 -> 1: reach 게이트 (거리 + 선택적 정렬).
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     dist = _object_eef_distance(env, eef_link_name, object_cfg)

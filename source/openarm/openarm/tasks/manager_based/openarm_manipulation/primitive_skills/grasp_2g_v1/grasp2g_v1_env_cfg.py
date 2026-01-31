@@ -211,13 +211,47 @@ class RewardsCfg:
     # 2: lift (물체 높이가 lift_height 이상)
     # 3: hold/goal (lift 이후 추적 단계)
 
-    # Phase 0-1: reach 보상 (Z축 오차에 가중치 부여, 목표점은 grasp2g_target_offset 기준).
+    # Phase 0: coarse reaching (오차 기반 보상)
     left_reaching_object = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+        func=mdp.phase_object_ee_distance_error,
         params={
-            "std_xy": 0.15,
-            "std_z": 0.1,
-            "z_weight": 2.0,
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "openarm_left_hand",
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=-0.2,
+    )
+    right_reaching_object = RewTerm(
+        func=mdp.phase_object_ee_distance_error,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "eef_link_name": "openarm_right_hand",
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=-0.2,
+    )
+
+    # Phase 0-1: fine reaching (reach_env_cfg tanh 방식)
+    left_reaching_object_fine = RewTerm(
+        func=mdp.phase_object_ee_distance_tanh,
+        params={
+            "std": 0.1,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
@@ -232,12 +266,10 @@ class RewardsCfg:
         },
         weight=5.0,
     )
-    right_reaching_object = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+    right_reaching_object_fine = RewTerm(
+        func=mdp.phase_object_ee_distance_tanh,
         params={
-            "std_xy": 0.15,
-            "std_z": 0.1,
-            "z_weight": 2.0,
+            "std": 0.1,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
@@ -361,6 +393,45 @@ class RewardsCfg:
             },
         },
         weight=5.0,
+    )
+    # Phase 1-3: 그리퍼 닫힘 유지 보상
+    left_gripper_hold = RewTerm(
+        func=mdp.phase_gripper_hold_reward,
+        params={
+            "eef_link_name": "openarm_left_hand",
+            "close_threshold": 0.5,
+            "hold_duration": 0.5,
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
+    )
+    right_gripper_hold = RewTerm(
+        func=mdp.phase_gripper_hold_reward,
+        params={
+            "eef_link_name": "openarm_right_hand",
+            "close_threshold": 0.5,
+            "hold_duration": 0.5,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
     )
     # Phase 2-3: grasp 이후 lift 진행도.
     left_lifting_object = RewTerm(
@@ -582,6 +653,13 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_right_interval: int = 200
     debug_grasp_target_vis: bool = True
     debug_grasp_target_vis_interval: int = 10
+    debug_reach_reward: bool = True
+    debug_reach_reward_interval: int = 200
+
+    # reach 보상 스케일 파라미터 (로그/해석용)
+    grasp2g_reach_std_xy: float = 0.15
+    grasp2g_reach_std_z: float = 0.1
+    grasp2g_reach_z_weight: float = 2.0
 
     # 보상/페이즈 거리 계산 기준 오프셋 (컵 루트 기준)
     # 예: (0, 0, 0.05) -> 컵 바닥면 기준 +5cm 지점을 목표로 사용

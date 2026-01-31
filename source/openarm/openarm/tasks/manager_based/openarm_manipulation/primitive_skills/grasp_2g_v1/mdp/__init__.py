@@ -16,7 +16,7 @@ from isaaclab.envs.mdp import *  # noqa: F401, F403
 
 
 
-from .commands_cfg import ObjectPoseCommandCfg, WorldPoseCommandCfg
+from .commands_cfg import ObjectPoseCommandCfg, WorldPoseCommandCfg, InitialObjectPoseCommandCfg
 from .observations import *  # noqa: F401, F403
 from .rewards import *  # noqa: F401, F403
 from .events import *  # noqa: F401, F403

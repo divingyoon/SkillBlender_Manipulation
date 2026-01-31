@@ -22,6 +22,7 @@ from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from .object_pose_command import ObjectPoseCommand
 from .world_pose_command import WorldPoseCommand
+from .initial_object_pose_command import InitialObjectPoseCommand
 
 @configclass
 class ObjectPoseCommandCfg(CommandTermCfg):
@@ -50,6 +51,21 @@ class ObjectPoseCommandCfg(CommandTermCfg):
         self.command_dim = 7
         # Link the implementation class.
         self.class_type = ObjectPoseCommand
+
+
+@configclass
+class InitialObjectPoseCommandCfg(CommandTermCfg):
+    """Command that targets the object's initial pose with a fixed offset."""
+
+    asset_name: str = MISSING
+    asset_cfg: SceneEntityCfg = MISSING
+    resampling_time_range: tuple[float, float] = (4.0, 4.0)
+    goal_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+
+    def __post_init__(self):
+        super().__post_init__()
+        self.command_dim = 7
+        self.class_type = InitialObjectPoseCommand
 
 
 @configclass

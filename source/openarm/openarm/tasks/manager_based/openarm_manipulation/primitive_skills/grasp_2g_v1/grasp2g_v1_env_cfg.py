@@ -84,32 +84,20 @@ class ActionsCfg:
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_cup_pose = mdp.WorldPoseCommandCfg(
+    left_cup_pose = mdp.InitialObjectPoseCommandCfg(
         asset_name="robot",
+        asset_cfg=SceneEntityCfg("cup"),
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
-        ranges=mdp.WorldPoseCommandCfg.Ranges(
-            pos_x=(0.25, 0.25),
-            pos_y=(0.2, 0.2),
-            pos_z=(0.2, 0.2),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
-        ),
+        goal_offset=(0.0, 0.0, 0.2),
     )
 
-    right_cup_pose = mdp.WorldPoseCommandCfg(
+    right_cup_pose = mdp.InitialObjectPoseCommandCfg(
         asset_name="robot",
+        asset_cfg=SceneEntityCfg("cup2"),
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
-        ranges=mdp.WorldPoseCommandCfg.Ranges(
-            pos_x=(0.25, 0.25),
-            pos_y=(-0.2, -0.2),
-            pos_z=(0.2, 0.2),
-            roll=(0.0, 0.0),
-            pitch=(0.0, 0.0),
-            yaw=(0.0, 0.0),
-        ),
+        goal_offset=(0.0, 0.0, 0.2),
     )
 
 @configclass

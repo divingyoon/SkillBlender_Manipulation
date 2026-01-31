@@ -666,6 +666,8 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.07)
 
     enable_gripper_hold: bool = False
+    # 디버그 토글 (로그/시각화 공통)
+    debug_enabled: bool = False
 
     scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=10**3, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
@@ -692,6 +694,15 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         right_vis.markers["frame"].scale = (0.08, 0.08, 0.08)
         self.commands.left_cup_pose.goal_pose_visualizer_cfg = left_vis
         self.commands.right_cup_pose.goal_pose_visualizer_cfg = right_vis
+
+        # 디버그 토글 적용 (콘솔 로그/시각화 공통)
+        if not self.debug_enabled:
+            self.debug_grasp_left = False
+            self.debug_grasp_right = False
+            self.debug_reach_reward = False
+            self.debug_grasp_target_vis = False
+            self.commands.left_cup_pose.debug_vis = False
+            self.commands.right_cup_pose.debug_vis = False
 
         # assign a default physx material to all scene geometries
         # we can also do this per-asset in the scene definition

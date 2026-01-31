@@ -76,42 +76,40 @@ class ActionsCfg:
 
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
-    right_arm_action: ActionTerm = MISSING    
+    right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
 
 @configclass
 class CommandsCfg:
     """Command terms for the MDP."""
 
-    left_cup_pose = mdp.UniformPoseCommandCfg(
-          asset_name="robot",
-          body_name=MISSING,
-          resampling_time_range=(5.0, 5.0),
-          debug_vis=True,
-          ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.25, 0.25),
-              pos_y=(0.2, 0.2),
-              pos_z=(0.2, 0.2),
-              roll=(0.0, 0.0),
-              pitch=(0.0, 0.0),
-              yaw=(0.0, 0.0),
-          ),
-      )
+    left_cup_pose = mdp.WorldPoseCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(5.0, 5.0),
+        debug_vis=True,
+        ranges=mdp.WorldPoseCommandCfg.Ranges(
+            pos_x=(0.25, 0.25),
+            pos_y=(0.2, 0.2),
+            pos_z=(0.2, 0.2),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
+    )
 
-    right_cup_pose = mdp.UniformPoseCommandCfg(
-          asset_name="robot",
-          body_name=MISSING,
-          resampling_time_range=(5.0, 5.0),
-          debug_vis=True,
-          ranges=mdp.UniformPoseCommandCfg.Ranges(
-              pos_x=(0.25, 0.25),
-              pos_y=(-0.2, -0.2),
-              pos_z=(0.2, 0.2),
-              roll=(0.0, 0.0),
-              pitch=(0.0, 0.0),
-              yaw=(0.0, 0.0),
-          ),
-      )
+    right_cup_pose = mdp.WorldPoseCommandCfg(
+        asset_name="robot",
+        resampling_time_range=(5.0, 5.0),
+        debug_vis=True,
+        ranges=mdp.WorldPoseCommandCfg.Ranges(
+            pos_x=(0.25, 0.25),
+            pos_y=(-0.2, -0.2),
+            pos_z=(0.2, 0.2),
+            roll=(0.0, 0.0),
+            pitch=(0.0, 0.0),
+            yaw=(0.0, 0.0),
+        ),
+    )
 
 @configclass
 class ObservationsCfg:
@@ -218,17 +216,55 @@ class EventCfg:
 class RewardsCfg:
     """Reward terms for the MDP."""
 
+    # Phase 정의 (손별):
+    # 0: reach (물체 접근)
+    # 1: grasp (그리퍼 닫힘/접근 게이트 통과)
+    # 2: lift (물체 높이가 lift_height 이상)
+    # 3: hold/goal (lift 이후 추적 단계)
+
+    # Phase 0-1: reach 보상 (Z축 오차에 가중치 부여, 목표점은 grasp2g_target_offset 기준).
     left_reaching_object = RewTerm(
-        func=mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "openarm_left_hand"},
+        func=mdp.phase_object_ee_distance_xyz_weighted,
+        params={
+            "std_xy": 0.12,
+            "std_z": 0.06,
+            "z_weight": 2.0,
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "openarm_left_hand",
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
         weight=3.0,
     )
     right_reaching_object = RewTerm(
-        func=mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "openarm_right_hand"},
+        func=mdp.phase_object_ee_distance_xyz_weighted,
+        params={
+            "std_xy": 0.12,
+            "std_z": 0.06,
+            "z_weight": 2.0,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "eef_link_name": "openarm_right_hand",
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
         weight=3.0,
     )
 
+    # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
     left_object_displacement_penalty = RewTerm(
         func=mdp.phase_object_root_displacement_penalty,
         params={
@@ -246,6 +282,7 @@ class RewardsCfg:
         },
         weight=-5.0,
     )
+    # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
     right_object_displacement_penalty = RewTerm(
         func=mdp.phase_object_root_displacement_penalty,
         params={
@@ -264,7 +301,7 @@ class RewardsCfg:
         weight=-5.0,
     )
 
-    # Orientation 보상 (손 방향 정렬)
+    # Phase 0: reach 동안 방향 정렬.
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_reward,
         weight=1.0,
@@ -301,6 +338,7 @@ class RewardsCfg:
             },
         },
     )
+    # Phase 2-3: grasp 이후 lift 진행도.
     left_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
@@ -318,6 +356,7 @@ class RewardsCfg:
         },
         weight=0.0,
     )
+    # Phase 2-3: grasp 이후 lift 진행도.
     right_lifting_object = RewTerm(
         func=mdp.phase_lift_reward,
         params={
@@ -336,6 +375,7 @@ class RewardsCfg:
         weight=0.0,
     )
 
+    # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
     left_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -357,6 +397,7 @@ class RewardsCfg:
         },
         weight=0.0,
     )
+    # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
     right_object_goal_tracking = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -379,6 +420,7 @@ class RewardsCfg:
         weight=0.0,
     )
 
+    # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
     left_object_goal_tracking_fine_grained = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -400,6 +442,7 @@ class RewardsCfg:
         },
         weight=5.0,
     )
+    # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
     right_object_goal_tracking_fine_grained = RewTerm(
         func=mdp.phase_object_goal_distance_with_ee,
         params={
@@ -422,6 +465,7 @@ class RewardsCfg:
         weight=5.0,
     )
 
+    # Phase 값 로깅/진단용.
     left_grasp2g_phase = RewTerm(
         func=mdp.grasp2g_phase_value,
         params={
@@ -437,6 +481,7 @@ class RewardsCfg:
         },
         weight=0.0,
     )
+    # Phase 값 로깅/진단용.
     right_grasp2g_phase = RewTerm(
         func=mdp.grasp2g_phase_value,
         params={
@@ -512,8 +557,12 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_right: bool = True
     debug_grasp_right_interval: int = 200
 
+    # 보상/페이즈 거리 계산 기준 오프셋 (컵 루트 기준)
+    # 예: (0, 0, 0.05) -> 컵 바닥면 기준 +5cm 지점을 목표로 사용
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.05)
+
     enable_gripper_hold: bool = False
-    
+
     scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=10**3, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()

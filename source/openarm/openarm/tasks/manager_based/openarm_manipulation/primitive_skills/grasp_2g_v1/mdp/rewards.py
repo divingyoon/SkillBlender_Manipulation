@@ -34,6 +34,10 @@ def _object_eef_distance(
 ) -> torch.Tensor:
     """Distance between the object and the specified end-effector link."""
     object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    # Optional per-task offset (e.g., cup root -> grasp center)
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        object_pos = object_pos + torch.tensor(offset, device=object_pos.device)
     body_pos_w = env.scene["robot"].data.body_pos_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
@@ -89,54 +93,76 @@ def _object_eef_any_axis_alignment(
 
 def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Tensor:
     """Compute normalized closure amount for the hand associated with the given link."""
-    # identify which hand is being used to access the appropriate action term
     if "left" in eef_link_name:
         hand_term = env.action_manager.get_term("left_hand_action")
     elif "right" in eef_link_name:
         hand_term = env.action_manager.get_term("right_hand_action")
     else:
-        # fallback: no closure info if the link does not correspond to a hand
         return torch.zeros(env.num_envs, device=env.device)
 
-    # processed_actions has shape (num_envs, num_gripper_joints); take mean across joints
-    hand_action = hand_term.processed_actions  # current commanded positions
+    joint_ids = hand_term._joint_ids
+    joint_pos = hand_term._asset.data.joint_pos[:, joint_ids]
+    joint_limits = hand_term._asset.data.joint_pos_limits[:, joint_ids]
+    min_lim = joint_limits[..., 0]
+    max_lim = joint_limits[..., 1]
 
-    # Determine default (open) finger position.
+    # Determine which limit corresponds to open based on configured offset.
     if isinstance(hand_term._offset, torch.Tensor):
-        default_pos = hand_term._offset.mean(dim=1)
+        open_pos = hand_term._offset
     else:
-        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
+        open_pos = torch.full_like(min_lim, float(hand_term._offset))
 
-    # Compute closure amount: positive when fingers are closing relative to default.
-    mean_action = hand_action.mean(dim=1)
-    return torch.clamp(
-        (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
-    )
+    # For each joint, pick the limit closest to open_pos as the "open" limit.
+    dist_to_min = torch.abs(open_pos - min_lim)
+    dist_to_max = torch.abs(open_pos - max_lim)
+    open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
+    close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
+
+    denom = close_lim - open_lim
+    denom = torch.where(torch.abs(denom) < 1e-6, torch.ones_like(denom), denom)
+    closure = (joint_pos - open_lim) / denom
+    closure = torch.clamp(closure, min=0.0, max=1.0)
+    return closure.mean(dim=1)
 
 
 def _hand_closure_debug_stats(
     env: ManagerBasedRLEnv, eef_link_name: str
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    """Return closure amount along with mean action/default for debug logging."""
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Return closure amount along with joint/action/limit stats for debug logging."""
     if "left" in eef_link_name:
         hand_term = env.action_manager.get_term("left_hand_action")
     elif "right" in eef_link_name:
         hand_term = env.action_manager.get_term("right_hand_action")
     else:
         zeros = torch.zeros(env.num_envs, device=env.device)
-        return zeros, zeros, zeros
+        return zeros, zeros, zeros, zeros, zeros
+
+    joint_ids = hand_term._joint_ids
+    joint_pos = hand_term._asset.data.joint_pos[:, joint_ids]
+    joint_limits = hand_term._asset.data.joint_pos_limits[:, joint_ids]
+    min_lim = joint_limits[..., 0]
+    max_lim = joint_limits[..., 1]
+
+    if isinstance(hand_term._offset, torch.Tensor):
+        open_pos = hand_term._offset
+    else:
+        open_pos = torch.full_like(min_lim, float(hand_term._offset))
+
+    dist_to_min = torch.abs(open_pos - min_lim)
+    dist_to_max = torch.abs(open_pos - max_lim)
+    open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
+    close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
+
+    denom = close_lim - open_lim
+    denom = torch.where(torch.abs(denom) < 1e-6, torch.ones_like(denom), denom)
+    closure = torch.clamp((joint_pos - open_lim) / denom, min=0.0, max=1.0).mean(dim=1)
 
     hand_action = hand_term.processed_actions
-    if isinstance(hand_term._offset, torch.Tensor):
-        default_pos = hand_term._offset.mean(dim=1)
-    else:
-        default_pos = torch.full((env.num_envs,), float(hand_term._offset), device=env.device)
-
     mean_action = hand_action.mean(dim=1)
-    closure = torch.clamp(
-        (default_pos - mean_action) / (torch.abs(default_pos) + 1e-6), min=0.0, max=1.0
-    )
-    return closure, mean_action, default_pos
+    mean_joint = joint_pos.mean(dim=1)
+    open_mean = open_lim.mean(dim=1)
+    close_mean = close_lim.mean(dim=1)
+    return closure, mean_action, mean_joint, open_mean, close_mean
 
 
 def _maybe_log_grasp_debug(
@@ -145,7 +171,9 @@ def _maybe_log_grasp_debug(
     dist: torch.Tensor,
     close: torch.Tensor,
     mean_action: torch.Tensor,
-    default_pos: torch.Tensor,
+    mean_joint: torch.Tensor,
+    open_mean: torch.Tensor,
+    close_mean: torch.Tensor,
 ) -> None:
     cfg = getattr(env, "cfg", None)
     if cfg is None:
@@ -176,16 +204,19 @@ def _maybe_log_grasp_debug(
         return
 
     setattr(env, last_key, int(step_count))
-    close_mean = float(close.mean().item())
+    close_mean_val = float(close.mean().item())
     dist_mean = float(dist.mean().item())
     action_mean = float(mean_action.mean().item())
-    default_mean = float(default_pos.mean().item())
-    delta_mean = float((default_pos - mean_action).mean().item())
+    joint_mean = float(mean_joint.mean().item())
+    open_val = float(open_mean.mean().item())
+    close_val = float(close_mean.mean().item())
+    delta_mean = float((open_mean - mean_action).mean().item())
     print(
         "[GRASP_DEBUG] "
         f"step={int(step_count)} side={side} "
-        f"close_mean={close_mean:.3f} dist_mean={dist_mean:.3f} "
-        f"action_mean={action_mean:.4f} default_mean={default_mean:.4f} "
+        f"close_mean={close_mean_val:.3f} dist_mean={dist_mean:.3f} "
+        f"action_mean={action_mean:.4f} joint_mean={joint_mean:.4f} "
+        f"open_mean={open_val:.4f} close_mean={close_val:.4f} "
         f"delta_mean={delta_mean:.4f}"
     )
 
@@ -210,10 +241,72 @@ def object_ee_distance(
     """Reward the agent for reaching the object using tanh-kernel."""
     obj: RigidObject = env.scene[object_cfg.name]
     cube_pos_w = obj.data.root_pos_w
+    # Optional per-task offset (e.g., cup root -> grasp center)
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        cube_pos_w = cube_pos_w + torch.tensor(offset, device=cube_pos_w.device)
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
     dist = torch.norm(cube_pos_w - ee_w, dim=1)
     return 1 - torch.tanh(dist / std)
+
+
+def object_ee_distance_xyz_weighted(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    std_z: float,
+    z_weight: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "openarm_left_hand",
+) -> torch.Tensor:
+    """Reach reward with separate XY and Z errors (heavier Z weighting)."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos = obj.data.root_pos_w
+    # Optional per-task offset (e.g., cup root -> grasp center)
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        obj_pos = obj_pos + torch.tensor(offset, device=obj_pos.device)
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    diff = ee_pos - obj_pos
+    dist_xy = torch.linalg.norm(diff[:, :2], dim=1)
+    dist_z = torch.abs(diff[:, 2])
+    weighted = dist_xy / std_xy + z_weight * (dist_z / std_z)
+    return 1 - torch.tanh(weighted)
+
+
+def phase_object_ee_distance_xyz_weighted(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    std_z: float,
+    z_weight: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated reach reward with heavier Z weighting."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = object_ee_distance_xyz_weighted(
+        env,
+        std_xy=std_xy,
+        std_z=std_z,
+        z_weight=z_weight,
+        object_cfg=object_cfg,
+        eef_link_name=eef_link_name,
+    )
+    return reward * _phase_weight(phase, phase_weights, env.device)
 
 
 def object_goal_distance(
@@ -486,6 +579,11 @@ def _update_grasp2g_phase(
     hold_duration: float,
 ) -> torch.Tensor:
     """Update phase based on reach -> grasp -> lift conditions."""
+    # Phase 정의:
+    # 0: reach (EEF가 물체 근처, 필요시 정렬 조건 포함)
+    # 1: grasp (EEF가 충분히 가깝거나 그리퍼 닫힘 조건 만족)
+    # 2: lift (물체 높이가 lift_height 이상)
+    # 3: hold/goal (lift 이후; phase 가중 보상에서 사용)
     if "left" in eef_link_name:
         phase_attr = "grasp2g_phase_left"
     elif "right" in eef_link_name:
@@ -500,12 +598,24 @@ def _update_grasp2g_phase(
     if hasattr(env, "reset_buf"):
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
+    # Phase 0 -> 1: reach 게이트 (거리 + 선택적 정렬).
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
-    close, mean_action, default_pos = _hand_closure_debug_stats(env, eef_link_name)
-    _maybe_log_grasp_debug(env, eef_link_name, dist, close, mean_action, default_pos)
+    close, mean_action, mean_joint, open_mean, close_mean = _hand_closure_debug_stats(env, eef_link_name)
+    _maybe_log_grasp_debug(
+        env,
+        eef_link_name,
+        dist,
+        close,
+        mean_action,
+        mean_joint,
+        open_mean,
+        close_mean,
+    )
+    # Phase 1 -> 2: grasp 게이트 (거리 OR 닫힘).
     grasp_ok = (dist < grasp_distance) | (close > close_threshold)
     obj: RigidObject = env.scene[object_cfg.name]
+    # Phase 2 -> 3: lift 게이트 (물체 높이 임계값 통과).
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
 
     phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)

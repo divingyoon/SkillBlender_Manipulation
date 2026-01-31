@@ -252,7 +252,7 @@ class RewardsCfg:
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
             "std_xy": 0.05,
-            "std_z": 0.1,
+            "std_z": 0.05,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
@@ -272,7 +272,7 @@ class RewardsCfg:
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
             "std_xy": 0.05,
-            "std_z": 0.1,
+            "std_z": 0.05
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
@@ -328,13 +328,15 @@ class RewardsCfg:
 
     # Phase 0: reach 동안 방향 정렬.
     left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.phase_hand_x_align_object_z_reward,
-        weight=1.0,
+        func=mdp.phase_hand_x_align_object_z_penalty_gated,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_cup_pose",
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "gate_std": 0.1,
+            "phase_weights": [1.0, 0.3, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -346,13 +348,15 @@ class RewardsCfg:
         },
     )
     right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.phase_hand_x_align_object_z_reward,
-        weight=1.0,
+        func=mdp.phase_hand_x_align_object_z_penalty_gated,
+        weight=-1.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_cup_pose",
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "gate_std": 0.1,
+            "phase_weights": [1.0, 0.3, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
@@ -365,10 +369,12 @@ class RewardsCfg:
     )
     # Phase 1: grasp 보상 (거리 + 그리퍼 닫힘 연속 보상)
     left_grasping_object = RewTerm(
-        func=mdp.phase_grasp_reward,
+        func=mdp.phase_grasp_band_reward,
         params={
             "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
+            "close_min": 0.35,
+            "close_max": 0.75,
             "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -382,10 +388,12 @@ class RewardsCfg:
         weight=5.0,
     )
     right_grasping_object = RewTerm(
-        func=mdp.phase_grasp_reward,
+        func=mdp.phase_grasp_band_reward,
         params={
             "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
+            "close_min": 0.35,
+            "close_max": 0.75,
             "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
@@ -398,15 +406,16 @@ class RewardsCfg:
         },
         weight=5.0,
     )
-    # Phase 1-3: 그리퍼 닫힘 유지 보상
+    # Phase 2-3: grasp 이후 그리퍼 닫힘 유지 보상
     left_gripper_hold = RewTerm(
         func=mdp.phase_gripper_hold_reward,
         params={
             "eef_link_name": "openarm_left_hand",
             "close_threshold": 0.5,
-            "hold_duration": 0.5,
+            "hold_duration": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "hold_decay": 1.0,
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -423,9 +432,10 @@ class RewardsCfg:
         params={
             "eef_link_name": "openarm_right_hand",
             "close_threshold": 0.5,
-            "hold_duration": 0.5,
+            "hold_duration": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "hold_decay": 1.0,
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
@@ -439,7 +449,7 @@ class RewardsCfg:
     )
     # Phase 2-3: grasp 이후 lift 진행도.
     left_lifting_object = RewTerm(
-        func=mdp.phase_lift_reward,
+        func=mdp.phase_lift_delta_reward,
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("cup"),
@@ -457,7 +467,7 @@ class RewardsCfg:
     )
     # Phase 2-3: grasp 이후 lift 진행도.
     right_lifting_object = RewTerm(
-        func=mdp.phase_lift_reward,
+        func=mdp.phase_lift_delta_reward,
         params={
             "lift_height": 0.1,
             "object_cfg": SceneEntityCfg("cup2"),
@@ -494,7 +504,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=1.0,
     )
     # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
     right_object_goal_tracking = RewTerm(
@@ -516,7 +526,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=1.0,
     )
 
     # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
@@ -539,7 +549,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=1.0,
     )
     # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
     right_object_goal_tracking_fine_grained = RewTerm(
@@ -561,7 +571,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=1.0,
     )
 
     # Phase 값 로깅/진단용.
@@ -621,11 +631,11 @@ class TerminationsCfg:
     )
     cup_tipping = DoneTerm(
         func=mdp.cup_tipped,
-        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0},
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 30.0},
     )
     cup2_tipping = DoneTerm(
         func=mdp.cup_tipped,
-        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 30.0},
     )
 
 

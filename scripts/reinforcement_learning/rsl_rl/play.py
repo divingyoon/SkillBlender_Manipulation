@@ -201,6 +201,7 @@ def _log_left_right_metrics(env) -> None:
     env_u = env.unwrapped
     if not hasattr(env_u, "_play_debug_logged"):
         env_u._play_debug_logged = False
+    scene_keys = list(env_u.scene.keys())
     try:
         left_arm = env_u.action_manager.get_term("left_arm_action")
         right_arm = env_u.action_manager.get_term("right_arm_action")
@@ -214,19 +215,23 @@ def _log_left_right_metrics(env) -> None:
         left_arm_norm = right_arm_norm = left_hand_norm = right_hand_norm = 0.0
 
     try:
-        body_pos_w = env_u.scene["robot"].data.body_pos_w
-        body_names = env_u.scene["robot"].data.body_names
-        left_name = "openarm_left_hand" if "openarm_left_hand" in body_names else "openarm_left_ee_tcp"
-        right_name = "openarm_right_hand" if "openarm_right_hand" in body_names else "openarm_right_ee_tcp"
-        left_idx = body_names.index(left_name)
-        right_idx = body_names.index(right_name)
-        left_eef = body_pos_w[:, left_idx] - env_u.scene.env_origins
-        right_eef = body_pos_w[:, right_idx] - env_u.scene.env_origins
-        if "cup" in env_u.scene:
+        if "left_ee_frame" in scene_keys and "right_ee_frame" in scene_keys:
+            left_eef = env_u.scene["left_ee_frame"].data.target_pos_w[..., 0, :] - env_u.scene.env_origins
+            right_eef = env_u.scene["right_ee_frame"].data.target_pos_w[..., 0, :] - env_u.scene.env_origins
+        else:
+            body_pos_w = env_u.scene["robot"].data.body_pos_w
+            body_names = env_u.scene["robot"].data.body_names
+            left_name = "openarm_left_hand" if "openarm_left_hand" in body_names else "openarm_left_ee_tcp"
+            right_name = "openarm_right_hand" if "openarm_right_hand" in body_names else "openarm_right_ee_tcp"
+            left_idx = body_names.index(left_name)
+            right_idx = body_names.index(right_name)
+            left_eef = body_pos_w[:, left_idx] - env_u.scene.env_origins
+            right_eef = body_pos_w[:, right_idx] - env_u.scene.env_origins
+        if "cup" in scene_keys:
             object_pos = env_u.scene["cup"].data.root_pos_w - env_u.scene.env_origins
         else:
             object_pos = env_u.scene["object"].data.root_pos_w - env_u.scene.env_origins
-        if "cup2" in env_u.scene:
+        if "cup2" in scene_keys:
             object2_pos = env_u.scene["cup2"].data.root_pos_w - env_u.scene.env_origins
         else:
             object2_pos = env_u.scene["object2"].data.root_pos_w - env_u.scene.env_origins
@@ -239,23 +244,33 @@ def _log_left_right_metrics(env) -> None:
         right_dist = (object2_pos - right_eef).norm(dim=1).mean().item()
         if (left_dist == 0.0 or right_dist == 0.0) and not env_u._play_debug_logged:
             env_u._play_debug_logged = True
-            scene_keys = list(env_u.scene.keys())
             print(f"[PLAY_DEBUG] scene_keys={scene_keys}", flush=True)
-            print(f"[PLAY_DEBUG] ee_names={left_name},{right_name}", flush=True)
+            ee_label = "frame" if "left_ee_frame" in env_u.scene else "body"
+            print(f"[PLAY_DEBUG] ee_source={ee_label}", flush=True)
             print(
                 f"[PLAY_DEBUG] left_eef={left_eef[0].tolist()} right_eef={right_eef[0].tolist()} "
                 f"obj={object_pos[0].tolist()} obj2={object2_pos[0].tolist()} "
                 f"offset={offset.tolist() if hasattr(offset, 'tolist') else offset}",
                 flush=True,
             )
-    except Exception:
+    except Exception as exc:
         left_dist = right_dist = 0.0
         if not env_u._play_debug_logged:
             env_u._play_debug_logged = True
-            scene_keys = list(env_u.scene.keys())
-            body_names = env_u.scene["robot"].data.body_names
             print(f"[PLAY_DEBUG] scene_keys={scene_keys}", flush=True)
-            print(f"[PLAY_DEBUG] body_names_sample={body_names[:8]}", flush=True)
+            try:
+                body_names = env_u.scene["robot"].data.body_names
+                print(f"[PLAY_DEBUG] body_names_sample={body_names[:8]}", flush=True)
+            except Exception:
+                print("[PLAY_DEBUG] body_names_sample=unavailable", flush=True)
+            if "left_ee_frame" in scene_keys:
+                frame = env_u.scene["left_ee_frame"]
+                print(
+                    f"[PLAY_DEBUG] left_ee_frame target_pos_w shape="
+                    f"{getattr(frame.data.target_pos_w, 'shape', None)}",
+                    flush=True,
+                )
+            print(f"[PLAY_DEBUG] dist_exception={repr(exc)}", flush=True)
 
     print(
         "[PLAY] left_arm_norm={:.3f} right_arm_norm={:.3f} "

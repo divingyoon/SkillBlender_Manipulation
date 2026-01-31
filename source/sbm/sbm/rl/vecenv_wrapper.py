@@ -63,17 +63,8 @@ class RslRlVecEnvWrapper(VecEnv):
         self._reward_term_pairs: list[tuple[str, str]] = []
         self._reward_term_indices: list[tuple[int, int]] = []
 
-        self._swap_obs_term_pairs = swap_obs_term_pairs or [
-            # Generic object naming
-            ("target_object_position", "target_object2_position"),
-            ("object_position", "object2_position"),
-            ("object_obs", "object2_obs"),
-            # Grasp2g-specific naming
-            ("cup_position", "cup2_position"),
-            ("cup_to_hand_left", "cup2_to_hand_right"),
-            ("left_gripper_state", "right_gripper_state"),
-            ("left_tcp_cup_distance", "right_tcp_cup_distance"),
-        ]
+        # If not provided, infer swap pairs from observation term names at runtime.
+        self._swap_obs_term_pairs = swap_obs_term_pairs or []
         self._swap_action_term_pairs = swap_action_term_pairs or [
             ("left_arm_action", "right_arm_action"),
             ("left_hand_action", "right_hand_action"),
@@ -81,6 +72,8 @@ class RslRlVecEnvWrapper(VecEnv):
 
         if self._swap_lr:
             self._build_swap_helpers()
+            if not self._swap_obs_term_pairs:
+                self._swap_obs_term_pairs = self._infer_obs_swap_pairs()
             self._sample_swap_mask()
 
         # reset at the start since the RSL-RL runner does not call reset
@@ -197,6 +190,38 @@ class RslRlVecEnvWrapper(VecEnv):
                 name_to_idx = {n: i for i, n in enumerate(self.unwrapped.reward_manager.active_terms)}
                 for left, right in self._reward_term_pairs:
                     self._reward_term_indices.append((name_to_idx[left], name_to_idx[right]))
+
+    def _infer_obs_swap_pairs(self) -> list[tuple[str, str]]:
+        if not hasattr(self.unwrapped, "observation_manager"):
+            return []
+        obs_mgr = self.unwrapped.observation_manager
+        all_terms = set()
+        for _, term_names in obs_mgr.active_terms.items():
+            all_terms.update(term_names)
+
+        pairs = set()
+        for name in list(all_terms):
+            if "left" in name:
+                cand = name.replace("left", "right")
+                if cand in all_terms:
+                    pairs.add((name, cand))
+            if "right" in name:
+                cand = name.replace("right", "left")
+                if cand in all_terms:
+                    pairs.add((cand, name))
+        for name in list(all_terms):
+            if name.endswith("2") and name[:-1] in all_terms:
+                pairs.add((name[:-1], name))
+
+        normalized = []
+        for a, b in pairs:
+            if "left" in a and "right" in b:
+                normalized.append((a, b))
+            elif "left" in b and "right" in a:
+                normalized.append((b, a))
+            else:
+                normalized.append((a, b))
+        return normalized
 
     def _sample_swap_mask(self, env_ids: torch.Tensor | None = None):
         if env_ids is None:

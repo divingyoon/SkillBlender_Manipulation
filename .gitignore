@@ -15,3 +15,5 @@ log/*
 
 # Now, ignore the contents of the rsl_rl directory
 log/rsl_rl/*
+
+auto/runs

@@ -199,6 +199,8 @@ def _get_term_action_norm(term) -> float:
 
 def _log_left_right_metrics(env) -> None:
     env_u = env.unwrapped
+    if not hasattr(env_u, "_play_debug_logged"):
+        env_u._play_debug_logged = False
     try:
         left_arm = env_u.action_manager.get_term("left_arm_action")
         right_arm = env_u.action_manager.get_term("right_arm_action")
@@ -214,16 +216,46 @@ def _log_left_right_metrics(env) -> None:
     try:
         body_pos_w = env_u.scene["robot"].data.body_pos_w
         body_names = env_u.scene["robot"].data.body_names
-        left_idx = body_names.index("openarm_left_ee_tcp")
-        right_idx = body_names.index("openarm_right_ee_tcp")
+        left_name = "openarm_left_hand" if "openarm_left_hand" in body_names else "openarm_left_ee_tcp"
+        right_name = "openarm_right_hand" if "openarm_right_hand" in body_names else "openarm_right_ee_tcp"
+        left_idx = body_names.index(left_name)
+        right_idx = body_names.index(right_name)
         left_eef = body_pos_w[:, left_idx] - env_u.scene.env_origins
         right_eef = body_pos_w[:, right_idx] - env_u.scene.env_origins
-        object_pos = env_u.scene["object"].data.root_pos_w - env_u.scene.env_origins
-        object2_pos = env_u.scene["object2"].data.root_pos_w - env_u.scene.env_origins
+        if "cup" in env_u.scene:
+            object_pos = env_u.scene["cup"].data.root_pos_w - env_u.scene.env_origins
+        else:
+            object_pos = env_u.scene["object"].data.root_pos_w - env_u.scene.env_origins
+        if "cup2" in env_u.scene:
+            object2_pos = env_u.scene["cup2"].data.root_pos_w - env_u.scene.env_origins
+        else:
+            object2_pos = env_u.scene["object2"].data.root_pos_w - env_u.scene.env_origins
+        offset = getattr(getattr(env_u, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+        if isinstance(offset, (list, tuple)) and len(offset) == 3:
+            offset = torch.tensor(offset, device=object_pos.device)
+            object_pos = object_pos + offset
+            object2_pos = object2_pos + offset
         left_dist = (object_pos - left_eef).norm(dim=1).mean().item()
         right_dist = (object2_pos - right_eef).norm(dim=1).mean().item()
+        if (left_dist == 0.0 or right_dist == 0.0) and not env_u._play_debug_logged:
+            env_u._play_debug_logged = True
+            scene_keys = list(env_u.scene.keys())
+            print(f"[PLAY_DEBUG] scene_keys={scene_keys}", flush=True)
+            print(f"[PLAY_DEBUG] ee_names={left_name},{right_name}", flush=True)
+            print(
+                f"[PLAY_DEBUG] left_eef={left_eef[0].tolist()} right_eef={right_eef[0].tolist()} "
+                f"obj={object_pos[0].tolist()} obj2={object2_pos[0].tolist()} "
+                f"offset={offset.tolist() if hasattr(offset, 'tolist') else offset}",
+                flush=True,
+            )
     except Exception:
         left_dist = right_dist = 0.0
+        if not env_u._play_debug_logged:
+            env_u._play_debug_logged = True
+            scene_keys = list(env_u.scene.keys())
+            body_names = env_u.scene["robot"].data.body_names
+            print(f"[PLAY_DEBUG] scene_keys={scene_keys}", flush=True)
+            print(f"[PLAY_DEBUG] body_names_sample={body_names[:8]}", flush=True)
 
     print(
         "[PLAY] left_arm_norm={:.3f} right_arm_norm={:.3f} "

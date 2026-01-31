@@ -32,6 +32,7 @@ from isaaclab.scene import InteractiveSceneCfg
 from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdFileCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+from isaaclab.markers.config import FRAME_MARKER_CFG
 # from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
@@ -86,7 +87,7 @@ class CommandsCfg:
     left_cup_pose = mdp.WorldPoseCommandCfg(
         asset_name="robot",
         resampling_time_range=(5.0, 5.0),
-        debug_vis=False,
+        debug_vis=True,
         ranges=mdp.WorldPoseCommandCfg.Ranges(
             pos_x=(0.25, 0.25),
             pos_y=(0.2, 0.2),
@@ -100,7 +101,7 @@ class CommandsCfg:
     right_cup_pose = mdp.WorldPoseCommandCfg(
         asset_name="robot",
         resampling_time_range=(5.0, 5.0),
-        debug_vis=False,
+        debug_vis=True,
         ranges=mdp.WorldPoseCommandCfg.Ranges(
             pos_x=(0.25, 0.25),
             pos_y=(-0.2, -0.2),
@@ -226,8 +227,8 @@ class RewardsCfg:
     left_reaching_object = RewTerm(
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std_xy": 0.12,
-            "std_z": 0.06,
+            "std_xy": 0.15,
+            "std_z": 0.1,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
@@ -241,13 +242,13 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=3.0,
+        weight=5.0,
     )
     right_reaching_object = RewTerm(
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std_xy": 0.12,
-            "std_z": 0.06,
+            "std_xy": 0.15,
+            "std_z": 0.1,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
@@ -261,7 +262,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=3.0,
+        weight=5.0,
     )
 
     # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
@@ -280,7 +281,7 @@ class RewardsCfg:
             },
             "scale": 10.0,
         },
-        weight=-5.0,
+        weight=-3.0,
     )
     # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
     right_object_displacement_penalty = RewTerm(
@@ -298,7 +299,7 @@ class RewardsCfg:
             },
             "scale": 10.0,  #컵이 2cm(0.02m) 움직였고 scale=1.0, weight=-1.0이면 보상에 -0.02 추가
         },
-        weight=-5.0,
+        weight=-3.0,
     )
 
     # Phase 0: reach 동안 방향 정렬.
@@ -338,13 +339,13 @@ class RewardsCfg:
             },
         },
     )
-    # Phase 2-3: grasp 이후 lift 진행도.
-    left_lifting_object = RewTerm(
-        func=mdp.phase_lift_reward,
+    # Phase 1: grasp 보상 (거리 + 그리퍼 닫힘 연속 보상)
+    left_grasping_object = RewTerm(
+        func=mdp.phase_grasp_reward,
         params={
-            "lift_height": 0.1,
+            "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [0.0, 0.0, 5.0, 1.0],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -354,15 +355,14 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=5.0,
     )
-    # Phase 2-3: grasp 이후 lift 진행도.
-    right_lifting_object = RewTerm(
-        func=mdp.phase_lift_reward,
+    right_grasping_object = RewTerm(
+        func=mdp.phase_grasp_reward,
         params={
-            "lift_height": 0.1,
+            "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [0.0, 0.0, 5.0, 1.0],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
@@ -372,7 +372,43 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=0.0,
+        weight=5.0,
+    )
+    # Phase 2-3: grasp 이후 lift 진행도.
+    left_lifting_object = RewTerm(
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup"),
+            "phase_weights": [0.0, 0.0, 5.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
+    )
+    # Phase 2-3: grasp 이후 lift 진행도.
+    right_lifting_object = RewTerm(
+        func=mdp.phase_lift_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [0.0, 0.0, 5.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
     )
 
     # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
@@ -440,7 +476,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
     # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
     right_object_goal_tracking_fine_grained = RewTerm(
@@ -462,7 +498,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=0.0,
     )
 
     # Phase 값 로깅/진단용.
@@ -556,10 +592,12 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_left_interval: int = 200
     debug_grasp_right: bool = True
     debug_grasp_right_interval: int = 200
+    debug_grasp_target_vis: bool = True
+    debug_grasp_target_vis_interval: int = 10
 
     # 보상/페이즈 거리 계산 기준 오프셋 (컵 루트 기준)
     # 예: (0, 0, 0.05) -> 컵 바닥면 기준 +5cm 지점을 목표로 사용
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.05)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.07)
 
     enable_gripper_hold: bool = False
 
@@ -581,6 +619,13 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.viewer.eye = (3.5, 3.5, 3.5)
         # RSL-RL ActorCritic expects 1D observations.
         self.observations.policy.concatenate_terms = True
+        # 커맨드 목표 시각화 프림 경로를 좌/우로 분리
+        left_vis = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_cup_pose_goal")
+        right_vis = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_cup_pose_goal")
+        left_vis.markers["frame"].scale = (0.08, 0.08, 0.08)
+        right_vis.markers["frame"].scale = (0.08, 0.08, 0.08)
+        self.commands.left_cup_pose.goal_pose_visualizer_cfg = left_vis
+        self.commands.right_cup_pose.goal_pose_visualizer_cfg = right_vis
 
         # assign a default physx material to all scene geometries
         # we can also do this per-asset in the scene definition

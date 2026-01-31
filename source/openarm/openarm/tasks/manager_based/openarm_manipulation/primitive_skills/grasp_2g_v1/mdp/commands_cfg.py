@@ -17,6 +17,8 @@ from dataclasses import MISSING
 
 from isaaclab.utils import configclass
 from isaaclab.managers import CommandTermCfg, SceneEntityCfg
+from isaaclab.markers import VisualizationMarkersCfg
+from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from .object_pose_command import ObjectPoseCommand
 from .world_pose_command import WorldPoseCommand
@@ -70,6 +72,11 @@ class WorldPoseCommandCfg(CommandTermCfg):
         yaw: tuple[float, float] = MISSING
 
     ranges: Ranges = MISSING
+    goal_pose_visualizer_cfg: VisualizationMarkersCfg = FRAME_MARKER_CFG.replace(
+        prim_path="/Visuals/Command/world_pose_goal"
+    )
+
+    goal_pose_visualizer_cfg.markers["frame"].scale = (0.08, 0.08, 0.08)
 
     def __post_init__(self):
         super().__post_init__()

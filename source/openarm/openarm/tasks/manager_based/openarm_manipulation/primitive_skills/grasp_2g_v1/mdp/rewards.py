@@ -19,6 +19,8 @@ from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
 from isaaclab.envs.mdp import joint_vel_l2
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.utils.math import combine_frame_transforms
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import quat_apply, quat_error_magnitude, quat_mul
@@ -219,6 +221,48 @@ def _maybe_log_grasp_debug(
         f"open_mean={open_val:.4f} close_mean={close_val:.4f} "
         f"delta_mean={delta_mean:.4f}"
     )
+
+
+def _maybe_visualize_grasp_targets(env: ManagerBasedRLEnv) -> None:
+    cfg = getattr(env, "cfg", None)
+    if cfg is None:
+        return
+    if not getattr(cfg, "debug_grasp_target_vis", False):
+        return
+
+    step_count = getattr(env, "common_step_counter", None)
+    if step_count is None:
+        return
+    last_step = getattr(env, "_debug_grasp_target_last_step", None)
+    interval = int(getattr(cfg, "debug_grasp_target_vis_interval", 10))
+    if last_step == int(step_count):
+        return
+    if int(step_count) % max(interval, 1) != 0:
+        return
+    setattr(env, "_debug_grasp_target_last_step", int(step_count))
+
+    if not hasattr(env, "_debug_grasp_target_left"):
+        left_cfg = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Debug/GraspTargetLeft")
+        left_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)
+        env._debug_grasp_target_left = VisualizationMarkers(left_cfg)
+        env._debug_grasp_target_left.set_visibility(True)
+    if not hasattr(env, "_debug_grasp_target_right"):
+        right_cfg = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Debug/GraspTargetRight")
+        right_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)
+        env._debug_grasp_target_right = VisualizationMarkers(right_cfg)
+        env._debug_grasp_target_right.set_visibility(True)
+
+    offset = getattr(cfg, "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if not isinstance(offset, (list, tuple)) or len(offset) != 3:
+        offset = (0.0, 0.0, 0.0)
+    offset_t = torch.tensor(offset, device=env.device)
+
+    left_obj = env.scene["cup"].data.root_pos_w + offset_t
+    right_obj = env.scene["cup2"].data.root_pos_w + offset_t
+    quat = torch.zeros((env.num_envs, 4), device=env.device)
+    quat[:, 0] = 1.0
+    env._debug_grasp_target_left.visualize(left_obj, quat)
+    env._debug_grasp_target_right.visualize(right_obj, quat)
 
 
 def eef_to_object_distance(
@@ -598,6 +642,7 @@ def _update_grasp2g_phase(
     if hasattr(env, "reset_buf"):
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
 
+    _maybe_visualize_grasp_targets(env)
     # Phase 0 -> 1: reach 게이트 (거리 + 선택적 정렬).
     reach_ok = _reach_success(env, eef_link_name, object_cfg, reach_distance, align_threshold)
     dist = _object_eef_distance(env, eef_link_name, object_cfg)

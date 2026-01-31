@@ -20,7 +20,13 @@ from typing import TYPE_CHECKING
 import torch
 
 from isaaclab.managers import CommandTerm
-from isaaclab.utils.math import quat_from_euler_xyz, quat_unique, subtract_frame_transforms
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.utils.math import (
+    combine_frame_transforms,
+    quat_from_euler_xyz,
+    quat_unique,
+    subtract_frame_transforms,
+)
 
 if TYPE_CHECKING:
     from isaaclab.assets import Articulation
@@ -81,4 +87,19 @@ class WorldPoseCommand(CommandTerm):
         pass
 
     def _set_debug_vis_impl(self, debug_vis: bool):
-        pass
+        if debug_vis:
+            if not hasattr(self, "goal_pose_visualizer"):
+                self.goal_pose_visualizer = VisualizationMarkers(self.cfg.goal_pose_visualizer_cfg)
+            self.goal_pose_visualizer.set_visibility(True)
+        else:
+            if hasattr(self, "goal_pose_visualizer"):
+                self.goal_pose_visualizer.set_visibility(False)
+
+    def _debug_vis_callback(self, event):
+        if not self.robot.is_initialized:
+            return
+        # Visualize the goal pose in world frame
+        self.goal_pose_visualizer.visualize(
+            self.pose_command_w[:, :3],
+            self.pose_command_w[:, 3:],
+        )

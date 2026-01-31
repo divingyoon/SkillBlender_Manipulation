@@ -272,7 +272,7 @@ class RewardsCfg:
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
             "std_xy": 0.05,
-            "std_z": 0.05
+            "std_z": 0.05,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",

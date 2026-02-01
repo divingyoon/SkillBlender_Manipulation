@@ -139,6 +139,7 @@ def run_eval(
     output_dir: str,
     extra_env: dict | None,
     stream_logs: bool,
+    base_args: list[str],
 ) -> EvalResult:
     isaaclab_root = str(Path(isaaclab_root).resolve())
     eval_script = str(Path(eval_script).resolve())
@@ -167,7 +168,7 @@ def run_eval(
         str(goal_dist_threshold),
         "--output",
         metrics_path,
-    ]
+    ] + list(base_args)
     if seed is not None:
         cmd += ["--seed", str(seed)]
 
@@ -387,6 +388,7 @@ def main() -> int:
             output_dir=str(run_dir),
             extra_env=env_vars,
             stream_logs=stream_logs,
+            base_args=list(eval_cfg.get("base_args", ["--headless"])),
         )
 
         train_metrics = summarize_train_metrics(str(log_dir))

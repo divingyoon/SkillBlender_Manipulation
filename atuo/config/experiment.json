@@ -20,6 +20,7 @@
   },
   "eval": {
     "eval_script": "../eval_grasp2g_metrics.py",
+    "base_args": ["--headless"],
     "num_episodes": 100,
     "num_envs": 1,
     "goal_threshold": 0.8,

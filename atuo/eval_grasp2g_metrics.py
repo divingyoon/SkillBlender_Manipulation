@@ -105,8 +105,11 @@ def main() -> int:
         hold_duration = goal_params["phase_params"].get("hold_duration", 2.0)
         minimal_height = goal_params.get("minimal_height", 0.04)
 
-        left_obj_cfg = SceneEntityCfg("object")
-        right_obj_cfg = SceneEntityCfg("object2")
+        scene_keys = set(env.unwrapped.scene.keys())
+        left_obj_name = "object" if "object" in scene_keys else "cup"
+        right_obj_name = "object2" if "object2" in scene_keys else "cup2"
+        left_obj_cfg = SceneEntityCfg(left_obj_name)
+        right_obj_cfg = SceneEntityCfg(right_obj_name)
         left_ee_cfg = SceneEntityCfg("left_ee_frame")
         right_ee_cfg = SceneEntityCfg("right_ee_frame")
 

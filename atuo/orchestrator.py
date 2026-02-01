@@ -240,7 +240,7 @@ def main() -> int:
 
     for run_idx in range(max_runs):
         run_id = time.strftime("%Y%m%d_%H%M%S") + f"_run{run_idx+1}"
-        run_dir = Path("/home/user/rl_ws/atuo/runs") / run_id
+        run_dir = Path("/home/user/rl_ws/SkillBlender_Manipulation/atuo/runs") / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         train_result = None

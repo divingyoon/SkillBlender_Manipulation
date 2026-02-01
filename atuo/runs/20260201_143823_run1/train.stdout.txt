@@ -1,0 +1,9 @@
+[3gH    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H    H   [INFO] Using python from: /home/user/rl_ws/IsaacLab/_isaac_sim/python.sh
+[INFO][AppLauncher]: Using device: cuda:0
+[INFO][AppLauncher]: Loading experience file: /home/user/rl_ws/IsaacLab/apps/isaaclab.python.headless.kit
+[INFO]: Parsing configuration from: openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.config.joint_pos_env_cfg:OpenArmGrasp2gEnvCfg
+[INFO]: Parsing configuration from: openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.config.agents.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg
+[INFO] Logging experiment in directory: /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/grasp2g
+Exact experiment name requested from command line: test4
+[INFO] IsaacLab logging to file: /tmp/isaaclab_2026-02-01_14-38-37.log
+[33m14:38:37 [simulation_context.py] WARNING: The `enable_external_forces_every_iteration` parameter in the PhysxCfg is set to False. If you are experiencing noisy velocities, consider enabling this flag. You may need to slightly increase the number of velocity iterations (setting it to 1 or 2 rather than 0), together with this flag, to improve the accuracy of velocity updates.[0m

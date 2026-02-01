@@ -17,3 +17,6 @@ log/*
 log/rsl_rl/*
 
 auto/runs
+
+# ignore run artifacts
+atuo/runs/

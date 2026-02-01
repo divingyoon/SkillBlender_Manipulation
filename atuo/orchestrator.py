@@ -58,6 +58,28 @@ def _mean_pair(a: float, b: float) -> float:
     return (a + b) / 2.0
 
 
+def _extract_reward_keys(env_yaml_path: Path) -> list[str]:
+    if not env_yaml_path.is_file():
+        return []
+    keys: list[str] = []
+    in_rewards = False
+    for raw in env_yaml_path.read_text(encoding="utf-8").splitlines():
+        line = raw.rstrip()
+        if not in_rewards:
+            if line == "rewards:":
+                in_rewards = True
+            continue
+        if not line or (not line.startswith("  ")):
+            break
+        if line.startswith("    "):
+            continue
+        if line.endswith(":"):
+            name = line.strip()[:-1]
+            if name:
+                keys.append(name)
+    return keys
+
+
 def decide_success(eval_metrics: dict, criteria: dict) -> tuple[bool, dict]:
     lift = _mean_pair(eval_metrics.get("lift_success_left", 0.0), eval_metrics.get("lift_success_right", 0.0))
     hold = _mean_pair(eval_metrics.get("hold_success_left", 0.0), eval_metrics.get("hold_success_right", 0.0))
@@ -339,11 +361,14 @@ def main() -> int:
         analysis_result = None
         applied_overrides = []
         if not success:
+            env_yaml = Path(log_dir) / "params" / "env.yaml"
+            reward_names = _extract_reward_keys(env_yaml)
+            reward_override_keys = [f"rewards.{name}.weight" for name in reward_names]
             analysis_result = analyze(
                 payload=payload,
                 thresholds=analysis_thresholds,
                 llm_cfg=llm_cfg,
-                allowed_overrides=override_policy.get("allowed_overrides", []),
+                allowed_overrides=reward_override_keys or override_policy.get("allowed_overrides", []),
                 rules=analysis_rules,
             )
             applied_overrides = analysis_result.applied_overrides

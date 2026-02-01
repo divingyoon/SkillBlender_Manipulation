@@ -19,7 +19,7 @@
     "max_iterations": null
   },
   "eval": {
-    "eval_script": "/home/user/rl_ws/atuo/eval_grasp2g_metrics.py",
+    "eval_script": "/home/user/rl_ws/SkillBlender_Manipulation/atuo/eval_grasp2g_metrics.py",
     "num_episodes": 100,
     "num_envs": 1,
     "goal_threshold": 0.8,

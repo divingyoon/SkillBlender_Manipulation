@@ -28,6 +28,15 @@ def load_config(path: str) -> dict:
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+def resolve_path(value: str, base_dir: Path) -> str:
+    if not value:
+        return value
+    p = Path(value)
+    if p.is_absolute():
+        return str(p)
+    return str((base_dir / p).resolve())
+
+
 def _task_prefix(task: str) -> str:
     return task.split("-")[0]
 
@@ -207,17 +216,45 @@ def run_eval(
 def main() -> int:
     parser = argparse.ArgumentParser(description="Experiment OS orchestrator (MVP).")
     parser.add_argument("--config", required=True, help="Path to experiment.json")
+    parser.add_argument("--gpu", "--GPU", dest="gpu", type=str, default=None, help="CUDA_VISIBLE_DEVICES override")
+    parser.add_argument("--num_envs", type=int, default=None, help="Override train --num_envs")
+    parser.add_argument("--headless", action="store_true", help="Force headless mode")
+    parser.add_argument("--gui", action="store_true", help="Disable headless mode")
+    parser.add_argument("--task", type=str, default=None, help="Override task")
+    parser.add_argument("--agent", type=str, default=None, help="Override agent")
+    parser.add_argument("--max_iterations", type=int, default=None, help="Override max_iterations")
+    parser.add_argument("--resume_from", type=str, default=None, help="Override resume load_run")
+    parser.add_argument("--resume_checkpoint", type=str, default=None, help="Override resume checkpoint")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
+    config_dir = Path(args.config).resolve().parent
     project = cfg["project"]
+    project["isaaclab_root"] = resolve_path(project["isaaclab_root"], config_dir)
+    project["skillblender_root"] = resolve_path(project["skillblender_root"], config_dir)
+    project["log_root"] = resolve_path(project["log_root"], config_dir)
     train = cfg["train"]
+    train["train_script"] = resolve_path(train["train_script"], config_dir)
     eval_cfg = cfg["eval"]
+    if args.task is not None:
+        train["task"] = args.task
+    if args.agent is not None:
+        train["agent"] = args.agent
+    if args.max_iterations is not None:
+        train["max_iterations"] = int(args.max_iterations)
+    if args.resume_from is not None:
+        train["resume_from"] = args.resume_from
+    if args.resume_checkpoint is not None:
+        train["resume_checkpoint"] = args.resume_checkpoint
+    eval_cfg["eval_script"] = resolve_path(eval_cfg["eval_script"], config_dir)
     criteria = cfg.get("success_criteria", {})
     analysis_thresholds = cfg.get("analysis_thresholds", {})
-    analysis_rules_path = cfg.get("analysis_rules_path", "")
+    analysis_rules_path = resolve_path(cfg.get("analysis_rules_path", ""), config_dir)
     analysis_rules = {}
     env_vars = cfg.get("env", {})
+    if args.gpu is not None:
+        env_vars = dict(env_vars)
+        env_vars["CUDA_VISIBLE_DEVICES"] = str(args.gpu)
     if analysis_rules_path:
         try:
             analysis_rules = json.loads(Path(analysis_rules_path).read_text(encoding="utf-8"))
@@ -235,12 +272,23 @@ def main() -> int:
     stream_logs = bool(policy.get("stream_logs", True))
 
     seed = train.get("seed", None)
+    if args.num_envs is not None:
+        train = dict(train)
+        train["num_envs"] = int(args.num_envs)
 
     pending_overrides: list[str] = list(train.get("hydra_overrides", []))
 
+    base_args = list(train.get("base_args", []))
+    if args.headless:
+        if "--headless" not in base_args:
+            base_args.append("--headless")
+    if args.gui:
+        base_args = [arg for arg in base_args if arg != "--headless"]
+    train["base_args"] = base_args
+
     for run_idx in range(max_runs):
         run_id = time.strftime("%Y%m%d_%H%M%S") + f"_run{run_idx+1}"
-        run_dir = Path("/home/user/rl_ws/SkillBlender_Manipulation/atuo/runs") / run_id
+        run_dir = Path(__file__).resolve().parent / "runs" / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         train_result = None
@@ -251,8 +299,8 @@ def main() -> int:
 
         early_stop_reason = None
         while True:
-            resume_from = Path(last_log_dir).name if last_log_dir else None
-            resume_checkpoint = "model_best.pt" if last_log_dir else None
+            resume_from = Path(last_log_dir).name if last_log_dir else train.get("resume_from", None)
+            resume_checkpoint = "model_best.pt" if last_log_dir else train.get("resume_checkpoint", None)
             target_iterations = train.get("max_iterations", None)
             if chunk is not None:
                 target_iterations = chunk

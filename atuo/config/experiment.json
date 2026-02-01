@@ -1,8 +1,8 @@
 {
   "project": {
-    "isaaclab_root": "/home/user/rl_ws/IsaacLab",
-    "skillblender_root": "/home/user/rl_ws/SkillBlender_Manipulation",
-    "log_root": "/home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl"
+    "isaaclab_root": "../../../IsaacLab",
+    "skillblender_root": "../..",
+    "log_root": "../../log/rsl_rl"
   },
   "env": {
     "ISAAC_SIM_DISABLE_SHARED_MEMORY": "1",
@@ -12,14 +12,14 @@
   "train": {
     "task": "grasp2g-v1",
     "agent": "rsl_rl_dual_cfg_entry_point",
-    "train_script": "/home/user/rl_ws/SkillBlender_Manipulation/scripts/reinforcement_learning/rsl_rl/train.py",
+    "train_script": "../../scripts/reinforcement_learning/rsl_rl/train.py",
     "base_args": ["--swap_lr", "--swap_lr_prob", "0.5", "--headless"],
     "num_envs": null,
     "seed": 42,
     "max_iterations": null
   },
   "eval": {
-    "eval_script": "/home/user/rl_ws/SkillBlender_Manipulation/atuo/eval_grasp2g_metrics.py",
+    "eval_script": "../eval_grasp2g_metrics.py",
     "num_episodes": 100,
     "num_envs": 1,
     "goal_threshold": 0.8,
@@ -43,7 +43,7 @@
     "goal_track_success_min": 0.4,
     "goal_dist_mean_max": 0.05
   },
-  "analysis_rules_path": "/home/user/rl_ws/atuo/config/failure_rules.json",
+  "analysis_rules_path": "failure_rules.json",
   "llm": {
     "enabled": true,
     "provider": "ollama",

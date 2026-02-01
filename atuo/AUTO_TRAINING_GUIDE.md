@@ -18,7 +18,7 @@
 
 결과 저장 위치:
 - 학습 로그: `SkillBlender_Manipulation/log/rsl_rl/<task>/testN`
-- 자동 루프 로그: `atuo/runs/<run_id>/`
+- 자동 루프 로그: `SkillBlender_Manipulation/atuo/runs/<run_id>/`
   - `report.json`
   - `analysis_prompt.txt`
   - `analysis_response.txt`
@@ -40,6 +40,26 @@ python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
   --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json
 ```
 
+GPU 지정과 num_envs 오버라이드 예시:
+```
+python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
+  --GPU=1 \
+  --num_envs=3000
+```
+
+추가 CLI 오버라이드 예시:
+```
+python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
+  --task grasp2g-v1 \
+  --agent rsl_rl_dual_cfg_entry_point \
+  --max_iterations 5000 \
+  --resume_from test8 \
+  --resume_checkpoint model_600.pt \
+  --gui
+```
+
 **로그가 터미널에 실시간 표시됨** (`stream_logs=true` 설정)
 
 ---
@@ -57,7 +77,7 @@ python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
 - `goal_dist_mean_max` 이하인지 확인
 
 설정 위치:
-`atuo/config/experiment.json`
+`SkillBlender_Manipulation/atuo/config/experiment.json`
 
 ---
 

@@ -179,8 +179,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
 
     # specify directory for logging experiments
     task_name = args_cli.task.split("-")[0]
-    sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    log_root_path = os.path.join(sbm_root, "log", "skrl", task_name)
+    log_root_path = os.path.join("..", "SkillBlender_Manipulation", "log", "skrl", task_name)
+    log_root_path = os.path.abspath(log_root_path)
     os.makedirs(log_root_path, exist_ok=True)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
     # specify directory for logging runs: {time-stamp}_{run_name}

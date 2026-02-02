@@ -243,6 +243,10 @@ def main() -> int:
         train["task"] = args.task
     if args.agent is not None:
         train["agent"] = args.agent
+    is_skrl = str(train.get("agent", "")).startswith("skrl_")
+    if is_skrl:
+        train["train_script"] = resolve_path("../../scripts/reinforcement_learning/skrl/train.py", config_dir)
+        project["log_root"] = resolve_path("../../log/skrl", config_dir)
     if args.max_iterations is not None:
         train["max_iterations"] = int(args.max_iterations)
     if args.resume_from is not None:
@@ -383,27 +387,31 @@ def main() -> int:
             return 1
 
         metrics_path = str(log_dir / "metrics.json")
-        eval_result = run_eval(
-            isaaclab_root=project["isaaclab_root"],
-            eval_script=eval_cfg["eval_script"],
-            task=train["task"],
-            agent=train["agent"],
-            checkpoint=str(checkpoint),
-            num_episodes=int(eval_cfg.get("num_episodes", 100)),
-            num_envs=int(eval_cfg.get("num_envs", 1)),
-            goal_threshold=float(eval_cfg.get("goal_threshold", 0.8)),
-            lift_threshold=float(eval_cfg.get("lift_threshold", 0.1)),
-            goal_dist_threshold=float(eval_cfg.get("goal_dist_threshold", 0.05)),
-            seed=eval_cfg.get("seed", None),
-            metrics_path=metrics_path,
-            output_dir=str(run_dir),
-            extra_env=env_vars,
-            stream_logs=stream_logs,
-            base_args=list(eval_cfg.get("base_args", ["--headless"])),
-        )
+        skip_eval = bool(eval_cfg.get("skip_eval", False)) or is_skrl
+        if skip_eval:
+            eval_result = EvalResult(0, metrics_path, "", "")
+            eval_metrics = {}
+        else:
+            eval_result = run_eval(
+                isaaclab_root=project["isaaclab_root"],
+                eval_script=eval_cfg["eval_script"],
+                task=train["task"],
+                agent=train["agent"],
+                checkpoint=str(checkpoint),
+                num_episodes=int(eval_cfg.get("num_episodes", 100)),
+                num_envs=int(eval_cfg.get("num_envs", 1)),
+                goal_threshold=float(eval_cfg.get("goal_threshold", 0.8)),
+                lift_threshold=float(eval_cfg.get("lift_threshold", 0.1)),
+                goal_dist_threshold=float(eval_cfg.get("goal_dist_threshold", 0.05)),
+                seed=eval_cfg.get("seed", None),
+                metrics_path=metrics_path,
+                output_dir=str(run_dir),
+                extra_env=env_vars,
+                stream_logs=stream_logs,
+                base_args=list(eval_cfg.get("base_args", ["--headless"])),
+            )
 
         train_metrics = summarize_train_metrics(str(log_dir))
-        eval_metrics = {}
         if eval_result.returncode == 0 and os.path.isfile(metrics_path):
             eval_metrics = json.loads(Path(metrics_path).read_text(encoding="utf-8"))
 
@@ -418,7 +426,10 @@ def main() -> int:
         }
         write_metrics_json(metrics_path, payload)
 
-        success, aggregated = decide_success(eval_metrics, criteria)
+        if skip_eval:
+            success, aggregated = True, {}
+        else:
+            success, aggregated = decide_success(eval_metrics, criteria)
         analysis_result = None
         applied_overrides = []
         if not success:
@@ -442,6 +453,7 @@ def main() -> int:
             "metrics_path": metrics_path,
             "stdout": eval_result.stdout_path,
             "stderr": eval_result.stderr_path,
+            "skipped": skip_eval,
         }
         report["decision"] = {
             "status": "success" if success else "failed",

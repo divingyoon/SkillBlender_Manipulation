@@ -65,6 +65,8 @@ parser.add_argument(
     default=False,
     help="Load env/agent config from the checkpoint log's params/*.yaml before play.",
 )
+parser.add_argument("--swap_lr", action="store_true", help="Enable left/right swapping for data augmentation.")
+parser.add_argument("--swap_lr_prob", type=float, default=0.5, help="Probability to swap each environment per episode.")
 # append RSL-RL cli arguments
 cli_args.add_rsl_rl_args(parser)
 # append AppLauncher cli args
@@ -109,7 +111,8 @@ try:
 except ModuleNotFoundError:
     from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
-from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, RslRlVecEnvWrapper, export_policy_as_jit, export_policy_as_onnx
+from isaaclab_rl.rsl_rl import RslRlBaseRunnerCfg, export_policy_as_jit, export_policy_as_onnx
+from sbm.rl import RslRlVecEnvWrapper
 
 from isaaclab.markers import VisualizationMarkers, VisualizationMarkersCfg
 
@@ -352,7 +355,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
     # wrap around environment for rsl-rl
-    env = RslRlVecEnvWrapper(env, clip_actions=agent_cfg.clip_actions)
+    swap_prob = args_cli.swap_lr_prob if args_cli.swap_lr else 0.0
+    env = RslRlVecEnvWrapper(
+        env,
+        clip_actions=agent_cfg.clip_actions,
+        swap_prob=swap_prob,
+    )
 
     print(f"[INFO]: Loading model checkpoint from: {resume_path}")
     # load previously trained model

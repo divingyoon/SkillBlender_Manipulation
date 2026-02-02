@@ -66,6 +66,8 @@ parser.add_argument(
     help="The RL algorithm used for training the skrl agent.",
 )
 parser.add_argument("--real-time", action="store_true", default=False, help="Run in real-time, if possible.")
+parser.add_argument("--swap_lr", action="store_true", help="Enable left/right swapping for data augmentation.")
+parser.add_argument("--swap_lr_prob", type=float, default=0.5, help="Probability to swap each environment per episode.")
 
 # append AppLauncher cli args
 AppLauncher.add_app_launcher_args(parser)
@@ -117,6 +119,7 @@ from isaaclab.utils.dict import print_dict
 from isaaclab.utils.pretrained_checkpoint import get_published_pretrained_checkpoint
 
 from isaaclab_rl.skrl import SkrlVecEnvWrapper
+from sbm.rl.swap_lr_wrapper import SwapLRWrapper
 
 import isaaclab_tasks  # noqa: F401
 from isaaclab_tasks.utils import get_checkpoint_path
@@ -205,6 +208,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, expe
         print_dict(video_kwargs, nesting=4)
         env = gym.wrappers.RecordVideo(env, **video_kwargs)
 
+    # optional left/right swap before skrl wrapper
+    env = SwapLRWrapper(env, swap_lr=args_cli.swap_lr, swap_prob=args_cli.swap_lr_prob)
     # wrap around environment for skrl
     env = SkrlVecEnvWrapper(env, ml_framework=args_cli.ml_framework)  # same as: `wrap_env(env, wrapper="auto")`
 

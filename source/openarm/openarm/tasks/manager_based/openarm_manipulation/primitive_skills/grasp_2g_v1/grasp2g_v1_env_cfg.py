@@ -359,12 +359,12 @@ class RewardsCfg:
         weight=-1.0,
     )
 
-    # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
+    # Phase 1만: grasp 중 물체 이동 억제 (phase 0에서는 비활성 → reaching 방해 방지)
     left_object_displacement_penalty = RewTerm(
         func=mdp.phase_object_root_displacement_penalty,
         params={
             "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -373,16 +373,16 @@ class RewardsCfg:
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
-            "scale": 10.0,
+            "scale": 5.0,
         },
-        weight=-5.0,
+        weight=-2.0,
     )
-    # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
+    # Phase 1만: grasp 중 물체 이동 억제 (phase 0에서는 비활성 → reaching 방해 방지)
     right_object_displacement_penalty = RewTerm(
         func=mdp.phase_object_root_displacement_penalty,
         params={
             "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,
@@ -391,9 +391,9 @@ class RewardsCfg:
                 "close_threshold": 0.5,
                 "hold_duration": 2.0,
             },
-            "scale": 10.0,  #컵이 2cm(0.02m) 움직였고 scale=1.0, weight=-1.0이면 보상에 -0.02 추가
+            "scale": 5.0,
         },
-        weight=-5.0,
+        weight=-2.0,
     )
 
     # Phase 0: reach 동안 방향 정렬.
@@ -733,6 +733,49 @@ class RewardsCfg:
         weight=0.0,
     )
 
+    # ─── Diagnostic terms (weight=0, tensorboard 기록용) ───
+    left_hand_closure_diag = RewTerm(
+        func=mdp.hand_closure_diagnostic,
+        params={"eef_link_name": "openarm_left_hand"},
+        weight=0.0,
+    )
+    right_hand_closure_diag = RewTerm(
+        func=mdp.hand_closure_diagnostic,
+        params={"eef_link_name": "openarm_right_hand"},
+        weight=0.0,
+    )
+    left_eef_dist_diag = RewTerm(
+        func=mdp.eef_distance_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_eef_dist_diag = RewTerm(
+        func=mdp.eef_distance_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    left_arm_action_norm_diag = RewTerm(
+        func=mdp.arm_action_norm_diagnostic,
+        params={"action_name": "left_arm_action"},
+        weight=0.0,
+    )
+    right_arm_action_norm_diag = RewTerm(
+        func=mdp.arm_action_norm_diagnostic,
+        params={"action_name": "right_arm_action"},
+        weight=0.0,
+    )
+    left_hand_action_norm_diag = RewTerm(
+        func=mdp.hand_action_norm_diagnostic,
+        params={"action_name": "left_hand_action"},
+        weight=0.0,
+    )
+    right_hand_action_norm_diag = RewTerm(
+        func=mdp.hand_action_norm_diagnostic,
+        params={"action_name": "right_hand_action"},
+        weight=0.0,
+    )
+
+    # ─── Regularization ───
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(

@@ -36,22 +36,22 @@ ollama list
 
 ### (B) 자동 루프 실행
 ```
-python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
-  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json
+python3 ~/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config ~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json
 ```
 
 GPU 지정과 num_envs 오버라이드 예시:
 ```
-python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
-  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
+python3 ~/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config ~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
   --GPU=1 \
   --num_envs=3000
 ```
 
 추가 CLI 오버라이드 예시:
 ```
-python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
-  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
+python3 ~/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config ~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
   --task grasp2g-v1 \
   --agent rsl_rl_dual_cfg_entry_point \
   --max_iterations 5000 \
@@ -128,17 +128,17 @@ LLM 설정:
 
 - 현재 run 확인:
 ```
-ls -lt /home/user/rl_ws/SkillBlender_Manipulation/atuo/runs | head -n 3
+ls -lt ~/rl_ws/SkillBlender_Manipulation/atuo/runs | head -n 3
 ```
 
 - 실행 로그 실시간 확인:
 ```
-tail -f /home/user/rl_ws/SkillBlender_Manipulation/atuo/runs/<run_id>/train.stdout.txt
+tail -f ~/rl_ws/SkillBlender_Manipulation/atuo/runs/<run_id>/train.stdout.txt
 ```
 
 - IsaacLab 로그 폴더 확인:
 ```
-ls -lt /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/grasp2g | head -n 3
+ls -lt ~/rl_ws/SkillBlender_Manipulation/log/rsl_rl/grasp2g | head -n 3
 ```
 
 ---
@@ -149,7 +149,7 @@ ls -lt /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/grasp2g | head -n 3
 
 위치:
 ```
-/home/user/rl_ws/SkillBlender_Manipulation/atuo/runs/<run_id>/report.md
+~/rl_ws/SkillBlender_Manipulation/atuo/runs/<run_id>/report.md
 ```
 
 포함 항목:
@@ -182,10 +182,10 @@ ls -lt /home/user/rl_ws/SkillBlender_Manipulation/log/rsl_rl/grasp2g | head -n 3
 ---
 
 ## 9) 파일 위치 요약
-- 자동 루프 코드: `/home/user/rl_ws/SkillBlender_Manipulation/atuo/`
-- 설정 파일: `/home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json`
-- 실패 룰: `/home/user/rl_ws/SkillBlender_Manipulation/atuo/config/failure_rules.json`
-- 평가 스크립트: `/home/user/rl_ws/SkillBlender_Manipulation/atuo/eval_grasp2g_metrics.py`
+- 자동 루프 코드: `~/rl_ws/SkillBlender_Manipulation/atuo/`
+- 설정 파일: `~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json`
+- 실패 룰: `~/rl_ws/SkillBlender_Manipulation/atuo/config/failure_rules.json`
+- 평가 스크립트: `~/rl_ws/SkillBlender_Manipulation/atuo/eval_grasp2g_metrics.py`
 
 ---
 

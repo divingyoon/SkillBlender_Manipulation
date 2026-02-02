@@ -31,6 +31,17 @@ def _find_latest_event_file(log_dir: Path) -> Path | None:
     return events[0] if events else None
 
 
+def _get_all_tags(event_file: Path) -> list[str]:
+    """Get all scalar tags from a tensorboard event file."""
+    try:
+        from tensorboard.backend.event_processing import event_accumulator
+    except Exception:
+        return []
+    acc = event_accumulator.EventAccumulator(str(event_file), size_guidance={event_accumulator.SCALARS: 0})
+    acc.Reload()
+    return acc.Tags().get("scalars", [])
+
+
 def _read_scalar_series(event_file: Path, tag: str) -> list[tuple[int, float]]:
     try:
         from tensorboard.backend.event_processing import event_accumulator
@@ -60,21 +71,49 @@ def _summarize_series(series: list[tuple[int, float]], n: int = 100) -> ScalarSu
     )
 
 
+def _tag_to_key(tag: str) -> str:
+    """Convert tensorboard tag to a flat key.
+
+    Examples:
+        'Train/mean_reward' -> 'mean_reward'
+        'Episode_Reward/left_reaching_object' -> 'reward_left_reaching_object'
+        'Loss/entropy' -> 'entropy'
+        'Loss/surrogate' -> 'surrogate'
+        'Loss/value_function' -> 'value_function'
+        'Curriculum/left_reaching_object' -> 'curriculum_left_reaching_object'
+    """
+    if "/" not in tag:
+        return tag
+    prefix, name = tag.split("/", 1)
+    if prefix == "Train":
+        return name
+    elif prefix == "Episode_Reward":
+        return f"reward_{name}"
+    elif prefix == "Loss":
+        return name
+    elif prefix == "Curriculum":
+        return f"curriculum_{name}"
+    elif prefix == "Episode_Termination":
+        return f"termination_{name}"
+    elif prefix == "Policy":
+        return f"policy_{name}"
+    elif prefix == "Perf":
+        return f"perf_{name}"
+    else:
+        return f"{prefix.lower()}_{name}"
+
+
 def summarize_train_metrics(log_dir: str) -> dict:
     log_path = Path(log_dir)
     event_file = _find_latest_event_file(log_path)
     if event_file is None:
         return {"event_file": None, "scalars": {}}
 
-    tags = {
-        "Train/mean_reward": "mean_reward",
-        "Train/episode_length": "episode_length",
-        "Train/entropy": "entropy",
-        "Train/loss": "loss",
-    }
+    all_tags = _get_all_tags(event_file)
 
     scalars = {}
-    for tag, key in tags.items():
+    for tag in all_tags:
+        key = _tag_to_key(tag)
         series = _read_scalar_series(event_file, tag)
         summary = _summarize_series(series, n=100)
         scalars[key] = {

@@ -25,6 +25,38 @@
     "tracking_dist_high": [
       "rewards.left_object_goal_tracking_fine_grained.weight=3.0",
       "rewards.right_object_goal_tracking_fine_grained.weight=3.0"
+    ],
+    "reward_conflict_displacement_vs_reaching": [
+      "rewards.left_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]",
+      "rewards.right_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]",
+      "rewards.left_object_displacement_penalty.weight=-2.0",
+      "rewards.right_object_displacement_penalty.weight=-2.0",
+      "rewards.left_object_displacement_penalty.params.scale=5.0",
+      "rewards.right_object_displacement_penalty.params.scale=5.0"
+    ],
+    "reaching_stuck": [
+      "rewards.left_reaching_object.weight=-3.0",
+      "rewards.right_reaching_object.weight=-3.0",
+      "rewards.left_reaching_object_fine.weight=10.0",
+      "rewards.right_reaching_object_fine.weight=10.0",
+      "rewards.left_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]",
+      "rewards.right_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]"
+    ],
+    "hand_inactive": [
+      "rewards.left_grasping_object.weight=8.0",
+      "rewards.right_grasping_object.weight=8.0"
+    ],
+    "phase_stuck": [
+      "rewards.left_reaching_object.weight=-3.0",
+      "rewards.right_reaching_object.weight=-3.0",
+      "rewards.left_reaching_object_fine.weight=10.0",
+      "rewards.right_reaching_object_fine.weight=10.0"
+    ],
+    "grasp_never_triggered": [
+      "rewards.left_reaching_object.weight=-3.0",
+      "rewards.right_reaching_object.weight=-3.0",
+      "rewards.left_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]",
+      "rewards.right_object_displacement_penalty.params.phase_weights=[0.0,1.0,0.0,0.0]"
     ]
   }
 }

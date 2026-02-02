@@ -1603,6 +1603,45 @@ def phase_hand_x_align_object_z_reward(
     return reward * _phase_weight(phase, phase_weights, env.device)
 
 
+## ──────────────────────────────────────────────
+## Diagnostic (weight=0) reward terms for tensorboard logging
+## ──────────────────────────────────────────────
+
+def hand_closure_diagnostic(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Diagnostic: mean gripper closure [0=open, 1=closed]. Use with weight=0."""
+    return _hand_closure_amount(env, eef_link_name)
+
+
+def eef_distance_diagnostic(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: EEF-to-object distance in meters. Use with weight=0."""
+    return _object_eef_distance(env, eef_link_name, object_cfg)
+
+
+def arm_action_norm_diagnostic(
+    env: ManagerBasedRLEnv,
+    action_name: str,
+) -> torch.Tensor:
+    """Diagnostic: L2 norm of arm action. Use with weight=0."""
+    action_term = env.action_manager.get_term(action_name)
+    return torch.norm(action_term.processed_actions, dim=-1)
+
+
+def hand_action_norm_diagnostic(
+    env: ManagerBasedRLEnv,
+    action_name: str,
+) -> torch.Tensor:
+    """Diagnostic: L2 norm of hand action. Use with weight=0."""
+    action_term = env.action_manager.get_term(action_name)
+    return torch.norm(action_term.processed_actions, dim=-1)
+
+
 def phase_hand_x_align_object_z_penalty_gated(
     env: ManagerBasedRLEnv,
     command_name: str,

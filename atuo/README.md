@@ -4,9 +4,9 @@ This folder contains a minimal, deterministic experiment loop for SkillBlender_M
 It follows: plan -> run -> eval -> decide -> report.
 
 ## Quick start
-1) Edit config: /home/user/rl_ws/atuo/config/experiment.json
+1) Edit config: ~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json
 2) Run orchestrator:
-   python /home/user/rl_ws/atuo/orchestrator.py --config /home/user/rl_ws/atuo/config/experiment.json
+   python ~/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py --config ~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json
 
 ## What it does
 - Runs IsaacLab training via ./isaaclab.sh
@@ -26,7 +26,7 @@ It follows: plan -> run -> eval -> decide -> report.
 ## LLM setup
 - OpenAI: set `OPENAI_API_KEY` and keep `llm.provider="openai"`.
 - Local (Ollama): set `llm.provider="ollama"` and `llm.api_base="http://localhost:11434"`.
-- Configure model/temperature in `/home/user/rl_ws/atuo/config/experiment.json`.
+- Configure model/temperature in `~/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json`.
 
 ## Notes
 - This MVP is task-specific for grasp2g-v1 evaluation. Other tasks should add a new eval script.

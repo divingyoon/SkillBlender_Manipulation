@@ -108,17 +108,21 @@ def _hand_closure_amount(env: ManagerBasedRLEnv, eef_link_name: str) -> torch.Te
     min_lim = joint_limits[..., 0]
     max_lim = joint_limits[..., 1]
 
-    # Determine which limit corresponds to open based on configured offset.
-    if isinstance(hand_term._offset, torch.Tensor):
-        open_pos = hand_term._offset
+    if hasattr(hand_term, "_open_command") and hasattr(hand_term, "_close_command"):
+        open_lim = hand_term._open_command.unsqueeze(0).expand_as(joint_pos)
+        close_lim = hand_term._close_command.unsqueeze(0).expand_as(joint_pos)
     else:
-        open_pos = torch.full_like(min_lim, float(hand_term._offset))
+        # Determine which limit corresponds to open based on configured offset.
+        if isinstance(hand_term._offset, torch.Tensor):
+            open_pos = hand_term._offset
+        else:
+            open_pos = torch.full_like(min_lim, float(hand_term._offset))
 
-    # For each joint, pick the limit closest to open_pos as the "open" limit.
-    dist_to_min = torch.abs(open_pos - min_lim)
-    dist_to_max = torch.abs(open_pos - max_lim)
-    open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
-    close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
+        # For each joint, pick the limit closest to open_pos as the "open" limit.
+        dist_to_min = torch.abs(open_pos - min_lim)
+        dist_to_max = torch.abs(open_pos - max_lim)
+        open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
+        close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
 
     denom = close_lim - open_lim
     denom = torch.where(torch.abs(denom) < 1e-6, torch.ones_like(denom), denom)
@@ -144,16 +148,19 @@ def _hand_closure_debug_stats(
     joint_limits = hand_term._asset.data.joint_pos_limits[:, joint_ids]
     min_lim = joint_limits[..., 0]
     max_lim = joint_limits[..., 1]
-
-    if isinstance(hand_term._offset, torch.Tensor):
-        open_pos = hand_term._offset
+    if hasattr(hand_term, "_open_command") and hasattr(hand_term, "_close_command"):
+        open_lim = hand_term._open_command.unsqueeze(0).expand_as(joint_pos)
+        close_lim = hand_term._close_command.unsqueeze(0).expand_as(joint_pos)
     else:
-        open_pos = torch.full_like(min_lim, float(hand_term._offset))
+        if isinstance(hand_term._offset, torch.Tensor):
+            open_pos = hand_term._offset
+        else:
+            open_pos = torch.full_like(min_lim, float(hand_term._offset))
 
-    dist_to_min = torch.abs(open_pos - min_lim)
-    dist_to_max = torch.abs(open_pos - max_lim)
-    open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
-    close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
+        dist_to_min = torch.abs(open_pos - min_lim)
+        dist_to_max = torch.abs(open_pos - max_lim)
+        open_lim = torch.where(dist_to_min <= dist_to_max, min_lim, max_lim)
+        close_lim = torch.where(dist_to_min <= dist_to_max, max_lim, min_lim)
 
     denom = close_lim - open_lim
     denom = torch.where(torch.abs(denom) < 1e-6, torch.ones_like(denom), denom)
@@ -845,6 +852,180 @@ def _grasp_success(
     dist = _object_eef_distance(env, eef_link_name, object_cfg)
     close = _hand_closure_amount(env, eef_link_name)
     return (dist < grasp_distance) | (close > close_threshold)
+
+def bimanual_reach_min_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    left_phase_params: dict,
+    right_phase_params: dict,
+) -> torch.Tensor:
+    """Reward based on min(reach_L, reach_R) with phase gating."""
+    phase_left = _update_grasp2g_phase(
+        env,
+        left_eef_link_name,
+        left_object_cfg,
+        left_phase_params["lift_height"],
+        left_phase_params["reach_distance"],
+        left_phase_params.get("align_threshold", 0.0),
+        left_phase_params["grasp_distance"],
+        left_phase_params["close_threshold"],
+        left_phase_params["hold_duration"],
+    )
+    phase_right = _update_grasp2g_phase(
+        env,
+        right_eef_link_name,
+        right_object_cfg,
+        right_phase_params["lift_height"],
+        right_phase_params["reach_distance"],
+        right_phase_params.get("align_threshold", 0.0),
+        right_phase_params["grasp_distance"],
+        right_phase_params["close_threshold"],
+        right_phase_params["hold_duration"],
+    )
+
+    dist_left = _object_eef_distance(env, left_eef_link_name, left_object_cfg)
+    dist_right = _object_eef_distance(env, right_eef_link_name, right_object_cfg)
+    reach_left = 1 - torch.tanh(dist_left / std)
+    reach_right = 1 - torch.tanh(dist_right / std)
+    reach_min = torch.minimum(reach_left, reach_right)
+
+    w_left = _phase_weight(phase_left, phase_weights, env.device)
+    w_right = _phase_weight(phase_right, phase_weights, env.device)
+    return reach_min * torch.minimum(w_left, w_right)
+
+
+def bimanual_phase_lag_penalty(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    left_phase_params: dict,
+    right_phase_params: dict,
+) -> torch.Tensor:
+    """Penalty for phase mismatch between left and right."""
+    phase_left = _update_grasp2g_phase(
+        env,
+        left_eef_link_name,
+        left_object_cfg,
+        left_phase_params["lift_height"],
+        left_phase_params["reach_distance"],
+        left_phase_params.get("align_threshold", 0.0),
+        left_phase_params["grasp_distance"],
+        left_phase_params["close_threshold"],
+        left_phase_params["hold_duration"],
+    )
+    phase_right = _update_grasp2g_phase(
+        env,
+        right_eef_link_name,
+        right_object_cfg,
+        right_phase_params["lift_height"],
+        right_phase_params["reach_distance"],
+        right_phase_params.get("align_threshold", 0.0),
+        right_phase_params["grasp_distance"],
+        right_phase_params["close_threshold"],
+        right_phase_params["hold_duration"],
+    )
+    return torch.abs(phase_left - phase_right).float()
+
+
+def bimanual_grasp_and_reward(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    left_phase_params: dict,
+    right_phase_params: dict,
+) -> torch.Tensor:
+    """Binary reward for grasp_L AND grasp_R with phase gating."""
+    phase_left = _update_grasp2g_phase(
+        env,
+        left_eef_link_name,
+        left_object_cfg,
+        left_phase_params["lift_height"],
+        left_phase_params["reach_distance"],
+        left_phase_params.get("align_threshold", 0.0),
+        left_phase_params["grasp_distance"],
+        left_phase_params["close_threshold"],
+        left_phase_params["hold_duration"],
+    )
+    phase_right = _update_grasp2g_phase(
+        env,
+        right_eef_link_name,
+        right_object_cfg,
+        right_phase_params["lift_height"],
+        right_phase_params["reach_distance"],
+        right_phase_params.get("align_threshold", 0.0),
+        right_phase_params["grasp_distance"],
+        right_phase_params["close_threshold"],
+        right_phase_params["hold_duration"],
+    )
+
+    dist_left = _object_eef_distance(env, left_eef_link_name, left_object_cfg)
+    dist_right = _object_eef_distance(env, right_eef_link_name, right_object_cfg)
+    close_left = _hand_closure_amount(env, left_eef_link_name)
+    close_right = _hand_closure_amount(env, right_eef_link_name)
+    grasp_left = (dist_left < left_phase_params["grasp_distance"]) & (close_left > left_phase_params["close_threshold"])
+    grasp_right = (dist_right < right_phase_params["grasp_distance"]) & (close_right > right_phase_params["close_threshold"])
+    success = grasp_left & grasp_right
+
+    w_left = _phase_weight(phase_left, phase_weights, env.device)
+    w_right = _phase_weight(phase_right, phase_weights, env.device)
+    return success.float() * torch.minimum(w_left, w_right)
+
+
+def bimanual_grasp_xor_penalty(
+    env: ManagerBasedRLEnv,
+    left_eef_link_name: str,
+    right_eef_link_name: str,
+    left_object_cfg: SceneEntityCfg,
+    right_object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    left_phase_params: dict,
+    right_phase_params: dict,
+) -> torch.Tensor:
+    """Penalty when exactly one hand grasps."""
+    phase_left = _update_grasp2g_phase(
+        env,
+        left_eef_link_name,
+        left_object_cfg,
+        left_phase_params["lift_height"],
+        left_phase_params["reach_distance"],
+        left_phase_params.get("align_threshold", 0.0),
+        left_phase_params["grasp_distance"],
+        left_phase_params["close_threshold"],
+        left_phase_params["hold_duration"],
+    )
+    phase_right = _update_grasp2g_phase(
+        env,
+        right_eef_link_name,
+        right_object_cfg,
+        right_phase_params["lift_height"],
+        right_phase_params["reach_distance"],
+        right_phase_params.get("align_threshold", 0.0),
+        right_phase_params["grasp_distance"],
+        right_phase_params["close_threshold"],
+        right_phase_params["hold_duration"],
+    )
+
+    dist_left = _object_eef_distance(env, left_eef_link_name, left_object_cfg)
+    dist_right = _object_eef_distance(env, right_eef_link_name, right_object_cfg)
+    close_left = _hand_closure_amount(env, left_eef_link_name)
+    close_right = _hand_closure_amount(env, right_eef_link_name)
+    grasp_left = (dist_left < left_phase_params["grasp_distance"]) & (close_left > left_phase_params["close_threshold"])
+    grasp_right = (dist_right < right_phase_params["grasp_distance"]) & (close_right > right_phase_params["close_threshold"])
+    xor = grasp_left ^ grasp_right
+
+    w_left = _phase_weight(phase_left, phase_weights, env.device)
+    w_right = _phase_weight(phase_right, phase_weights, env.device)
+    return xor.float() * torch.minimum(w_left, w_right)
 
 
 def object_lift_progress(

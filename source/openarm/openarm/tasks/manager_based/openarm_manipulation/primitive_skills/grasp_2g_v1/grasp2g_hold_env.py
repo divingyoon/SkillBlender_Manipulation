@@ -26,6 +26,10 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
         super().__init__(*args, **kwargs)
         self.enable_gripper_hold = getattr(self.cfg, "enable_gripper_hold", False)
         self._setup_gripper_hold()
+        if getattr(self.cfg, "debug_obs_split", False):
+            self._log_obs_split_debug()
+        if getattr(self.cfg, "debug_reward_mapping", False):
+            self._check_left_right_reward_mapping()
 
     def _setup_gripper_hold(self) -> None:
         self._action_slices: dict[str, slice] = {}
@@ -42,6 +46,9 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
         self._right_close_raw = self._compute_close_raw(self._right_hand_term)
 
     def _compute_close_raw(self, term) -> torch.Tensor:
+        if hasattr(term, "_close_command"):
+            return term._close_command.unsqueeze(0).expand(self.num_envs, -1)
+
         joint_ids = term._joint_ids
         joint_limits = term._asset.data.joint_pos_limits
         target = joint_limits[:, joint_ids, 0]
@@ -92,3 +99,58 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
     def set_gripper_hold(self, enabled: bool) -> None:
         """Toggle gripper hold behavior at runtime."""
         self.enable_gripper_hold = bool(enabled)
+
+    def _log_obs_split_debug(self) -> None:
+        if not hasattr(self, "observation_manager"):
+            return
+        obs_mgr = self.observation_manager
+        if "policy" not in obs_mgr.active_terms:
+            return
+        term_names = list(obs_mgr.active_terms["policy"])
+        term_dims = list(obs_mgr.group_obs_term_dim["policy"])
+        sizes = []
+        for dims in term_dims:
+            sizes.append(int(torch.prod(torch.tensor(dims)).item()))
+        total = sum(sizes)
+        split = getattr(self.cfg, "actor_obs_split_index", None)
+        # infer left block size by ordering (until first right_* term)
+        inferred_split = 0
+        for name, size in zip(term_names, sizes):
+            if name.startswith("right_") or name.startswith("cup2_to_hand_right"):
+                break
+            inferred_split += size
+        print("[OBS_SPLIT] policy terms:")
+        for name, size in zip(term_names, sizes):
+            print(f"[OBS_SPLIT]   {name}: {size}")
+        print(f"[OBS_SPLIT] total={total} split_index={split} inferred_left_size={inferred_split}")
+
+    def _check_left_right_reward_mapping(self) -> None:
+        rewards_cfg = getattr(self.cfg, "rewards", None)
+        if rewards_cfg is None:
+            return
+        mismatches = []
+        for name, term in vars(rewards_cfg).items():
+            if term is None or not hasattr(term, "params"):
+                continue
+            params = term.params
+            if not isinstance(params, dict):
+                continue
+            object_cfg = params.get("object_cfg", None)
+            eef_link_name = params.get("eef_link_name", "")
+            if "left" in name:
+                if object_cfg is not None and getattr(object_cfg, "name", None) != "cup":
+                    mismatches.append((name, "object_cfg", getattr(object_cfg, "name", None)))
+                if eef_link_name and "left" not in eef_link_name:
+                    mismatches.append((name, "eef_link_name", eef_link_name))
+            if "right" in name:
+                if object_cfg is not None and getattr(object_cfg, "name", None) != "cup2":
+                    mismatches.append((name, "object_cfg", getattr(object_cfg, "name", None)))
+                if eef_link_name and "right" not in eef_link_name:
+                    mismatches.append((name, "eef_link_name", eef_link_name))
+
+        if mismatches:
+            print("[REWARD_MAP] mismatches detected:")
+            for name, key, val in mismatches:
+                print(f"[REWARD_MAP]   {name}: {key}={val}")
+        else:
+            print("[REWARD_MAP] left/right reward mapping OK")

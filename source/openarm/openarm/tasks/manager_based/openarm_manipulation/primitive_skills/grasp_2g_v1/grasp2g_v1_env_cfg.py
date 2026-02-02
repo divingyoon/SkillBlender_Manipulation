@@ -107,16 +107,12 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
-        joint_pos = ObsTerm(func=mdp.joint_pos_rel)
-        joint_vel = ObsTerm(func=mdp.joint_vel_rel)
+        left_joint_pos = ObsTerm(func=mdp.left_joint_pos_rel)
+        left_joint_vel = ObsTerm(func=mdp.left_joint_vel_rel)
 
-        cup_position = ObsTerm(
+        left_cup_position = ObsTerm(
             func=mdp.root_pose,
             params={"asset_cfg": SceneEntityCfg("cup")},
-        )
-        cup2_position = ObsTerm(
-            func=mdp.root_pose,
-            params={"asset_cfg": SceneEntityCfg("cup2")},
         )
 
         cup_to_hand_left = ObsTerm(
@@ -124,14 +120,6 @@ class ObservationsCfg:
             params={
                 "tcp_body_name": "openarm_left_hand",
                 "target_cfg": SceneEntityCfg("cup"),
-                "offset": [0.0, 0.0, 0.0],
-            },
-        )
-        cup2_to_hand_right = ObsTerm(
-            func=mdp.target_pos_in_tcp_frame,
-            params={
-                "tcp_body_name": "openarm_right_hand",
-                "target_cfg": SceneEntityCfg("cup2"),
                 "offset": [0.0, 0.0, 0.0],
             },
         )
@@ -147,21 +135,42 @@ class ObservationsCfg:
             func=mdp.gripper_state,
             params={"joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"]},
         )
-        right_gripper_state = ObsTerm(
-            func=mdp.gripper_state,
-            params={"joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"]},
-        )
+        # Hand identity (swap-stable cue)
+        left_hand_id = ObsTerm(func=mdp.constant_value, params={"value": 1.0, "size": 1})
         # Distance to cup (scalar, for easier learning)
         left_tcp_cup_distance = ObsTerm(
             func=mdp.tcp_to_cup_distance,
             params={"tcp_body_name": "openarm_left_hand", "target_cfg": SceneEntityCfg("cup")},
         )
+
+        left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
+        left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
+
+        right_joint_pos = ObsTerm(func=mdp.right_joint_pos_rel)
+        right_joint_vel = ObsTerm(func=mdp.right_joint_vel_rel)
+        right_cup2_position = ObsTerm(
+            func=mdp.root_pose,
+            params={"asset_cfg": SceneEntityCfg("cup2")},
+        )
+        cup2_to_hand_right = ObsTerm(
+            func=mdp.target_pos_in_tcp_frame,
+            params={
+                "tcp_body_name": "openarm_right_hand",
+                "target_cfg": SceneEntityCfg("cup2"),
+                "offset": [0.0, 0.0, 0.0],
+            },
+        )
+        right_gripper_state = ObsTerm(
+            func=mdp.gripper_state,
+            params={"joint_names": ["openarm_right_finger_joint1", "openarm_right_finger_joint2"]},
+        )
+        right_hand_id = ObsTerm(func=mdp.constant_value, params={"value": -1.0, "size": 1})
         right_tcp_cup_distance = ObsTerm(
             func=mdp.tcp_to_cup_distance,
             params={"tcp_body_name": "openarm_right_hand", "target_cfg": SceneEntityCfg("cup2")},
         )
-
-        actions = ObsTerm(func=mdp.last_action)
+        right_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
+        right_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -292,6 +301,64 @@ class RewardsCfg:
         weight=8.0,
     )
 
+    # Bimanual reach: min(reach_L, reach_R)
+    bimanual_reach_min = RewTerm(
+        func=mdp.bimanual_reach_min_reward,
+        params={
+            "std": 0.15,
+            "left_eef_link_name": "openarm_left_hand",
+            "right_eef_link_name": "openarm_right_hand",
+            "left_object_cfg": SceneEntityCfg("cup"),
+            "right_object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
+            "left_phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "right_phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=6.0,
+    )
+
+    # Bimanual phase lag penalty: |phase_L - phase_R|
+    bimanual_phase_lag = RewTerm(
+        func=mdp.bimanual_phase_lag_penalty,
+        params={
+            "left_eef_link_name": "openarm_left_hand",
+            "right_eef_link_name": "openarm_right_hand",
+            "left_object_cfg": SceneEntityCfg("cup"),
+            "right_object_cfg": SceneEntityCfg("cup2"),
+            "left_phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "right_phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=-1.0,
+    )
+
     # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
     left_object_displacement_penalty = RewTerm(
         func=mdp.phase_object_root_displacement_penalty,
@@ -408,6 +475,62 @@ class RewardsCfg:
             },
         },
         weight=5.0,
+    )
+
+    # Bimanual grasp AND / XOR (simultaneous success shaping)
+    bimanual_grasp_and = RewTerm(
+        func=mdp.bimanual_grasp_and_reward,
+        params={
+            "left_eef_link_name": "openarm_left_hand",
+            "right_eef_link_name": "openarm_right_hand",
+            "left_object_cfg": SceneEntityCfg("cup"),
+            "right_object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "left_phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "right_phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=8.0,
+    )
+    bimanual_grasp_xor = RewTerm(
+        func=mdp.bimanual_grasp_xor_penalty,
+        params={
+            "left_eef_link_name": "openarm_left_hand",
+            "right_eef_link_name": "openarm_right_hand",
+            "left_object_cfg": SceneEntityCfg("cup"),
+            "right_object_cfg": SceneEntityCfg("cup2"),
+            "phase_weights": [0.0, 1.0, 1.0, 1.0],
+            "left_phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "right_phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=-4.0,
     )
     # Phase 2-3: grasp 이후 그리퍼 닫힘 유지 보상
     left_gripper_hold = RewTerm(
@@ -683,6 +806,10 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_target_vis_interval: int = 10
     debug_reach_reward: bool = True
     debug_reach_reward_interval: int = 200
+    debug_obs_split: bool = True
+    debug_reward_mapping: bool = True
+    actor_obs_split_index: int = 40
+    critic_obs_split_index: int = 40
 
     # reach 보상 스케일 파라미터 (로그/해석용)
     grasp2g_reach_std_xy: float = 0.15

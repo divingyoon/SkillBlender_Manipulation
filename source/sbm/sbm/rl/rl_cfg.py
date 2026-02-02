@@ -47,6 +47,10 @@ class SbmDualHeadActorCriticCfg(RslRlPpoActorCriticCfg):
 
     class_name: str = "ActorCriticDualHead"
     dof_split_index: int | None = None
+    actor_obs_split_index: int | None = None
+    critic_obs_split_index: int | None = None
+    separate_actor_encoders: bool = False
+    separate_critic_encoders: bool = False
 
     # [방법3] 좌/우 독립적 noise std 사용 여부
     # True: 좌/우 팔이 독립적으로 탐험 (한쪽 성공이 다른쪽에 영향 안줌)

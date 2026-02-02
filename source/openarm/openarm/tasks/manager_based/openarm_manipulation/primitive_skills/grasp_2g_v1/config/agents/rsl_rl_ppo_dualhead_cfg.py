@@ -34,7 +34,11 @@ class GraspDualHeadPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         actor_hidden_dims=[512, 256, 128],
         critic_hidden_dims=[512, 256, 128],
         activation="elu",
-        dof_split_index=9,
+        dof_split_index=8,
+        actor_obs_split_index=40,
+        critic_obs_split_index=40,
+        separate_actor_encoders=True,
+        separate_critic_encoders=True,
     )
     algorithm = RslRlPpoAlgorithmCfg(
         value_loss_coef=2.0,

@@ -26,6 +26,7 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": f"{agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+        "skrl_dual_cfg_entry_point": f"{agents.__name__}:skrl_ppo_dualhead_cfg.yaml",
         "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
     },
 )
@@ -40,6 +41,7 @@ gym.register(
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
         "rsl_rl_hier_cfg_entry_point": f"{agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+        "skrl_dual_cfg_entry_point": f"{agents.__name__}:skrl_ppo_dualhead_cfg.yaml",
         "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
     },
 )

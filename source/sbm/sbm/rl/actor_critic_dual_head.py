@@ -48,6 +48,59 @@ class _DualHeadActor(nn.Module):
         return torch.cat((left, right), dim=-1)
 
 
+class _DualEncoderActor(nn.Module):
+    """Separate encoders with per-side heads (optional split of inputs)."""
+
+    def __init__(
+        self,
+        input_dim: int,
+        hidden_dims: list[int],
+        left_dim: int,
+        right_dim: int,
+        activation: str,
+        split_index: int | None = None,
+    ) -> None:
+        super().__init__()
+        act = resolve_nn_activation(activation)
+        self._input_dim = int(input_dim)
+        self._split_index = split_index
+
+        left_in = self._input_dim
+        right_in = self._input_dim
+        if split_index is not None and 0 < split_index < self._input_dim:
+            left_in = int(split_index)
+            right_in = int(self._input_dim - split_index)
+
+        def _build_encoder(in_dim: int) -> nn.Sequential:
+            layers: list[nn.Module] = []
+            prev = in_dim
+            for dim in hidden_dims:
+                layers.append(nn.Linear(prev, dim))
+                layers.append(act)
+                prev = dim
+            return nn.Sequential(*layers)
+
+        self.encoder_left = _build_encoder(left_in)
+        self.encoder_right = _build_encoder(right_in)
+        last_dim = hidden_dims[-1] if hidden_dims else left_in
+        self.head_left = nn.Linear(last_dim, left_dim)
+        self.head_right = nn.Linear(last_dim, right_dim)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self._split_index is None or not (0 < self._split_index < self._input_dim):
+            left_in = x
+            right_in = x
+        else:
+            left_in = x[:, : self._split_index]
+            right_in = x[:, self._split_index :]
+
+        left_feat = self.encoder_left(left_in)
+        right_feat = self.encoder_right(right_in)
+        left = self.head_left(left_feat)
+        right = self.head_right(right_feat)
+        return torch.cat((left, right), dim=-1)
+
+
 class ActorCriticDualHead(nn.Module):
     """Low-level PPO actor-critic with shared encoder and dual action heads.
 
@@ -72,6 +125,10 @@ class ActorCriticDualHead(nn.Module):
         noise_std_type: str = "scalar",
         state_dependent_std: bool = False,
         dof_split_index: int | None = None,
+        actor_obs_split_index: int | None = None,
+        critic_obs_split_index: int | None = None,
+        separate_actor_encoders: bool = False,
+        separate_critic_encoders: bool = False,
         # [방법3] 좌/우 독립적 noise std 사용 여부
         separate_noise_std: bool = True,
         # [방법5] 좌/우 분리된 critic 사용 여부
@@ -98,6 +155,8 @@ class ActorCriticDualHead(nn.Module):
         for obs_group in obs_groups["critic"]:
             assert len(obs[obs_group].shape) == 2, "The ActorCritic module only supports 1D observations."
             num_critic_obs += obs[obs_group].shape[-1]
+        self._actor_obs_split_index = actor_obs_split_index
+        self._critic_obs_split_index = critic_obs_split_index
 
         # Determine action split
         split = num_actions // 2 if dof_split_index is None else int(dof_split_index)
@@ -107,7 +166,17 @@ class ActorCriticDualHead(nn.Module):
 
         # Actor (shared encoder + dual heads)
         actor_hidden = list(actor_hidden_dims) if isinstance(actor_hidden_dims, (list, tuple)) else [actor_hidden_dims]
-        self.actor = _DualHeadActor(num_actor_obs, actor_hidden, self._left_actions, self._right_actions, activation)
+        if separate_actor_encoders:
+            self.actor = _DualEncoderActor(
+                num_actor_obs,
+                actor_hidden,
+                self._left_actions,
+                self._right_actions,
+                activation,
+                split_index=self._actor_obs_split_index,
+            )
+        else:
+            self.actor = _DualHeadActor(num_actor_obs, actor_hidden, self._left_actions, self._right_actions, activation)
         print(f"Actor DualHead: {self.actor}")
 
         # Actor observation normalization
@@ -120,9 +189,16 @@ class ActorCriticDualHead(nn.Module):
         # [방법5] Dual Critic: 좌/우 분리된 critic으로 독립적 value 추정
         # 양손의 value 추정이 섞이는 것을 방지
         self.dual_critic = dual_critic
+        self._separate_critic_encoders = separate_critic_encoders
         if dual_critic:
-            self.critic_left = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
-            self.critic_right = MLP(num_critic_obs, 1, critic_hidden_dims, activation)
+            left_obs_dim = num_critic_obs
+            right_obs_dim = num_critic_obs
+            if self._separate_critic_encoders and self._critic_obs_split_index is not None:
+                if 0 < int(self._critic_obs_split_index) < int(num_critic_obs):
+                    left_obs_dim = int(self._critic_obs_split_index)
+                    right_obs_dim = int(num_critic_obs - int(self._critic_obs_split_index))
+            self.critic_left = MLP(left_obs_dim, 1, critic_hidden_dims, activation)
+            self.critic_right = MLP(right_obs_dim, 1, critic_hidden_dims, activation)
             print(f"Critic DualHead (Left): {self.critic_left}")
             print(f"Critic DualHead (Right): {self.critic_right}")
         else:
@@ -226,8 +302,18 @@ class ActorCriticDualHead(nn.Module):
 
         # [방법5] Dual Critic: 좌/우 critic의 평균값 반환
         if self.dual_critic:
-            value_left = self.critic_left(obs)
-            value_right = self.critic_right(obs)
+            if self._separate_critic_encoders and self._critic_obs_split_index is not None:
+                if 0 < int(self._critic_obs_split_index) < obs.shape[-1]:
+                    obs_left = obs[:, : int(self._critic_obs_split_index)]
+                    obs_right = obs[:, int(self._critic_obs_split_index) :]
+                else:
+                    obs_left = obs
+                    obs_right = obs
+            else:
+                obs_left = obs
+                obs_right = obs
+            value_left = self.critic_left(obs_left)
+            value_right = self.critic_right(obs_right)
             return (value_left + value_right) / 2.0
         else:
             return self.critic(obs)

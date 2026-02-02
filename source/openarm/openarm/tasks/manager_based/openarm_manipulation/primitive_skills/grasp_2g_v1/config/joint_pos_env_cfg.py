@@ -161,11 +161,17 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             scale=0.2,
             use_default_offset=True,
         )
-        self.actions.left_hand_action = mdp.JointPositionActionCfg(
+        self.actions.left_hand_action = mdp.BinaryJointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_left_finger_joint.*"],
-            scale=0.5,
-            use_default_offset=True,
+            open_command_expr={
+                "openarm_left_finger_joint1": 0.044,
+                "openarm_left_finger_joint2": 0.052,
+            },
+            close_command_expr={
+                "openarm_left_finger_joint1": 0.0,
+                "openarm_left_finger_joint2": 0.0,
+            },
         )
 
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
@@ -183,11 +189,17 @@ class OpenArmGrasp2gEnvCfg(Grasp2gEnvCfg):
             use_default_offset=True,
         )
 
-        self.actions.right_hand_action = mdp.JointPositionActionCfg(
+        self.actions.right_hand_action = mdp.BinaryJointPositionActionCfg(
             asset_name="robot",
             joint_names=["openarm_right_finger_joint.*"],
-            scale=0.5,
-            use_default_offset=True,
+            open_command_expr={
+                "openarm_right_finger_joint1": 0.044,
+                "openarm_right_finger_joint2": 0.052,
+            },
+            close_command_expr={
+                "openarm_right_finger_joint1": 0.0,
+                "openarm_right_finger_joint2": 0.0,
+            },
         )
 
         # override command generator body

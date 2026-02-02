@@ -35,6 +35,96 @@ def joint_vel_rel(env: ManagerBasedRLEnv) -> torch.Tensor:
     robot = env.scene["robot"]
     return robot.data.joint_vel
 
+
+def _joint_indices_by_names(env: ManagerBasedRLEnv, names: list[str]) -> list[int]:
+    cache = getattr(env, "_joint_indices_by_names", None)
+    if cache is None:
+        cache = {}
+        setattr(env, "_joint_indices_by_names", cache)
+    key = tuple(names)
+    if key in cache:
+        return cache[key]
+    robot = env.scene["robot"]
+    indices = [robot.data.joint_names.index(name) for name in names]
+    cache[key] = indices
+    return indices
+
+
+def left_joint_pos_rel(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Left joint positions relative to default values."""
+    robot = env.scene["robot"]
+    names = [
+        "openarm_left_joint1",
+        "openarm_left_joint2",
+        "openarm_left_joint3",
+        "openarm_left_joint4",
+        "openarm_left_joint5",
+        "openarm_left_joint6",
+        "openarm_left_joint7",
+        "openarm_left_finger_joint1",
+        "openarm_left_finger_joint2",
+    ]
+    idx = _joint_indices_by_names(env, names)
+    return robot.data.joint_pos[:, idx] - robot.data.default_joint_pos[:, idx]
+
+
+def right_joint_pos_rel(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Right joint positions relative to default values."""
+    robot = env.scene["robot"]
+    names = [
+        "openarm_right_joint1",
+        "openarm_right_joint2",
+        "openarm_right_joint3",
+        "openarm_right_joint4",
+        "openarm_right_joint5",
+        "openarm_right_joint6",
+        "openarm_right_joint7",
+        "openarm_right_finger_joint1",
+        "openarm_right_finger_joint2",
+    ]
+    idx = _joint_indices_by_names(env, names)
+    return robot.data.joint_pos[:, idx] - robot.data.default_joint_pos[:, idx]
+
+
+def left_joint_vel_rel(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Left joint velocities relative to zero (scaled)."""
+    robot = env.scene["robot"]
+    names = [
+        "openarm_left_joint1",
+        "openarm_left_joint2",
+        "openarm_left_joint3",
+        "openarm_left_joint4",
+        "openarm_left_joint5",
+        "openarm_left_joint6",
+        "openarm_left_joint7",
+        "openarm_left_finger_joint1",
+        "openarm_left_finger_joint2",
+    ]
+    idx = _joint_indices_by_names(env, names)
+    return robot.data.joint_vel[:, idx]
+
+
+def right_joint_vel_rel(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Right joint velocities relative to zero (scaled)."""
+    robot = env.scene["robot"]
+    names = [
+        "openarm_right_joint1",
+        "openarm_right_joint2",
+        "openarm_right_joint3",
+        "openarm_right_joint4",
+        "openarm_right_joint5",
+        "openarm_right_joint6",
+        "openarm_right_joint7",
+        "openarm_right_finger_joint1",
+        "openarm_right_finger_joint2",
+    ]
+    idx = _joint_indices_by_names(env, names)
+    return robot.data.joint_vel[:, idx]
+
+def constant_value(env: ManagerBasedRLEnv, value: float, size: int = 1) -> torch.Tensor:
+    """Return a constant observation of given size."""
+    return torch.full((env.num_envs, size), float(value), device=env.device)
+
 def body_pose(env: ManagerBasedRLEnv, body_name: str) -> torch.Tensor:
     """Body pose (position + quaternion) in world frame relative to env origin."""
     robot = env.scene["robot"]
@@ -140,8 +230,6 @@ def object_obs(
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
-    right_eef_to_object = torch.zeros_like(right_eef_to_object)
-    right_eef_to_object[:, 0] = 1.0
 
     return torch.cat(
         (
@@ -175,8 +263,6 @@ def object2_obs(
 
     left_eef_to_object = object_pos - left_eef_pos
     right_eef_to_object = object_pos - right_eef_pos
-    left_eef_to_object = torch.zeros_like(left_eef_to_object)
-    left_eef_to_object[:, 0] = -1.0
 
     return torch.cat(
         (
@@ -189,4 +275,3 @@ def object2_obs(
         ),
         dim=1,
     )
-

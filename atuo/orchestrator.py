@@ -226,6 +226,8 @@ def main() -> int:
     parser.add_argument("--max_iterations", type=int, default=None, help="Override max_iterations")
     parser.add_argument("--resume_from", type=str, default=None, help="Override resume load_run")
     parser.add_argument("--resume_checkpoint", type=str, default=None, help="Override resume checkpoint")
+    parser.add_argument("--swap_lr", action="store_true", default=False, help="Enable left/right swap augmentation")
+    parser.add_argument("--swap_lr_prob", type=float, default=0.5, help="Swap probability per episode (default: 0.5)")
     args = parser.parse_args()
 
     cfg = load_config(args.config)
@@ -285,6 +287,15 @@ def main() -> int:
             base_args.append("--headless")
     if args.gui:
         base_args = [arg for arg in base_args if arg != "--headless"]
+    if args.swap_lr:
+        if "--swap_lr" not in base_args:
+            base_args.append("--swap_lr")
+        # swap_lr_prob 값 설정 (기존 값 있으면 교체)
+        if "--swap_lr_prob" in base_args:
+            idx = base_args.index("--swap_lr_prob")
+            base_args[idx + 1] = str(args.swap_lr_prob)
+        else:
+            base_args += ["--swap_lr_prob", str(args.swap_lr_prob)]
     train["base_args"] = base_args
 
     for run_idx in range(max_runs):

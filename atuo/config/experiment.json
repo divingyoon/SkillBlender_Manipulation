@@ -13,7 +13,7 @@
     "task": "grasp2g-v1",
     "agent": "rsl_rl_dual_cfg_entry_point",
     "train_script": "../../scripts/reinforcement_learning/rsl_rl/train.py",
-    "base_args": ["--swap_lr", "--swap_lr_prob", "0.5", "--headless"],
+    "base_args": ["--headless"],
     "num_envs": null,
     "seed": 42,
     "max_iterations": null

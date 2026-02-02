@@ -318,13 +318,32 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     if args_cli.use_log_cfg:
         env_cfg_path = os.path.join(log_dir, "params", "env.yaml")
         if os.path.exists(env_cfg_path):
-            update_class_from_dict(env_cfg, load_yaml(env_cfg_path))
+            def _load_yaml_with_slices(path: str) -> dict:
+                try:
+                    return load_yaml(path)
+                except Exception:
+                    import yaml
+
+                    class _SliceLoader(yaml.FullLoader):
+                        pass
+
+                    def _slice_constructor(loader, node):
+                        seq = loader.construct_sequence(node)
+                        return slice(*seq)
+
+                    _SliceLoader.add_constructor(
+                        "tag:yaml.org,2002:python/object/apply:builtins.slice", _slice_constructor
+                    )
+                    with open(path, "r", encoding="utf-8") as f:
+                        return yaml.load(f, Loader=_SliceLoader)
+
+            update_class_from_dict(env_cfg, _load_yaml_with_slices(env_cfg_path))
         else:
             print(f"[WARN] env config not found at: {env_cfg_path}")
 
         agent_cfg_path = os.path.join(log_dir, "params", "agent.yaml")
         if os.path.exists(agent_cfg_path):
-            update_class_from_dict(agent_cfg, load_yaml(agent_cfg_path))
+            update_class_from_dict(agent_cfg, _load_yaml_with_slices(agent_cfg_path))
         else:
             print(f"[WARN] agent config not found at: {agent_cfg_path}")
 

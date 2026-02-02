@@ -26,7 +26,7 @@ models:
     min_log_std: -20.0
     max_log_std: 2.0
     initial_log_std: 0.0
-    actor_hidden_dims: [512, 256, 128]
+    actor_hidden_dims: [256, 128, 64]
     activation: elu
     dof_split_index: 8
     actor_obs_split_index: 40
@@ -35,7 +35,7 @@ models:
   value:
     class: sbm.rl.skrl_models:DualHeadValueModel
     clip_actions: False
-    critic_hidden_dims: [512, 256, 128]
+    critic_hidden_dims: [256, 128, 64]
     activation: elu
     dual_critic: True
     critic_obs_split_index: 40

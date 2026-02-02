@@ -337,13 +337,31 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
                     with open(path, "r", encoding="utf-8") as f:
                         return yaml.load(f, Loader=_SliceLoader)
 
-            update_class_from_dict(env_cfg, _load_yaml_with_slices(env_cfg_path))
+            def _prune_none_type_overrides(obj, data: dict) -> dict:
+                pruned = {}
+                for k, v in data.items():
+                    if not (hasattr(obj, k) or (isinstance(obj, dict) and k in obj)):
+                        continue
+                    obj_mem = obj[k] if isinstance(obj, dict) else getattr(obj, k)
+                    if isinstance(v, dict) and obj_mem is not None:
+                        pruned[k] = _prune_none_type_overrides(obj_mem, v)
+                        continue
+                    if obj_mem is None and v is not None:
+                        continue
+                    pruned[k] = v
+                return pruned
+
+            env_cfg_data = _load_yaml_with_slices(env_cfg_path)
+            env_cfg_data = _prune_none_type_overrides(env_cfg, env_cfg_data)
+            update_class_from_dict(env_cfg, env_cfg_data)
         else:
             print(f"[WARN] env config not found at: {env_cfg_path}")
 
         agent_cfg_path = os.path.join(log_dir, "params", "agent.yaml")
         if os.path.exists(agent_cfg_path):
-            update_class_from_dict(agent_cfg, _load_yaml_with_slices(agent_cfg_path))
+            agent_cfg_data = _load_yaml_with_slices(agent_cfg_path)
+            agent_cfg_data = _prune_none_type_overrides(agent_cfg, agent_cfg_data)
+            update_class_from_dict(agent_cfg, agent_cfg_data)
         else:
             print(f"[WARN] agent config not found at: {agent_cfg_path}")
 

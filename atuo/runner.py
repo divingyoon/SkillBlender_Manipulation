@@ -2,12 +2,20 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
+
+# Patterns for progress lines to display on terminal
+_RSL_RL_ITER = re.compile(r"Learning iteration \d+/\d+")
+_RSL_RL_TIME = re.compile(r"Iteration time:\s*\S+")
+_RSL_RL_ELAPSED = re.compile(r"Time elapsed:\s*\S+")
+_RSL_RL_ETA = re.compile(r"ETA:\s*\S+")
+_SKRL_PROGRESS = re.compile(r"\d+%\|.*?it/s\]")
 
 
 @dataclass
@@ -87,14 +95,72 @@ def run_train(
         env.update({k: str(v) for k, v in extra_env.items()})
         cmd = ["env"] + [f"{k}={v}" for k, v in extra_env.items()] + cmd
 
+    # Accumulator for rsl_rl multi-line progress
+    rsl_parts = {"iter": "", "time": "", "elapsed": "", "eta": ""}
+
+    def _flush_rsl_progress():
+        """Print accumulated rsl_rl progress as one line."""
+        if rsl_parts["iter"]:
+            line = rsl_parts["iter"]
+            if rsl_parts["time"]:
+                line += ", " + rsl_parts["time"]
+            if rsl_parts["elapsed"]:
+                line += ", " + rsl_parts["elapsed"]
+            if rsl_parts["eta"]:
+                line += ", " + rsl_parts["eta"]
+            print(f"\r[train][out] {line}          ", end="", file=sys.stdout)
+            sys.stdout.flush()
+            rsl_parts["iter"] = ""
+            rsl_parts["time"] = ""
+            rsl_parts["elapsed"] = ""
+            rsl_parts["eta"] = ""
+
     def _tee_stream(stream, fh, prefix: str):
-        for line in iter(stream.readline, b""):
-            text = line.decode(errors="replace")
-            fh.write(text)
-            fh.flush()
-            if stream_logs:
-                print(prefix + text, end="", file=sys.stdout)
-                sys.stdout.flush()
+        buf = b""
+        while True:
+            chunk = stream.read(1)
+            if not chunk:
+                if buf:
+                    text = buf.decode(errors="replace")
+                    fh.write(text)
+                    fh.flush()
+                _flush_rsl_progress()
+                break
+            buf += chunk
+            # split on \n or \r (tqdm uses \r without \n)
+            if chunk in (b"\n", b"\r"):
+                text = buf.decode(errors="replace")
+                buf = b""
+                fh.write(text)
+                fh.flush()
+                if stream_logs:
+                    stripped = text.strip()
+                    if not stripped:
+                        continue
+                    # skrl tqdm progress
+                    if _SKRL_PROGRESS.search(stripped):
+                        print(f"\r{prefix}{stripped}          ", end="", file=sys.stdout)
+                        sys.stdout.flush()
+                        continue
+                    # rsl_rl: collect parts then print as one line
+                    m = _RSL_RL_ITER.search(stripped)
+                    if m:
+                        _flush_rsl_progress()
+                        rsl_parts["iter"] = m.group()
+                        continue
+                    m = _RSL_RL_TIME.search(stripped)
+                    if m:
+                        rsl_parts["time"] = m.group()
+                        continue
+                    m = _RSL_RL_ELAPSED.search(stripped)
+                    if m:
+                        rsl_parts["elapsed"] = m.group()
+                        continue
+                    m = _RSL_RL_ETA.search(stripped)
+                    if m:
+                        rsl_parts["eta"] = m.group()
+                        _flush_rsl_progress()
+                        continue
 
     with open(stdout_path, "w", encoding="utf-8") as stdout_fh, open(
         stderr_path, "w", encoding="utf-8"

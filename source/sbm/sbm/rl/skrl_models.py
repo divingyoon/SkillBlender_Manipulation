@@ -48,7 +48,7 @@ def _build_mlp(input_dim: int, hidden_dims: Sequence[int], activation: str) -> t
     return nn.Sequential(*layers), prev
 
 
-class DualHeadGaussianModel(Model, GaussianMixin):
+class DualHeadGaussianModel(GaussianMixin, Model):
     """Shared-encoder dual-head Gaussian policy for skrl PPO."""
 
     def __init__(
@@ -61,6 +61,7 @@ class DualHeadGaussianModel(Model, GaussianMixin):
         min_log_std: float = -20.0,
         max_log_std: float = 2.0,
         initial_log_std: float = 0.0,
+        reduction: str = "sum",
         actor_hidden_dims: Sequence[int] = (512, 256, 128),
         activation: str = "elu",
         dof_split_index: int | None = None,
@@ -70,7 +71,15 @@ class DualHeadGaussianModel(Model, GaussianMixin):
         **kwargs,
     ) -> None:
         Model.__init__(self, observation_space, action_space, device)
-        GaussianMixin.__init__(self, clip_actions, clip_log_std, min_log_std, max_log_std, initial_log_std)
+        GaussianMixin.__init__(
+            self,
+            clip_actions=clip_actions,
+            clip_log_std=clip_log_std,
+            min_log_std=min_log_std,
+            max_log_std=max_log_std,
+            reduction=reduction,
+            role="policy",
+        )
 
         if kwargs:
             _ = kwargs  # Unused extra kwargs from config; keep for forward-compat.
@@ -144,7 +153,7 @@ class DualHeadGaussianModel(Model, GaussianMixin):
         return mean, log_std, {}
 
 
-class DualHeadValueModel(Model, DeterministicMixin):
+class DualHeadValueModel(DeterministicMixin, Model):
     """Dual-critic value model for skrl PPO."""
 
     def __init__(
@@ -161,7 +170,7 @@ class DualHeadValueModel(Model, DeterministicMixin):
         **kwargs,
     ) -> None:
         Model.__init__(self, observation_space, action_space, device)
-        DeterministicMixin.__init__(self, clip_actions)
+        DeterministicMixin.__init__(self, clip_actions=clip_actions, role="value")
 
         if kwargs:
             _ = kwargs

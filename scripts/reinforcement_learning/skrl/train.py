@@ -102,9 +102,23 @@ if version.parse(skrl.__version__) < version.parse(SKRL_VERSION):
     exit()
 
 if args_cli.ml_framework.startswith("torch"):
-    from skrl.utils.runner.torch import Runner
+    from skrl.utils.runner.torch import Runner as _BaseRunner
 elif args_cli.ml_framework.startswith("jax"):
-    from skrl.utils.runner.jax import Runner
+    from skrl.utils.runner.jax import Runner as _BaseRunner
+
+
+class Runner(_BaseRunner):
+    """Runner with support for import-path model classes."""
+
+    def _component(self, name: str):
+        if isinstance(name, str) and (":" in name or "." in name):
+            module_path, class_name = (name.split(":", 1) if ":" in name else name.rsplit(".", 1))
+            try:
+                module = __import__(module_path, fromlist=[class_name])
+                return getattr(module, class_name)
+            except Exception:
+                pass
+        return super()._component(name)
 
 from isaaclab.envs import (
     DirectMARLEnv,

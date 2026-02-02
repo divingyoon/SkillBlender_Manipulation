@@ -109,8 +109,22 @@ def _format_prompt(
     suggested_overrides: dict,
 ) -> str:
     return (
-        "You are analyzing a grasp2g-v1 RL run. Output JSON only with keys: "
+        "You are analyzing a grasp2g-v1 bimanual RL run. Output JSON only with keys: "
         "summary, issues, overrides.\n\n"
+        "## Task Description\n"
+        "The robot has two arms (left/right) that must reach, grasp, lift, and track cups.\n"
+        "Phase gating controls reward activation: Phase 0=reach, 1=grasp, 2=lift, 3=hold/goal.\n\n"
+        "## Common Issues and Fixes\n"
+        "- no_learning / training_collapse: Increase reaching reward weights (more negative for distance error, "
+        "higher for fine reaching). Example: rewards.left_reaching_object.weight=-2.0\n"
+        "- low_lift_success: Increase grasping/lifting weights. Example: rewards.left_grasping_object.weight=8.0\n"
+        "- tracking_fail / tracking_dist_high: Increase goal tracking weights.\n\n"
+        "## Override Format Examples\n"
+        "- rewards.left_reaching_object.weight=-2.0  (reward term weight)\n"
+        "- rewards.left_reaching_object_fine.weight=8.0\n"
+        "- rewards.left_grasping_object.weight=8.0\n"
+        "- rewards.left_lifting_object.weight=8.0\n"
+        "- rewards.left_object_goal_tracking.weight=3.0\n\n"
         f"Issues (rule-based): {issues}\n"
         f"Observations: {observations}\n\n"
         f"Rule-based override suggestions: {json.dumps(suggested_overrides)}\n\n"
@@ -120,7 +134,10 @@ def _format_prompt(
         "Allowed override keys (prefix match before '='):\n"
         + json.dumps(allowed_overrides)
         + "\n\n"
-        "Return overrides as a list of 'key=value' strings. If no change, return an empty list."
+        "Based on the issues and metrics, suggest concrete reward weight overrides to fix "
+        "the problems. Return overrides as a list of 'key=value' strings. "
+        "If rule-based suggestions exist, include them unless you have a better alternative. "
+        "If no change needed, return an empty list."
     )
 
 

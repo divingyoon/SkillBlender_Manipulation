@@ -911,7 +911,12 @@ def _update_grasp2g_phase(
     close_threshold: float,
     hold_duration: float,
 ) -> torch.Tensor:
-    """Update phase based on reach -> grasp -> lift conditions."""
+    """Update phase based on reach -> grasp -> lift conditions.
+
+    N-step 연속 조건: env.cfg의 phase_stability_*_steps 파라미터로
+    각 phase 전환에 필요한 연속 충족 step 수를 설정 가능.
+    역전환(demotion): env.cfg.phase_demotion_enabled로 토글 (기본 비활성).
+    """
     # Phase 정의:
     # 0: reach (EEF가 물체 근처, 필요시 정렬 조건 포함)
     # 1: grasp (EEF가 충분히 가깝거나 그리퍼 닫힘 조건 만족)
@@ -930,6 +935,26 @@ def _update_grasp2g_phase(
     phase = getattr(env, phase_attr)
     if hasattr(env, "reset_buf"):
         phase = torch.where(env.reset_buf, torch.zeros_like(phase), phase)
+
+    # --- N-step 연속 카운터 초기화 ---
+    reach_count_attr = f"{phase_attr}_reach_count"
+    grasp_count_attr = f"{phase_attr}_grasp_count"
+    lift_count_attr = f"{phase_attr}_lift_count"
+
+    for attr in (reach_count_attr, grasp_count_attr, lift_count_attr):
+        if not hasattr(env, attr):
+            setattr(env, attr, torch.zeros(env.num_envs, device=env.device))
+
+    if hasattr(env, "reset_buf"):
+        for attr in (reach_count_attr, grasp_count_attr, lift_count_attr):
+            counter = getattr(env, attr)
+            setattr(env, attr, torch.where(env.reset_buf, torch.zeros_like(counter), counter))
+
+    # cfg에서 N-step 설정 읽기 (없으면 1 = 기존 동작과 동일)
+    cfg = getattr(env, "cfg", None)
+    n_reach = float(getattr(cfg, "phase_stability_reach_steps", 1))
+    n_grasp = float(getattr(cfg, "phase_stability_grasp_steps", 1))
+    n_lift = float(getattr(cfg, "phase_stability_lift_steps", 1))
 
     _maybe_visualize_grasp_targets(env)
     _maybe_log_reach_xy_z_debug(env)
@@ -953,9 +978,41 @@ def _update_grasp2g_phase(
     # Phase 2 -> 3: lift 게이트 (물체 높이 임계값 통과).
     lift_ok = obj.data.root_pos_w[:, 2] > lift_height
 
-    phase = torch.where((phase == 0) & reach_ok, torch.tensor(1, device=env.device), phase)
-    phase = torch.where((phase == 1) & grasp_ok, torch.tensor(2, device=env.device), phase)
-    phase = torch.where((phase == 2) & lift_ok, torch.tensor(3, device=env.device), phase)
+    # --- N-step 연속 카운터 업데이트 ---
+    # Reach 카운터: 조건 충족 시 +1, 미충족 시 0으로 리셋
+    reach_count = getattr(env, reach_count_attr)
+    reach_count = torch.where(reach_ok & (phase == 0), reach_count + 1, torch.zeros_like(reach_count))
+    setattr(env, reach_count_attr, reach_count)
+    stable_reach = reach_count >= n_reach
+
+    # Grasp 카운터
+    grasp_count = getattr(env, grasp_count_attr)
+    grasp_count = torch.where(grasp_ok & (phase == 1), grasp_count + 1, torch.zeros_like(grasp_count))
+    setattr(env, grasp_count_attr, grasp_count)
+    stable_grasp = grasp_count >= n_grasp
+
+    # Lift 카운터
+    lift_count = getattr(env, lift_count_attr)
+    lift_count = torch.where(lift_ok & (phase == 2), lift_count + 1, torch.zeros_like(lift_count))
+    setattr(env, lift_count_attr, lift_count)
+    stable_lift = lift_count >= n_lift
+
+    # Phase 전환 (N-step 연속 조건 적용)
+    phase = torch.where((phase == 0) & stable_reach, torch.tensor(1, device=env.device), phase)
+    phase = torch.where((phase == 1) & stable_grasp, torch.tensor(2, device=env.device), phase)
+    phase = torch.where((phase == 2) & stable_lift, torch.tensor(3, device=env.device), phase)
+
+    # --- 역전환 (demotion) --- 기본 비활성
+    demotion_enabled = getattr(cfg, "phase_demotion_enabled", False)
+    if demotion_enabled:
+        margin = getattr(cfg, "phase_demotion_margin", 1.5)
+        # Phase 1에서 reach 거리가 margin배 이상 벌어지면 Phase 0으로 복귀
+        demote_reach = (phase == 1) & (dist > reach_distance * margin)
+        # Phase 2에서 grasp 조건 미충족 시 Phase 1로 복귀
+        demote_grasp = (phase == 2) & (~grasp_ok)
+        phase = torch.where(demote_reach, torch.tensor(0, device=env.device), phase)
+        phase = torch.where(demote_grasp, torch.tensor(1, device=env.device), phase)
+
     setattr(env, phase_attr, phase)
     return phase
 

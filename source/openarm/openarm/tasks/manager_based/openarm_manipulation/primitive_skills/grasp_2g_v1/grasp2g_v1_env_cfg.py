@@ -212,6 +212,7 @@ class RewardsCfg:
     # 3: hold/goal (lift 이후 추적 단계)
 
     # Phase 0: coarse reaching (오차 기반 보상)
+    # Curriculum: 초기 -2.0 → 3000 step 후 -0.5로 복귀
     left_reaching_object = RewTerm(
         func=mdp.phase_object_ee_distance_error,
         params={
@@ -227,7 +228,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-0.5,
+        weight=-2.0,
     )
     right_reaching_object = RewTerm(
         func=mdp.phase_object_ee_distance_error,
@@ -244,15 +245,17 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-0.5,
+        weight=-2.0,
     )
 
     # Phase 0-1: fine reaching (XY/Z 분리)
+    # std 확대: 0.05→0.15(xy), 0.05→0.10(z) - EEF 초기거리 0.2~0.3m 커버
+    # Curriculum: 초기 8.0 → 3000 step 후 5.0으로 복귀
     left_reaching_object_fine = RewTerm(
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std_xy": 0.05,
-            "std_z": 0.05,
+            "std_xy": 0.15,
+            "std_z": 0.10,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
@@ -266,13 +269,13 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=8.0,
     )
     right_reaching_object_fine = RewTerm(
         func=mdp.phase_object_ee_distance_xyz_weighted,
         params={
-            "std_xy": 0.05,
-            "std_z": 0.05,
+            "std_xy": 0.15,
+            "std_z": 0.10,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
@@ -286,7 +289,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=5.0,
+        weight=8.0,
     )
 
     # Phase 0-1: grasp/lift 전에 물체 이동을 억제.
@@ -641,18 +644,29 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    # """Curriculum terms for the MDP."""
-    pass
+    """Curriculum: 초기에 reaching 강화, 이후 원래 값으로 복귀.
 
-    # action_rate = CurrTerm(
-    #     func=mdp.modify_reward_weight,
-    #     params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
-    # )
-
-    # joint_vel = CurrTerm(
-    #     func=mdp.modify_reward_weight,
-    #     params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
-    # )
+    동작 방식: modify_reward_weight는 num_steps 이후에 weight 값으로 변경.
+    RewardsCfg의 초기값이 강화된 값이고, curriculum이 target으로 복귀시킴.
+    - left/right_reaching_object: -2.0 → -0.5 (3000 step 후)
+    - left/right_reaching_object_fine: 8.0 → 5.0 (3000 step 후)
+    """
+    left_reaching_object = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "left_reaching_object", "weight": -0.5, "num_steps": 3000},
+    )
+    right_reaching_object = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "right_reaching_object", "weight": -0.5, "num_steps": 3000},
+    )
+    left_reaching_object_fine = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "left_reaching_object_fine", "weight": 5.0, "num_steps": 3000},
+    )
+    right_reaching_object_fine = CurrTerm(
+        func=mdp.modify_reward_weight,
+        params={"term_name": "right_reaching_object_fine", "weight": 5.0, "num_steps": 3000},
+    )
 
 
 @configclass
@@ -680,6 +694,14 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.07)
 
     enable_gripper_hold: bool = False
+
+    # Phase transition 안정성 설정 (N-step 연속 조건)
+    phase_stability_reach_steps: int = 10   # Phase 0→1: N step 연속 reach_distance 이내
+    phase_stability_grasp_steps: int = 5    # Phase 1→2: N step 연속 grasp 조건 충족
+    phase_stability_lift_steps: int = 3     # Phase 2→3: N step 연속 lift_height 이상
+    phase_demotion_enabled: bool = False    # 역전환 토글 (기본 비활성)
+    phase_demotion_margin: float = 1.5      # 역전환 거리 배수 (reach_distance * margin)
+
     # 디버그 토글 (로그/시각화 공통)
     debug_enabled: bool = False
 
@@ -691,7 +713,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     events: EventCfg = EventCfg()
 
     commands: CommandsCfg = CommandsCfg()
-    # curriculum: CurriculumCfg = CurriculumCfg()
+    curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
         self.decimation = 4

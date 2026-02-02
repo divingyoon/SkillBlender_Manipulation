@@ -413,7 +413,10 @@ def main() -> int:
         if not success:
             env_yaml = Path(log_dir) / "params" / "env.yaml"
             reward_names = _extract_reward_keys(env_yaml)
-            reward_override_keys = [f"rewards.{name}.weight" for name in reward_names]
+            reward_override_keys = []
+            for name in reward_names:
+                reward_override_keys.append(f"rewards.{name}.weight")
+                reward_override_keys.append(f"rewards.{name}.params.")
             analysis_result = analyze(
                 payload=payload,
                 thresholds=analysis_thresholds,

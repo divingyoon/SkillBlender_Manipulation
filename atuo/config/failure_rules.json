@@ -1,3 +1,30 @@
 {
-  "issue_to_overrides": {}
+  "issue_to_overrides": {
+    "no_learning": [
+      "rewards.left_reaching_object.weight=-2.0",
+      "rewards.right_reaching_object.weight=-2.0",
+      "rewards.left_reaching_object_fine.weight=10.0",
+      "rewards.right_reaching_object_fine.weight=10.0"
+    ],
+    "training_collapse": [
+      "rewards.left_reaching_object.weight=-1.0",
+      "rewards.right_reaching_object.weight=-1.0",
+      "rewards.left_reaching_object_fine.weight=8.0",
+      "rewards.right_reaching_object_fine.weight=8.0"
+    ],
+    "low_lift_success": [
+      "rewards.left_lifting_object.weight=8.0",
+      "rewards.right_lifting_object.weight=8.0",
+      "rewards.left_grasping_object.weight=8.0",
+      "rewards.right_grasping_object.weight=8.0"
+    ],
+    "tracking_fail": [
+      "rewards.left_object_goal_tracking.weight=3.0",
+      "rewards.right_object_goal_tracking.weight=3.0"
+    ],
+    "tracking_dist_high": [
+      "rewards.left_object_goal_tracking_fine_grained.weight=3.0",
+      "rewards.right_object_goal_tracking_fine_grained.weight=3.0"
+    ]
+  }
 }

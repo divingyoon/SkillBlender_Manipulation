@@ -372,8 +372,19 @@ def main() -> int:
             print(f"[orchestrator] Pre-analysis: log dir {resume_log_dir} not found, skipping.")
 
     for run_idx in range(max_runs):
-        run_id = time.strftime("%Y%m%d_%H%M%S") + f"_run{run_idx+1}"
-        run_dir = Path(__file__).resolve().parent / "runs" / run_id
+        agent_prefix = "skrl" if is_skrl else "rsl"
+        runs_root = Path(__file__).resolve().parent / "runs"
+        runs_root.mkdir(parents=True, exist_ok=True)
+        # Auto-increment: rsl_test1, rsl_test2, ... or skrl_test1, skrl_test2, ...
+        existing_nums = []
+        for d in runs_root.iterdir():
+            if d.is_dir() and d.name.startswith(f"{agent_prefix}_test"):
+                suffix = d.name[len(f"{agent_prefix}_test"):]
+                if suffix.isdigit():
+                    existing_nums.append(int(suffix))
+        next_num = (max(existing_nums) + 1) if existing_nums else 1
+        run_id = f"{agent_prefix}_test{next_num}"
+        run_dir = runs_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
 
         train_result = None

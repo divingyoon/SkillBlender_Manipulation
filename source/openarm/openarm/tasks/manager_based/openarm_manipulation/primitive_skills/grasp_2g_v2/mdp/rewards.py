@@ -2005,19 +2005,31 @@ def curriculum_stage_diagnostic(env: ManagerBasedRLEnv) -> torch.Tensor:
 
 def advance_curriculum_stage(
     env: ManagerBasedRLEnv,
+    env_ids: torch.Tensor,
     left_phase_threshold: float,
     right_phase_threshold: float,
     success_rate_threshold: float,
     min_steps_per_stage: int,
-) -> torch.Tensor:
+) -> float:
     """Curriculum term to advance stage based on phase progression.
+
+    Args:
+        env: The RL environment.
+        env_ids: Environment indices (required by Isaac Lab curriculum manager).
+        left_phase_threshold: Left arm phase threshold for Stage 0 -> 1.
+        right_phase_threshold: Right arm phase threshold for Stage 1 -> 2.
+        success_rate_threshold: Required success rate to advance.
+        min_steps_per_stage: Minimum steps before stage advancement.
+
+    Returns:
+        Current curriculum stage as float (scalar).
 
     Stage 0 -> 1: When left arm phase >= left_phase_threshold
     Stage 1 -> 2: When right arm phase >= right_phase_threshold
     """
     cfg = getattr(env, "cfg", None)
     if cfg is None:
-        return torch.zeros(env.num_envs, device=env.device)
+        return 0.0
 
     current_stage = getattr(cfg, "curriculum_stage", 0)
 
@@ -2030,7 +2042,7 @@ def advance_curriculum_stage(
     setattr(env, stage_step_attr, stage_steps + 1)
 
     if stage_steps < min_steps_per_stage:
-        return torch.zeros(env.num_envs, device=env.device)
+        return float(current_stage)
 
     # Get phase values
     left_phase = getattr(env, "grasp2g_phase_left", torch.zeros(env.num_envs, device=env.device))
@@ -2038,18 +2050,20 @@ def advance_curriculum_stage(
 
     if current_stage == 0:
         # Stage 0 -> 1: Check left arm success rate
-        left_success = (left_phase >= left_phase_threshold).float().mean()
+        left_success = (left_phase >= left_phase_threshold).float().mean().item()
         if left_success >= success_rate_threshold:
             cfg.curriculum_stage = 1
             setattr(env, stage_step_attr, 0)
             print(f"[CURRICULUM] Advanced to Stage 1 (RIGHT_ONLY) after {stage_steps} steps. Left success rate: {left_success:.2%}")
+            return 1.0
 
     elif current_stage == 1:
         # Stage 1 -> 2: Check right arm success rate
-        right_success = (right_phase >= right_phase_threshold).float().mean()
+        right_success = (right_phase >= right_phase_threshold).float().mean().item()
         if right_success >= success_rate_threshold:
             cfg.curriculum_stage = 2
             setattr(env, stage_step_attr, 0)
             print(f"[CURRICULUM] Advanced to Stage 2 (BIMANUAL) after {stage_steps} steps. Right success rate: {right_success:.2%}")
+            return 2.0
 
-    return torch.zeros(env.num_envs, device=env.device)
+    return float(current_stage)

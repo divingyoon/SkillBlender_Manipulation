@@ -55,9 +55,6 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
 
     def _setup_curriculum_masking(self) -> None:
         """Setup initial pose actions for curriculum stage masking."""
-        # Get initial joint positions for arm actions (hold pose when inactive)
-        robot = self.scene["robot"]
-
         # Left arm initial actions (zero = hold current offset position)
         if "left_arm_action" in self._action_slices:
             sl = self._action_slices["left_arm_action"]
@@ -70,36 +67,19 @@ class Grasp2gHoldEnv(ManagerBasedRLEnv):
             dim = sl.stop - sl.start
             self._right_arm_hold = torch.zeros(self.num_envs, dim, device=self.device)
 
-        # Left hand open position
+        # Left hand open position (BinaryJointPositionAction uses 0=open, 1=close)
         if "left_hand_action" in self._action_slices:
-            self._left_hand_open = self._compute_open_raw(self._left_hand_term)
+            sl = self._action_slices["left_hand_action"]
+            dim = sl.stop - sl.start
+            # For BinaryJointPositionAction, action=0 means open
+            self._left_hand_open = torch.zeros(self.num_envs, dim, device=self.device)
 
         # Right hand open position
         if "right_hand_action" in self._action_slices:
-            self._right_hand_open = self._compute_open_raw(self._right_hand_term)
-
-    def _compute_open_raw(self, term) -> torch.Tensor:
-        """Compute raw action for open gripper position."""
-        if hasattr(term, "_open_command"):
-            return term._open_command.unsqueeze(0).expand(self.num_envs, -1)
-
-        joint_ids = term._joint_ids
-        joint_limits = term._asset.data.joint_pos_limits
-        # Open position is typically the max limit
-        target = joint_limits[:, joint_ids, 1]
-
-        if isinstance(term._offset, torch.Tensor):
-            offset = term._offset
-        else:
-            offset = torch.full_like(target, float(term._offset))
-
-        if isinstance(term._scale, torch.Tensor):
-            scale = term._scale
-        else:
-            scale = torch.full_like(target, float(term._scale))
-
-        scale = torch.where(scale == 0, torch.ones_like(scale), scale)
-        return (target - offset) / scale
+            sl = self._action_slices["right_hand_action"]
+            dim = sl.stop - sl.start
+            # For BinaryJointPositionAction, action=0 means open
+            self._right_hand_open = torch.zeros(self.num_envs, dim, device=self.device)
 
     def _get_curriculum_stage(self) -> int:
         """Get current curriculum stage from config."""

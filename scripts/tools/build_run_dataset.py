@@ -176,6 +176,28 @@ def main() -> int:
     args = ap.parse_args()
 
     log_dir = os.path.abspath(args.log_dir)
+
+    # Auto-detect true log directory if event files are in a subdirectory
+    if not _find_event_files(log_dir):
+        print(f"[INFO] No event files found in {log_dir}. Checking subdirectories...")
+        possible_dirs = []
+        for item in os.listdir(log_dir):
+            sub_dir = os.path.join(log_dir, item)
+            if os.path.isdir(sub_dir) and _find_event_files(sub_dir):
+                possible_dirs.append(sub_dir)
+
+        if len(possible_dirs) == 1:
+            new_log_dir = possible_dirs[0]
+            print(f"[INFO] Found a single log directory: {new_log_dir}. Using it.")
+            log_dir = new_log_dir
+        elif len(possible_dirs) > 1:
+            print("[ERROR] Found multiple possible log directories. Please specify one explicitly:")
+            for d in sorted(possible_dirs):
+                print(f"  - {d}")
+            return 1  # Exit with error
+        else:
+            print("[WARN] Could not find any subdirectory with event files.")
+
     out_dir = os.path.abspath(args.out_dir) if args.out_dir else os.path.join(log_dir, "analysis")
     os.makedirs(out_dir, exist_ok=True)
 

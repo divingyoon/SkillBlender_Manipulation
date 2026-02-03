@@ -538,6 +538,31 @@ def _filter_overrides(overrides: list[str], allowed_overrides: list[str]) -> lis
     return filtered
 
 
+def _normalize_override_types(overrides: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for item in overrides:
+        if "=" not in item:
+            normalized.append(item)
+            continue
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key.endswith(".weight"):
+            # Force float literal for weight overrides to satisfy configclass typing.
+            try:
+                num = float(value)
+            except Exception:
+                normalized.append(item)
+                continue
+            if "." not in value and "e" not in value.lower():
+                normalized.append(f"{key}={num:.1f}")
+            else:
+                normalized.append(f"{key}={num}")
+        else:
+            normalized.append(item)
+    return normalized
+
+
 def analyze(
     payload: dict,
     thresholds: dict,
@@ -559,6 +584,7 @@ def analyze(
     for issue in issues:
         rule_overrides.extend(issue_to_overrides.get(issue, []))
     rule_overrides = _filter_overrides(rule_overrides, allowed_overrides)
+    rule_overrides = _normalize_override_types(rule_overrides)
 
     if llm_cfg.get("enabled", False):
         prompt = _format_prompt(payload, issues, observations, allowed_overrides)
@@ -583,6 +609,7 @@ def analyze(
         raw_overrides = parsed.get("overrides", [])
         llm_overrides = [str(x) for x in raw_overrides] if isinstance(raw_overrides, list) else []
         filtered_llm = _filter_overrides(llm_overrides, allowed_overrides)
+        filtered_llm = _normalize_override_types(filtered_llm)
 
         # LLM priority + rule-based fallback
         if len(filtered_llm) > 0:

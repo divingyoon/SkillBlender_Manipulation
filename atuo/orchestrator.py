@@ -10,7 +10,7 @@ from pathlib import Path
 import subprocess
 import threading
 
-from analyzer import analyze, rule_based_issues
+from analyzer import analyze, rule_based_issues, load_learned_rules, merge_rules
 from metrics import summarize_train_metrics, write_metrics_json
 from report import write_report_md
 from runner import run_train
@@ -349,6 +349,12 @@ def main() -> int:
             analysis_rules = json.loads(Path(analysis_rules_path).read_text(encoding="utf-8"))
         except Exception:
             analysis_rules = {}
+
+    # Load and merge learned_rules.json
+    learned_rules = load_learned_rules(config_dir)
+    if learned_rules.get("issue_to_overrides"):
+        analysis_rules = merge_rules(analysis_rules, learned_rules)
+        print(f"[orchestrator] Merged {len(learned_rules['issue_to_overrides'])} learned rules")
     llm_cfg = cfg.get("llm", {})
     override_policy = cfg.get("override_policy", {})
     policy = cfg.get("run_policy", {})
@@ -407,6 +413,7 @@ def main() -> int:
                 llm_cfg=llm_cfg,
                 allowed_overrides=reward_override_keys or override_policy.get("allowed_overrides", []),
                 rules=analysis_rules,
+                config_dir=config_dir,
             )
 
             if pre_result.applied_overrides:
@@ -607,6 +614,7 @@ def main() -> int:
                 llm_cfg=llm_cfg,
                 allowed_overrides=reward_override_keys or override_policy.get("allowed_overrides", []),
                 rules=analysis_rules,
+                config_dir=config_dir,
             )
             applied_overrides = analysis_result.applied_overrides
             pending_overrides = list(applied_overrides)

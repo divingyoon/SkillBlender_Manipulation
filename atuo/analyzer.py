@@ -15,6 +15,7 @@ class AnalysisResult:
     llm_summary: str | None
     llm_overrides: list[str]
     applied_overrides: list[str]
+    new_rules: dict[str, list[str]] | None = None  # LLM이 제안한 새로운 규칙
 
 
 def _mean_pair(a: float | None, b: float | None) -> float:
@@ -38,6 +39,52 @@ def _get_scalar(scalars: dict, key: str, field: str = "mean_last_100") -> float 
     if isinstance(entry, dict):
         return _safe_float(entry.get(field))
     return _safe_float(entry)
+
+
+def load_learned_rules(config_dir: Path) -> dict:
+    """learned_rules.json 로드. 없으면 빈 dict 반환."""
+    learned_path = config_dir / "learned_rules.json"
+    if learned_path.is_file():
+        try:
+            return json.loads(learned_path.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"issue_to_overrides": {}}
+
+
+def save_learned_rules(config_dir: Path, new_rules: dict[str, list[str]]) -> None:
+    """새로운 규칙을 learned_rules.json에 추가."""
+    learned_path = config_dir / "learned_rules.json"
+    existing = load_learned_rules(config_dir)
+
+    for issue_name, overrides in new_rules.items():
+        if issue_name and overrides:
+            # 기존 규칙이 있으면 병합, 없으면 새로 추가
+            if issue_name in existing["issue_to_overrides"]:
+                # 중복 제거하며 병합
+                existing_set = set(existing["issue_to_overrides"][issue_name])
+                for ov in overrides:
+                    existing_set.add(ov)
+                existing["issue_to_overrides"][issue_name] = list(existing_set)
+            else:
+                existing["issue_to_overrides"][issue_name] = overrides
+
+    learned_path.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    print(f"[analyzer] Saved new rules to {learned_path}")
+
+
+def merge_rules(base_rules: dict, learned_rules: dict) -> dict:
+    """failure_rules.json과 learned_rules.json을 병합."""
+    merged = {"issue_to_overrides": dict(base_rules.get("issue_to_overrides", {}))}
+
+    for issue_name, overrides in learned_rules.get("issue_to_overrides", {}).items():
+        if issue_name in merged["issue_to_overrides"]:
+            # learned rules가 우선 (더 최신)
+            merged["issue_to_overrides"][issue_name] = overrides
+        else:
+            merged["issue_to_overrides"][issue_name] = overrides
+
+    return merged
 
 
 def rule_based_issues(payload: dict, thresholds: dict) -> tuple[list[str], list[str]]:
@@ -136,6 +183,30 @@ def _diagnose_per_reward(scalars: dict, issues: list[str], observations: list[st
     if hand_inactive:
         issues.append("hand_inactive")
 
+    # 1.5 Gripper premature close: Phase 0에서 그리퍼가 너무 많이 닫혀있음
+    left_phase = _get_scalar(scalars, "reward_left_grasp2g_phase")
+    right_phase = _get_scalar(scalars, "reward_right_grasp2g_phase")
+    hand_premature_threshold = float(thresholds.get("hand_closure_premature_max", 0.5))
+    phase_0_threshold = float(thresholds.get("phase_0_stuck_threshold", 0.1))
+
+    gripper_premature = False
+    if left_phase is not None and left_phase < phase_0_threshold:
+        if left_hand_closure is not None and left_hand_closure > hand_premature_threshold:
+            gripper_premature = True
+            observations.append(
+                f"left_hand_closure={left_hand_closure:.4f} > {hand_premature_threshold} while phase={left_phase:.3f} "
+                "(gripper closing prematurely before reaching object)"
+            )
+    if right_phase is not None and right_phase < phase_0_threshold:
+        if right_hand_closure is not None and right_hand_closure > hand_premature_threshold:
+            gripper_premature = True
+            observations.append(
+                f"right_hand_closure={right_hand_closure:.4f} > {hand_premature_threshold} while phase={right_phase:.3f} "
+                "(gripper closing prematurely before reaching object)"
+            )
+    if gripper_premature:
+        issues.append("gripper_premature_close")
+
     # 2. Reaching plateau: EEF 거리가 높은 상태로 고착
     left_dist = _get_scalar(scalars, "reward_left_eef_dist_diag")
     right_dist = _get_scalar(scalars, "reward_right_eef_dist_diag")
@@ -151,9 +222,23 @@ def _diagnose_per_reward(scalars: dict, issues: list[str], observations: list[st
     if reaching_stuck:
         issues.append("reaching_stuck")
 
+    # 2.5 EEF stalled: 손이 움직이지 않음 (eef_dist_delta ≈ 0)
+    left_delta = _get_scalar(scalars, "reward_left_eef_dist_delta_diag")
+    right_delta = _get_scalar(scalars, "reward_right_eef_dist_delta_diag")
+    eef_delta_min = float(thresholds.get("eef_dist_delta_min", 0.0001))
+
+    eef_stalled = False
+    if left_delta is not None and abs(left_delta) < eef_delta_min and reaching_stuck:
+        eef_stalled = True
+        observations.append(f"left_eef_dist_delta={left_delta:.6f} ≈ 0 (arm stalled, not approaching)")
+    if right_delta is not None and abs(right_delta) < eef_delta_min and reaching_stuck:
+        eef_stalled = True
+        observations.append(f"right_eef_dist_delta={right_delta:.6f} ≈ 0 (arm stalled, not approaching)")
+    if eef_stalled:
+        if "eef_stalled" not in issues:
+            issues.append("eef_stalled")
+
     # 3. Phase stuck: phase 값이 낮은 상태로 고착 (대부분 phase 0)
-    left_phase = _get_scalar(scalars, "reward_left_grasp2g_phase")
-    right_phase = _get_scalar(scalars, "reward_right_grasp2g_phase")
     phase_stuck_threshold = float(thresholds.get("phase_stuck_max", 0.5))
 
     phase_stuck = False
@@ -165,6 +250,17 @@ def _diagnose_per_reward(scalars: dict, issues: list[str], observations: list[st
         observations.append(f"right_phase={right_phase:.3f} < {phase_stuck_threshold} (stuck in early phase)")
     if phase_stuck:
         issues.append("phase_stuck")
+
+    # 3.5 Bimanual phase difference: 양손 페이즈 차이가 큼
+    bimanual_diff_max = float(thresholds.get("bimanual_phase_diff_max", 0.3))
+    if left_phase is not None and right_phase is not None:
+        phase_diff = abs(left_phase - right_phase)
+        if phase_diff > bimanual_diff_max:
+            issues.append("bimanual_phase_desync")
+            observations.append(
+                f"phase_diff={phase_diff:.3f} > {bimanual_diff_max} "
+                f"(L={left_phase:.3f}, R={right_phase:.3f}, arms out of sync)"
+            )
 
     # 4. Reward conflict: displacement penalty가 reaching을 상쇄
     left_displace = _get_scalar(scalars, "reward_left_object_displacement_penalty")
@@ -281,11 +377,67 @@ def _format_prompt(
 
     observations_block = "\n".join(f"- {o}" for o in observations) if observations else "(none)"
 
+    # ── METRIC INTERPRETATION GUIDE (새로 추가) ──
+    metric_guide = """
+## Metric Interpretation Guide (CRITICAL - Read Before Analysis)
+
+### Hand/Gripper Metrics
+- **hand_closure**: Scale 0.0 to 1.0
+  - 0.0 = gripper fully OPEN
+  - 1.0 = gripper fully CLOSED
+  - PROBLEM: If hand_closure > 0.5 while phase < 0.5, gripper is closing PREMATURELY before reaching object
+  - GOOD: hand_closure should be LOW (< 0.3) during phase 0 (reaching), then increase during phase 1 (grasping)
+
+### Distance Metrics
+- **eef_dist**: Distance from end-effector to object (meters)
+  - Lower is better. ~0.12m means still far from object.
+  - Target: < 0.05m for successful grasp approach
+
+- **eef_dist_delta**: Change in distance per step
+  - NEGATIVE = approaching object (GOOD)
+  - ZERO = stalled, not moving (BAD)
+  - POSITIVE = retreating from object (BAD)
+
+- **eef_dist_xy**: Horizontal distance component
+- **eef_dist_z**: Vertical distance component
+
+### Phase Metrics
+- **phase**: Current task phase (0.0 to 3.0)
+  - 0.x = Phase 0 (reaching) - arm approaching object
+  - 1.x = Phase 1 (grasping) - gripper closing on object
+  - 2.x = Phase 2 (lifting) - lifting object
+  - 3.x = Phase 3 (holding/tracking) - maintaining position
+  - PROBLEM: If phase < 0.5 throughout training, stuck in reaching phase
+
+### Object Metrics
+- **object_height**: Height of object above table
+  - Starts at ~0 (on table)
+  - Should increase to > 0.1 after successful lift
+
+- **object_displacement**: How much object moved from initial position
+  - High during phase 0 = arm pushing object away before grasping (BAD)
+
+### Common Failure Patterns
+1. **Gripper Premature Close**: hand_closure > 0.5 while phase < 0.1
+   - Cause: Policy learned to close gripper before reaching
+   - Fix: Add penalty for closing during phase 0, or widen grasp band params
+
+2. **Arm Stalled**: eef_dist_delta ≈ 0 while eef_dist > 0.1
+   - Cause: Policy stuck in local minimum, penalties too strong
+   - Fix: Reduce reaching penalties, increase fine reaching reward
+
+3. **Phase Stuck**: phase never increases beyond 0.1-0.2
+   - Cause: Phase transition conditions too strict, or not reaching close enough
+   - Fix: Relax phase_stability_*_steps, widen reach_distance threshold
+"""
+
     return (
         "You are analyzing a grasp2g-v1 bimanual RL training run.\n"
-        "Output JSON with keys: analysis, overrides.\n"
+        "Output JSON with keys: analysis, overrides, new_rule (optional).\n"
         "The 'analysis' field should contain your step-by-step reasoning as a string.\n"
-        "The 'overrides' field should be a list of 'key=value' strings.\n\n"
+        "The 'overrides' field should be a list of 'key=value' strings.\n"
+        "The 'new_rule' field (optional) should be an object with 'issue_name' and 'overrides' if you discover a new failure pattern.\n\n"
+        f"{metric_guide}\n\n"
         "## Task Description\n"
         "The robot has two arms (left/right) that must reach, grasp, lift, and track cups.\n"
         "Phase gating controls reward activation: Phase 0=reach, 1=grasp, 2=lift, 3=hold/goal.\n"
@@ -299,49 +451,38 @@ def _format_prompt(
         "- bimanual_reach_min: min(reach_L, reach_R)\n"
         "- bimanual_phase_lag: |phase_L - phase_R| penalty\n"
         "- bimanual_grasp_and: both hands grasp simultaneously\n\n"
+        "## Phase Transition Parameters (can be tuned)\n"
+        "- env.phase_stability_reach_steps: N steps to stay within reach_distance to advance (default: 10)\n"
+        "- env.phase_stability_grasp_steps: N steps for grasp condition (default: 5)\n"
+        "- env.phase_stability_lift_steps: N steps above lift_height (default: 3)\n"
+        "- env.episode_length_s: Episode duration in seconds (default: 8.0)\n\n"
         "## Analysis Steps (follow these in order)\n\n"
-        "Step 1: Reward Balance Analysis\n"
+        "Step 1: Metric Interpretation\n"
+        "- Look at hand_closure values: if > 0.5 while phase < 0.1, gripper is closing prematurely\n"
+        "- Look at eef_dist_delta: if ≈ 0 while eef_dist > 0.1, arm is stalled\n"
+        "- Look at phase values: if always < 0.5, stuck in early phase\n\n"
+        "Step 2: Reward Balance Analysis\n"
         "- List the top 5 positive and negative reward terms by magnitude\n"
         "- For each negative reward, check if it cancels a positive reward > 50%\n"
         "- If cancellation exists, identify which phase_weights cause the conflict\n\n"
-        "Step 2: Phase Progression Analysis\n"
-        "- Check if agents progress beyond phase 0\n"
-        "- If stuck in phase 0: is reaching reward gradient sufficient? Is a penalty blocking approach?\n"
-        "- If stuck in phase 1: is grasping reward activated? Is the gripper closing?\n\n"
-        "Step 3: Physical & Action Analysis\n"
-        "- Check eef_dist_xy vs eef_dist_z: is the arm stuck horizontally or vertically?\n"
-        "- Check eef_dist_delta: negative means approaching, near 0 means stalled, positive means retreating\n"
-        "- Check object_height: if unchanged from ~table level, object never lifted\n"
-        "- Check object_displacement: if high in phase 0, arm is pushing object away before grasping\n"
-        "- Check hand_action_norm: if near 0, gripper is not actuating\n"
-        "- Check arm_action_norm: if very high but dist not decreasing, there may be a conflict\n\n"
+        "Step 3: Root Cause Identification\n"
+        "- Based on metrics and rewards, identify the PRIMARY failure cause\n"
+        "- Common causes: gripper_premature_close, arm_stalled, phase_transition_too_strict\n\n"
         "Step 4: Propose Overrides\n"
         "- For each identified issue, propose specific parameter changes\n"
         "- Calculate appropriate values based on the magnitude of conflicts in the data\n"
         "- Format: 'env.rewards.{side}_{name}.weight=VALUE' or 'env.rewards.{side}_{name}.params.KEY=VALUE'\n"
+        "- For phase parameters: 'env.phase_stability_reach_steps=VALUE'\n"
         "- Always apply symmetric changes to both left and right sides\n\n"
+        "Step 5: New Rule Proposal (if applicable)\n"
+        "- If you identify a failure pattern NOT in the detected issues, propose a new rule\n"
+        "- Format: {\"issue_name\": \"descriptive_name\", \"overrides\": [\"key=value\", ...]}\n\n"
         "## Override Format Examples\n"
         "- env.rewards.left_reaching_object.weight=-2.0\n"
-        "- env.rewards.left_object_displacement_penalty.weight=-2.0\n"
-        "- env.rewards.left_object_displacement_penalty.params.phase_weights=[0,1,0,0]\n"
-        "- env.rewards.left_object_displacement_penalty.params.scale=5.0\n\n"
-        "## Example Analysis\n\n"
-        "Given data:\n"
-        "  left_reaching_object_fine: mean=0.877\n"
-        "  left_object_displacement_penalty: mean=-0.843\n"
-        "  left_grasp2g_phase: mean=0.226\n"
-        "  left_hand_closure_diag: 0.0\n\n"
-        "Step 1: displacement_penalty (-0.843) cancels 96% of reaching_fine (0.877).\n"
-        "  Root cause: displacement_penalty.params.phase_weights=[1,1,0,0], active in phase 0.\n"
-        "Step 2: phase stuck at 0.226, agents barely reaching phase 1.\n"
-        "Step 3: hand_closure=0.0, gripper never actuates (can't reach phase 1).\n"
-        "Step 4: Overrides:\n"
-        "  env.rewards.left_object_displacement_penalty.params.phase_weights=[0,1,0,0]\n"
-        "  env.rewards.right_object_displacement_penalty.params.phase_weights=[0,1,0,0]\n"
-        "  env.rewards.left_object_displacement_penalty.weight=-2.0\n"
-        "  env.rewards.right_object_displacement_penalty.weight=-2.0\n"
-        "  env.rewards.left_object_displacement_penalty.params.scale=5.0\n"
-        "  env.rewards.right_object_displacement_penalty.params.scale=5.0\n\n"
+        "- env.rewards.left_grasping_object.params.close_min=0.2\n"
+        "- env.rewards.left_grasping_object.params.close_max=0.6\n"
+        "- env.phase_stability_reach_steps=5\n"
+        "- env.episode_length_s=12.0\n\n"
         "---\n\n"
         "## Raw Training Data\n\n"
         f"### Reward Terms (Episode Reward, mean_last_100)\n{reward_table}\n\n"
@@ -351,10 +492,11 @@ def _format_prompt(
         f"## Detected Issues (rule-based)\n{json.dumps(issues, indent=2)}\n\n"
         f"## Observations (rule-based)\n{observations_block}\n\n"
         f"## Allowed override keys (prefix match):\n{json.dumps(allowed_overrides)}\n\n"
-        "Now analyze the raw training data step-by-step following the 4 steps above. "
-        "Calculate appropriate override values based on the actual magnitude of conflicts. "
+        "Now analyze the raw training data step-by-step following the 5 steps above. "
+        "PAY SPECIAL ATTENTION to the Metric Interpretation Guide above. "
         "Do NOT simply copy the example values—derive values from this run's data. "
-        "Output JSON with keys: analysis (string), overrides (list of 'key=value' strings)."
+        "Output JSON with keys: analysis (string), overrides (list of 'key=value' strings), "
+        "new_rule (optional object with issue_name and overrides if you discover a new pattern)."
     )
 
 
@@ -402,6 +544,7 @@ def analyze(
     llm_cfg: dict,
     allowed_overrides: list[str],
     rules: dict,
+    config_dir: Path | None = None,
 ) -> AnalysisResult:
     issues, observations = rule_based_issues(payload, thresholds)
     issue_to_overrides = rules.get("issue_to_overrides", {})
@@ -409,6 +552,7 @@ def analyze(
     llm_summary = None
     llm_overrides: list[str] = []
     applied_overrides: list[str] = []
+    new_rules: dict[str, list[str]] | None = None
 
     # Collect rule-based overrides
     rule_overrides: list[str] = []
@@ -446,6 +590,20 @@ def analyze(
         else:
             applied_overrides = rule_overrides
 
+        # Handle new rule proposal from LLM
+        new_rule_data = parsed.get("new_rule", None)
+        if new_rule_data and isinstance(new_rule_data, dict):
+            issue_name = new_rule_data.get("issue_name", "")
+            rule_overrides_list = new_rule_data.get("overrides", [])
+            if issue_name and rule_overrides_list:
+                filtered_new_rule = _filter_overrides(rule_overrides_list, allowed_overrides)
+                if filtered_new_rule:
+                    new_rules = {issue_name: filtered_new_rule}
+                    # Save to learned_rules.json if config_dir provided
+                    if config_dir is not None:
+                        save_learned_rules(config_dir, new_rules)
+                    print(f"[analyzer] LLM proposed new rule: {issue_name} -> {filtered_new_rule}")
+
         # Consistency log: overlap between LLM and rule-based
         llm_keys = {item.split("=", 1)[0].strip() for item in filtered_llm if "=" in item}
         rule_keys = {item.split("=", 1)[0].strip() for item in rule_overrides if "=" in item}
@@ -466,4 +624,5 @@ def analyze(
         llm_summary=llm_summary,
         llm_overrides=llm_overrides,
         applied_overrides=applied_overrides,
+        new_rules=new_rules,
     )

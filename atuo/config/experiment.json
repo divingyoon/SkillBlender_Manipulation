@@ -44,9 +44,13 @@
     "goal_track_success_min": 0.4,
     "goal_dist_mean_max": 0.05,
     "hand_closure_min": 0.05,
+    "hand_closure_premature_max": 0.5,
     "reaching_stuck_dist": 0.12,
     "phase_stuck_max": 0.5,
-    "reward_conflict_ratio": 0.5
+    "reward_conflict_ratio": 0.5,
+    "eef_dist_delta_min": 0.0001,
+    "phase_0_stuck_threshold": 0.1,
+    "bimanual_phase_diff_max": 0.3
   },
   "analysis_rules_path": "failure_rules.json",
   "llm": {
@@ -59,7 +63,16 @@
   },
   "override_policy": {
     "allowed_overrides": [
-      "env.rewards."
+      "env.rewards.",
+      "env.terminations.",
+      "env.curriculum.",
+      "env.phase_stability_reach_steps",
+      "env.phase_stability_grasp_steps",
+      "env.phase_stability_lift_steps",
+      "env.phase_demotion_enabled",
+      "env.phase_demotion_margin",
+      "env.episode_length_s",
+      "env.grasp2g_target_offset"
     ]
   },
   "run_policy": {

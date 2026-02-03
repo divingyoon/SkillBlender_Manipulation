@@ -179,7 +179,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     env_cfg.seed = agent_cfg["seed"]
 
     # specify directory for logging experiments
-    task_name = args_cli.task.split("-")[0]
+    task_name = args_cli.task
     log_root_path = os.path.join("..", "SkillBlender_Manipulation", "log", "skrl", task_name)
     log_root_path = os.path.abspath(log_root_path)
     os.makedirs(log_root_path, exist_ok=True)

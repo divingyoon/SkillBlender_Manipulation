@@ -85,6 +85,56 @@ def _mean_pair(a: float, b: float) -> float:
     return (a + b) / 2.0
 
 
+def _load_yaml(path: Path) -> dict | None:
+    try:
+        import yaml  # type: ignore
+    except Exception:
+        return None
+    try:
+        return yaml.safe_load(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def _key_exists(cfg: object, key_path: str) -> bool:
+    cur = cfg
+    for part in key_path.split("."):
+        if isinstance(cur, dict) and part in cur:
+            cur = cur[part]
+        else:
+            return False
+    return True
+
+
+def _normalize_hydra_overrides(overrides: list[str], env_yaml_path: Path | None) -> list[str]:
+    if not overrides:
+        return overrides
+    if env_yaml_path is None or not env_yaml_path.is_file():
+        return overrides
+    env_cfg = _load_yaml(env_yaml_path)
+    if not isinstance(env_cfg, dict):
+        return overrides
+
+    normalized: list[str] = []
+    for item in overrides:
+        if "=" not in item:
+            normalized.append(item)
+            continue
+        if item.lstrip().startswith("+"):
+            normalized.append(item)
+            continue
+        key = item.split("=", 1)[0].strip()
+        if not key.startswith("env."):
+            normalized.append(item)
+            continue
+        key_path = key[len("env.") :]
+        if _key_exists(env_cfg, key_path):
+            normalized.append(item)
+        else:
+            normalized.append("+" + item)
+    return normalized
+
+
 def _extract_reward_keys(env_yaml_path: Path) -> list[str]:
     if not env_yaml_path.is_file():
         return []
@@ -404,9 +454,17 @@ def main() -> int:
             if chunk is not None:
                 target_iterations = chunk
 
-            if pending_overrides:
-                print(f"[orchestrator] hydra_overrides ({len(pending_overrides)}):")
-                for ov in pending_overrides:
+            env_yaml_path = None
+            if last_log_dir:
+                env_yaml_path = Path(last_log_dir) / "params" / "env.yaml"
+            elif resume_from:
+                task_prefix = train["task"].split("-")[0]
+                env_yaml_path = Path(project["log_root"]) / task_prefix / resume_from / "params" / "env.yaml"
+
+            hydra_overrides = _normalize_hydra_overrides(pending_overrides, env_yaml_path)
+            if hydra_overrides:
+                print(f"[orchestrator] hydra_overrides ({len(hydra_overrides)}):")
+                for ov in hydra_overrides:
                     print(f"  {ov}")
             else:
                 print("[orchestrator] hydra_overrides: (none)")
@@ -417,7 +475,7 @@ def main() -> int:
                 task=train["task"],
                 agent=train["agent"],
                 base_args=train.get("base_args", []),
-                hydra_overrides=pending_overrides,
+                hydra_overrides=hydra_overrides,
                 num_envs=train.get("num_envs", None),
                 seed=seed,
                 max_iterations=target_iterations,
@@ -455,7 +513,7 @@ def main() -> int:
                 "stdout": train_result.stdout_path,
                 "stderr": train_result.stderr_path,
                 "seed": seed,
-                "hydra_overrides": list(pending_overrides),
+                "hydra_overrides": list(hydra_overrides),
                 "total_iterations": total_iterations,
                 "chunk_iterations": chunk,
                 "early_stop_reason": early_stop_reason,

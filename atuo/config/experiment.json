@@ -59,7 +59,7 @@
   },
   "override_policy": {
     "allowed_overrides": [
-      "rewards."
+      "env.rewards."
     ]
   },
   "run_policy": {

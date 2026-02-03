@@ -334,8 +334,8 @@ def main() -> int:
             reward_names = _extract_reward_keys(env_yaml)
             reward_override_keys = []
             for name in reward_names:
-                reward_override_keys.append(f"rewards.{name}.weight")
-                reward_override_keys.append(f"rewards.{name}.params.")
+                reward_override_keys.append(f"env.rewards.{name}.weight")
+                reward_override_keys.append(f"env.rewards.{name}.params.")
 
             pre_result = analyze(
                 payload=pre_payload,
@@ -403,6 +403,13 @@ def main() -> int:
             target_iterations = train.get("max_iterations", None)
             if chunk is not None:
                 target_iterations = chunk
+
+            if pending_overrides:
+                print(f"[orchestrator] hydra_overrides ({len(pending_overrides)}):")
+                for ov in pending_overrides:
+                    print(f"  {ov}")
+            else:
+                print("[orchestrator] hydra_overrides: (none)")
 
             train_result = run_train(
                 isaaclab_root=project["isaaclab_root"],
@@ -526,8 +533,8 @@ def main() -> int:
             reward_names = _extract_reward_keys(env_yaml)
             reward_override_keys = []
             for name in reward_names:
-                reward_override_keys.append(f"rewards.{name}.weight")
-                reward_override_keys.append(f"rewards.{name}.params.")
+                reward_override_keys.append(f"env.rewards.{name}.weight")
+                reward_override_keys.append(f"env.rewards.{name}.params.")
             analysis_result = analyze(
                 payload=payload,
                 thresholds=analysis_thresholds,

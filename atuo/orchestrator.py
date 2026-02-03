@@ -587,7 +587,8 @@ def main() -> int:
         )
 
         # ── Append to cumulative progress log ──
-        _append_progress_log(run_dir.parent / "progress.md", report, payload)
+        progress_name = "progress_skrl.md" if is_skrl else "progress_rsl.md"
+        _append_progress_log(run_dir.parent / progress_name, report, payload)
 
         if success and stop_on_success:
             break

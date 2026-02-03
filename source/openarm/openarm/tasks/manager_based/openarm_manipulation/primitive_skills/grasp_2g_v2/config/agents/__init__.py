@@ -11,13 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import gymnasium as gym
-
-from . import reach  # Import the reach module
-from . import grasp  # Import the grasp module
-from . import grasp_2g_v1  # Import the grasp_2g_v1 module
-from . import grasp_2g_v2  # Import the grasp_2g_v2 module (role-separated curriculum)
-
-# The reach and grasp tasks are registered in their own __init__.py files.
-# We just need to make sure this package is recognized.

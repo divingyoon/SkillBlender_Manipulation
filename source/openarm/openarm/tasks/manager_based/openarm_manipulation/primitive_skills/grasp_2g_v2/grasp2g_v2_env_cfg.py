@@ -12,6 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+grasp_2g_v2: Role-Separated Curriculum for Bimanual Grasping
+
+Curriculum Stages:
+- Stage 0 (LEFT_ONLY): Train left arm only, right arm holds initial pose
+- Stage 1 (RIGHT_ONLY): Train right arm only, left arm holds learned pose
+- Stage 2 (BIMANUAL): Train both arms simultaneously
+
+Stage transition is based on phase progression success rate.
+"""
+
 from dataclasses import MISSING
 import math
 
@@ -33,9 +44,15 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdF
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.markers.config import FRAME_MARKER_CFG
-# from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
+
+
+# Curriculum Stage Enum
+class CurriculumStage:
+    LEFT_ONLY = 0
+    RIGHT_ONLY = 1
+    BIMANUAL = 2
 
 
 @configclass
@@ -71,6 +88,7 @@ class Grasp2gSceneCfg(InteractiveSceneCfg):
         spawn=sim_utils.DomeLightCfg(color=(0.75, 0.75, 0.75), intensity=3000.0),
     )
 
+
 @configclass
 class ActionsCfg:
     """Action specifications for the MDP."""
@@ -79,6 +97,7 @@ class ActionsCfg:
     left_hand_action: ActionTerm = MISSING
     right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
+
 
 @configclass
 class CommandsCfg:
@@ -100,6 +119,7 @@ class CommandsCfg:
         goal_offset=(0.0, 0.0, 0.2),
     )
 
+
 @configclass
 class ObservationsCfg:
     """Observation specifications for the MDP."""
@@ -107,6 +127,7 @@ class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
         """Observations for policy group."""
+        # Left arm observations
         left_joint_pos = ObsTerm(func=mdp.left_joint_pos_rel)
         left_joint_vel = ObsTerm(func=mdp.left_joint_vel_rel)
 
@@ -123,21 +144,12 @@ class ObservationsCfg:
                 "offset": [0.0, 0.0, 0.0],
             },
         )
-        # target_cup_position = ObsTerm(
-        #     func=mdp.generated_commands, params={"command_name": "left_cup_pose"}
-        # )
-        # target_cup2_position = ObsTerm(
-        #     func=mdp.generated_commands, params={"command_name": "right_cup_pose"}
-        # )
 
-        # Gripper state
         left_gripper_state = ObsTerm(
             func=mdp.gripper_state,
             params={"joint_names": ["openarm_left_finger_joint1", "openarm_left_finger_joint2"]},
         )
-        # Hand identity (swap-stable cue)
         left_hand_id = ObsTerm(func=mdp.constant_value, params={"value": 1.0, "size": 1})
-        # Distance to cup (scalar, for easier learning)
         left_tcp_cup_distance = ObsTerm(
             func=mdp.tcp_to_cup_distance,
             params={"tcp_body_name": "openarm_left_hand", "target_cfg": SceneEntityCfg("cup")},
@@ -146,6 +158,7 @@ class ObservationsCfg:
         left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
         left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
 
+        # Right arm observations
         right_joint_pos = ObsTerm(func=mdp.right_joint_pos_rel)
         right_joint_vel = ObsTerm(func=mdp.right_joint_vel_rel)
         right_cup2_position = ObsTerm(
@@ -172,11 +185,15 @@ class ObservationsCfg:
         right_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         right_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
 
+        # Curriculum stage indicator (for policy awareness)
+        curriculum_stage = ObsTerm(func=mdp.curriculum_stage_obs, params={})
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = False
 
     policy: PolicyCfg = PolicyCfg()
+
 
 @configclass
 class EventCfg:
@@ -212,21 +229,24 @@ class EventCfg:
 
 @configclass
 class RewardsCfg:
-    """Reward terms for the MDP."""
+    """Reward terms for the MDP.
 
-    # Phase 정의 (손별):
-    # 0: reach (물체 접근)
-    # 1: grasp (그리퍼 닫힘/접근 게이트 통과)
-    # 2: lift (물체 높이가 lift_height 이상)
-    # 3: hold/goal (lift 이후 추적 단계)
+    Role-Separated Curriculum:
+    - Stage 0 (LEFT_ONLY): Only left arm rewards active
+    - Stage 1 (RIGHT_ONLY): Only right arm rewards active
+    - Stage 2 (BIMANUAL): Both arms + bimanual coordination rewards active
+    """
 
-    # Phase 0: coarse reaching (오차 기반 보상)
-    # Curriculum: 초기 -2.0 → 3000 step 후 -0.5로 복귀
+    # ============================================================
+    # LEFT ARM REWARDS (Active in Stage 0 and Stage 2)
+    # ============================================================
+
     left_reaching_object = RewTerm(
-        func=mdp.phase_object_ee_distance_error,
+        func=mdp.staged_phase_object_ee_distance_error,
         params={
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
+            "active_stages": [0, 2],  # Active in LEFT_ONLY and BIMANUAL
             "phase_weights": [1.0, 0.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -237,37 +257,18 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-2.0,
-    )
-    right_reaching_object = RewTerm(
-        func=mdp.phase_object_ee_distance_error,
-        params={
-            "object_cfg": SceneEntityCfg("cup2"),
-            "eef_link_name": "openarm_right_hand",
-            "phase_weights": [1.0, 0.0, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=-2.0,
+        weight=-1.0,  # Reduced penalty for easier exploration
     )
 
-    # Phase 0-1: fine reaching (XY/Z 분리)
-    # std 확대: 0.05→0.15(xy), 0.05→0.10(z) - EEF 초기거리 0.2~0.3m 커버
-    # Curriculum: 초기 8.0 → 3000 step 후 5.0으로 복귀
     left_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+        func=mdp.staged_phase_object_ee_distance_xyz_weighted,
         params={
             "std_xy": 0.15,
             "std_z": 0.10,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
+            "active_stages": [0, 2],
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -280,14 +281,165 @@ class RewardsCfg:
         },
         weight=8.0,
     )
+
+    left_object_displacement_penalty = RewTerm(
+        func=mdp.staged_phase_object_root_displacement_penalty,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "active_stages": [0, 2],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "scale": 5.0,
+        },
+        weight=-2.0,
+    )
+
+    left_end_effector_orientation_tracking = RewTerm(
+        func=mdp.staged_phase_hand_x_align_object_z_penalty_gated,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
+            "command_name": "left_cup_pose",
+            "eef_link_name": "openarm_left_hand",
+            "object_cfg": SceneEntityCfg("cup"),
+            "gate_std": 0.1,
+            "active_stages": [0, 2],
+            "phase_weights": [1.0, 0.3, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+
+    left_grasping_object = RewTerm(
+        func=mdp.staged_phase_grasp_band_reward,
+        params={
+            "eef_link_name": "openarm_left_hand",
+            "object_cfg": SceneEntityCfg("cup"),
+            "close_min": 0.35,
+            "close_max": 0.75,
+            "active_stages": [0, 2],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
+    )
+
+    left_gripper_hold = RewTerm(
+        func=mdp.staged_phase_gripper_hold_reward,
+        params={
+            "eef_link_name": "openarm_left_hand",
+            "close_threshold": 0.5,
+            "hold_duration": 2.0,
+            "object_cfg": SceneEntityCfg("cup"),
+            "hold_decay": 1.0,
+            "active_stages": [0, 2],
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
+    )
+
+    left_lifting_object = RewTerm(
+        func=mdp.staged_phase_lift_delta_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup"),
+            "active_stages": [0, 2],
+            "phase_weights": [0.0, 0.0, 5.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
+    )
+
+    left_object_goal_tracking = RewTerm(
+        func=mdp.staged_phase_object_goal_distance_with_ee,
+        params={
+            "std": 0.3,
+            "minimal_height": 0.04,
+            "command_name": "left_cup_pose",
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "openarm_left_hand",
+            "reach_std": 0.1,
+            "active_stages": [0, 2],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_left_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
+    )
+
+    # ============================================================
+    # RIGHT ARM REWARDS (Active in Stage 1 and Stage 2)
+    # ============================================================
+
+    right_reaching_object = RewTerm(
+        func=mdp.staged_phase_object_ee_distance_error,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "eef_link_name": "openarm_right_hand",
+            "active_stages": [1, 2],  # Active in RIGHT_ONLY and BIMANUAL
+            "phase_weights": [1.0, 0.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=-1.0,
+    )
+
     right_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+        func=mdp.staged_phase_object_ee_distance_xyz_weighted,
         params={
             "std_xy": 0.15,
             "std_z": 0.10,
             "z_weight": 2.0,
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
+            "active_stages": [1, 2],
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
@@ -301,15 +453,145 @@ class RewardsCfg:
         weight=8.0,
     )
 
-    # Bimanual reach: min(reach_L, reach_R)
+    right_object_displacement_penalty = RewTerm(
+        func=mdp.staged_phase_object_root_displacement_penalty,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [1, 2],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.07,
+                "grasp_distance": 0.05,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+            "scale": 5.0,
+        },
+        weight=-2.0,
+    )
+
+    right_end_effector_orientation_tracking = RewTerm(
+        func=mdp.staged_phase_hand_x_align_object_z_penalty_gated,
+        weight=-1.0,
+        params={
+            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
+            "command_name": "right_cup_pose",
+            "eef_link_name": "openarm_right_hand",
+            "object_cfg": SceneEntityCfg("cup2"),
+            "gate_std": 0.1,
+            "active_stages": [1, 2],
+            "phase_weights": [1.0, 0.3, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+    )
+
+    right_grasping_object = RewTerm(
+        func=mdp.staged_phase_grasp_band_reward,
+        params={
+            "eef_link_name": "openarm_right_hand",
+            "object_cfg": SceneEntityCfg("cup2"),
+            "close_min": 0.35,
+            "close_max": 0.75,
+            "active_stages": [1, 2],
+            "phase_weights": [0.0, 1.0, 0.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
+    )
+
+    right_gripper_hold = RewTerm(
+        func=mdp.staged_phase_gripper_hold_reward,
+        params={
+            "eef_link_name": "openarm_right_hand",
+            "close_threshold": 0.5,
+            "hold_duration": 2.0,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "hold_decay": 1.0,
+            "active_stages": [1, 2],
+            "phase_weights": [0.0, 0.0, 1.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
+    )
+
+    right_lifting_object = RewTerm(
+        func=mdp.staged_phase_lift_delta_reward,
+        params={
+            "lift_height": 0.1,
+            "object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [1, 2],
+            "phase_weights": [0.0, 0.0, 5.0, 0.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=5.0,
+    )
+
+    right_object_goal_tracking = RewTerm(
+        func=mdp.staged_phase_object_goal_distance_with_ee,
+        params={
+            "std": 0.3,
+            "minimal_height": 0.04,
+            "command_name": "right_cup_pose",
+            "object_cfg": SceneEntityCfg("cup2"),
+            "eef_link_name": "openarm_right_hand",
+            "reach_std": 0.1,
+            "active_stages": [1, 2],
+            "phase_weights": [0.0, 0.0, 0.0, 1.0],
+            "phase_params": {
+                "eef_link_name": "openarm_right_hand",
+                "lift_height": 0.1,
+                "reach_distance": 0.1,
+                "grasp_distance": 0.07,
+                "close_threshold": 0.5,
+                "hold_duration": 2.0,
+            },
+        },
+        weight=1.0,
+    )
+
+    # ============================================================
+    # BIMANUAL COORDINATION REWARDS (Active only in Stage 2)
+    # ============================================================
+
     bimanual_reach_min = RewTerm(
-        func=mdp.bimanual_reach_min_reward,
+        func=mdp.staged_bimanual_reach_min_reward,
         params={
             "std": 0.15,
             "left_eef_link_name": "openarm_left_hand",
             "right_eef_link_name": "openarm_right_hand",
             "left_object_cfg": SceneEntityCfg("cup"),
             "right_object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [2],  # Only in BIMANUAL stage
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
             "left_phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -331,14 +613,14 @@ class RewardsCfg:
         weight=6.0,
     )
 
-    # Bimanual phase lag penalty: |phase_L - phase_R|
     bimanual_phase_lag = RewTerm(
-        func=mdp.bimanual_phase_lag_penalty,
+        func=mdp.staged_bimanual_phase_lag_penalty,
         params={
             "left_eef_link_name": "openarm_left_hand",
             "right_eef_link_name": "openarm_right_hand",
             "left_object_cfg": SceneEntityCfg("cup"),
             "right_object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [2],  # Only in BIMANUAL stage
             "left_phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -356,135 +638,17 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-1.0,
+        weight=-0.5,  # Reduced penalty compared to v1
     )
 
-    # Phase 1만: grasp 중 물체 이동 억제 (phase 0에서는 비활성 → reaching 방해 방지)
-    left_object_displacement_penalty = RewTerm(
-        func=mdp.phase_object_root_displacement_penalty,
-        params={
-            "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [0.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-            "scale": 5.0,
-        },
-        weight=-2.0,
-    )
-    # Phase 1만: grasp 중 물체 이동 억제 (phase 0에서는 비활성 → reaching 방해 방지)
-    right_object_displacement_penalty = RewTerm(
-        func=mdp.phase_object_root_displacement_penalty,
-        params={
-            "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [0.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.07,
-                "grasp_distance": 0.05,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-            "scale": 5.0,
-        },
-        weight=-2.0,
-    )
-
-    # Phase 0: reach 동안 방향 정렬.
-    left_end_effector_orientation_tracking = RewTerm(
-        func=mdp.phase_hand_x_align_object_z_penalty_gated,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
-            "command_name": "left_cup_pose",
-            "eef_link_name": "openarm_left_hand",
-            "object_cfg": SceneEntityCfg("cup"),
-            "gate_std": 0.1,
-            "phase_weights": [1.0, 0.3, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    right_end_effector_orientation_tracking = RewTerm(
-        func=mdp.phase_hand_x_align_object_z_penalty_gated,
-        weight=-1.0,
-        params={
-            "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
-            "command_name": "right_cup_pose",
-            "eef_link_name": "openarm_right_hand",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "gate_std": 0.1,
-            "phase_weights": [1.0, 0.3, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-    )
-    # Phase 1: grasp 보상 (거리 + 그리퍼 닫힘 연속 보상)
-    left_grasping_object = RewTerm(
-        func=mdp.phase_grasp_band_reward,
-        params={
-            "eef_link_name": "openarm_left_hand",
-            "object_cfg": SceneEntityCfg("cup"),
-            "close_min": 0.35,
-            "close_max": 0.75,
-            "phase_weights": [0.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=5.0,
-    )
-    right_grasping_object = RewTerm(
-        func=mdp.phase_grasp_band_reward,
-        params={
-            "eef_link_name": "openarm_right_hand",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "close_min": 0.35,
-            "close_max": 0.75,
-            "phase_weights": [0.0, 1.0, 0.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=5.0,
-    )
-
-    # Bimanual grasp AND / XOR (simultaneous success shaping)
     bimanual_grasp_and = RewTerm(
-        func=mdp.bimanual_grasp_and_reward,
+        func=mdp.staged_bimanual_grasp_and_reward,
         params={
             "left_eef_link_name": "openarm_left_hand",
             "right_eef_link_name": "openarm_right_hand",
             "left_object_cfg": SceneEntityCfg("cup"),
             "right_object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [2],
             "phase_weights": [0.0, 1.0, 1.0, 1.0],
             "left_phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -505,13 +669,15 @@ class RewardsCfg:
         },
         weight=8.0,
     )
+
     bimanual_grasp_xor = RewTerm(
-        func=mdp.bimanual_grasp_xor_penalty,
+        func=mdp.staged_bimanual_grasp_xor_penalty,
         params={
             "left_eef_link_name": "openarm_left_hand",
             "right_eef_link_name": "openarm_right_hand",
             "left_object_cfg": SceneEntityCfg("cup"),
             "right_object_cfg": SceneEntityCfg("cup2"),
+            "active_stages": [2],
             "phase_weights": [0.0, 1.0, 1.0, 1.0],
             "left_phase_params": {
                 "eef_link_name": "openarm_left_hand",
@@ -530,177 +696,13 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=-4.0,
-    )
-    # Phase 2-3: grasp 이후 그리퍼 닫힘 유지 보상
-    left_gripper_hold = RewTerm(
-        func=mdp.phase_gripper_hold_reward,
-        params={
-            "eef_link_name": "openarm_left_hand",
-            "close_threshold": 0.5,
-            "hold_duration": 2.0,
-            "object_cfg": SceneEntityCfg("cup"),
-            "hold_decay": 1.0,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
-    right_gripper_hold = RewTerm(
-        func=mdp.phase_gripper_hold_reward,
-        params={
-            "eef_link_name": "openarm_right_hand",
-            "close_threshold": 0.5,
-            "hold_duration": 2.0,
-            "object_cfg": SceneEntityCfg("cup2"),
-            "hold_decay": 1.0,
-            "phase_weights": [0.0, 0.0, 1.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
-    # Phase 2-3: grasp 이후 lift 진행도.
-    left_lifting_object = RewTerm(
-        func=mdp.phase_lift_delta_reward,
-        params={
-            "lift_height": 0.1,
-            "object_cfg": SceneEntityCfg("cup"),
-            "phase_weights": [0.0, 0.0, 5.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=5.0,
-    )
-    # Phase 2-3: grasp 이후 lift 진행도.
-    right_lifting_object = RewTerm(
-        func=mdp.phase_lift_delta_reward,
-        params={
-            "lift_height": 0.1,
-            "object_cfg": SceneEntityCfg("cup2"),
-            "phase_weights": [0.0, 0.0, 5.0, 0.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=5.0,
+        weight=-2.0,  # Reduced penalty compared to v1
     )
 
-    # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
-    left_object_goal_tracking = RewTerm(
-        func=mdp.phase_object_goal_distance_with_ee,
-        params={
-            "std": 0.3,
-            "minimal_height": 0.04,
-            "command_name": "left_cup_pose",
-            "object_cfg": SceneEntityCfg("cup"),
-            "eef_link_name": "openarm_left_hand",
-            "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 0.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
-    # Phase 3: lift 이후 목표 추적 (현재 weight=0으로 비활성).
-    right_object_goal_tracking = RewTerm(
-        func=mdp.phase_object_goal_distance_with_ee,
-        params={
-            "std": 0.3,
-            "minimal_height": 0.04,
-            "command_name": "right_cup_pose",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "eef_link_name": "openarm_right_hand",
-            "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 0.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
+    # ============================================================
+    # DIAGNOSTIC TERMS (Always active)
+    # ============================================================
 
-    # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
-    left_object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.phase_object_goal_distance_with_ee,
-        params={
-            "std": 0.05,
-            "minimal_height": 0.04,
-            "command_name": "left_cup_pose",
-            "object_cfg": SceneEntityCfg("cup"),
-            "eef_link_name": "openarm_left_hand",
-            "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 0.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_left_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
-    # Phase 3: 정밀 목표 추적 (현재 weight=0으로 비활성).
-    right_object_goal_tracking_fine_grained = RewTerm(
-        func=mdp.phase_object_goal_distance_with_ee,
-        params={
-            "std": 0.05,
-            "minimal_height": 0.04,
-            "command_name": "right_cup_pose",
-            "object_cfg": SceneEntityCfg("cup2"),
-            "eef_link_name": "openarm_right_hand",
-            "reach_std": 0.1,
-            "phase_weights": [0.0, 0.0, 0.0, 1.0],
-            "phase_params": {
-                "eef_link_name": "openarm_right_hand",
-                "lift_height": 0.1,
-                "reach_distance": 0.1,
-                "grasp_distance": 0.07,
-                "close_threshold": 0.5,
-                "hold_duration": 2.0,
-            },
-        },
-        weight=1.0,
-    )
-
-    # Phase 값 로깅/진단용.
     left_grasp2g_phase = RewTerm(
         func=mdp.grasp2g_phase_value,
         params={
@@ -716,7 +718,7 @@ class RewardsCfg:
         },
         weight=0.0,
     )
-    # Phase 값 로깅/진단용.
+
     right_grasp2g_phase = RewTerm(
         func=mdp.grasp2g_phase_value,
         params={
@@ -733,7 +735,7 @@ class RewardsCfg:
         weight=0.0,
     )
 
-    # ─── Diagnostic terms (weight=0, tensorboard 기록용) ───
+    # Diagnostic terms
     left_hand_closure_diag = RewTerm(
         func=mdp.hand_closure_diagnostic,
         params={"eef_link_name": "openarm_left_hand"},
@@ -751,48 +753,6 @@ class RewardsCfg:
     )
     right_eef_dist_diag = RewTerm(
         func=mdp.eef_distance_diagnostic,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
-        weight=0.0,
-    )
-    left_arm_action_norm_diag = RewTerm(
-        func=mdp.arm_action_norm_diagnostic,
-        params={"action_name": "left_arm_action"},
-        weight=0.0,
-    )
-    right_arm_action_norm_diag = RewTerm(
-        func=mdp.arm_action_norm_diagnostic,
-        params={"action_name": "right_arm_action"},
-        weight=0.0,
-    )
-    left_hand_action_norm_diag = RewTerm(
-        func=mdp.hand_action_norm_diagnostic,
-        params={"action_name": "left_hand_action"},
-        weight=0.0,
-    )
-    right_hand_action_norm_diag = RewTerm(
-        func=mdp.hand_action_norm_diagnostic,
-        params={"action_name": "right_hand_action"},
-        weight=0.0,
-    )
-
-    # ─── Extended Diagnostic terms (raw physical metrics) ───
-    left_eef_dist_xy_diag = RewTerm(
-        func=mdp.eef_dist_xy_diagnostic,
-        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
-        weight=0.0,
-    )
-    right_eef_dist_xy_diag = RewTerm(
-        func=mdp.eef_dist_xy_diagnostic,
-        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
-        weight=0.0,
-    )
-    left_eef_dist_z_diag = RewTerm(
-        func=mdp.eef_dist_z_diagnostic,
-        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
-        weight=0.0,
-    )
-    right_eef_dist_z_diag = RewTerm(
-        func=mdp.eef_dist_z_diagnostic,
         params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
         weight=0.0,
     )
@@ -816,14 +776,11 @@ class RewardsCfg:
         params={"object_cfg": SceneEntityCfg("cup2")},
         weight=0.0,
     )
-    left_object_displacement_diag = RewTerm(
-        func=mdp.object_displacement_diagnostic,
-        params={"object_cfg": SceneEntityCfg("cup")},
-        weight=0.0,
-    )
-    right_object_displacement_diag = RewTerm(
-        func=mdp.object_displacement_diagnostic,
-        params={"object_cfg": SceneEntityCfg("cup2")},
+
+    # Curriculum stage diagnostic
+    curriculum_stage_diag = RewTerm(
+        func=mdp.curriculum_stage_diagnostic,
+        params={},
         weight=0.0,
     )
 
@@ -835,6 +792,7 @@ class RewardsCfg:
         weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot")},
     )
+
 
 @configclass
 class TerminationsCfg:
@@ -862,70 +820,64 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    """Curriculum: 초기에 reaching 강화, 이후 원래 값으로 복귀.
+    """Role-Separated Curriculum Configuration.
 
-    동작 방식: modify_reward_weight는 num_steps 이후에 weight 값으로 변경.
-    RewardsCfg의 초기값이 강화된 값이고, curriculum이 target으로 복귀시킴.
-    - left/right_reaching_object: -2.0 → -0.5 (3000 step 후)
-    - left/right_reaching_object_fine: 8.0 → 5.0 (3000 step 후)
+    Stage transitions based on phase progression:
+    - Stage 0 → 1: When left arm achieves phase >= 2.0 (lifted) consistently
+    - Stage 1 → 2: When right arm achieves phase >= 2.0 consistently
     """
-    left_reaching_object = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_reaching_object", "weight": -0.5, "num_steps": 3000},
-    )
-    right_reaching_object = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_reaching_object", "weight": -0.5, "num_steps": 3000},
-    )
-    left_reaching_object_fine = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "left_reaching_object_fine", "weight": 5.0, "num_steps": 3000},
-    )
-    right_reaching_object_fine = CurrTerm(
-        func=mdp.modify_reward_weight,
-        params={"term_name": "right_reaching_object_fine", "weight": 5.0, "num_steps": 3000},
+
+    # Stage advancement based on phase success
+    advance_stage = CurrTerm(
+        func=mdp.advance_curriculum_stage,
+        params={
+            "left_phase_threshold": 1.5,   # Left arm must reach phase 1.5+ to advance from Stage 0
+            "right_phase_threshold": 1.5,  # Right arm must reach phase 1.5+ to advance from Stage 1
+            "success_rate_threshold": 0.5, # 50% of envs must succeed
+            "min_steps_per_stage": 5000,   # Minimum steps before advancing
+        },
     )
 
 
 @configclass
-class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
-    """Configuration for the bimanual grasping environment."""
+class Grasp2gV2EnvCfg(ManagerBasedRLEnvCfg):
+    """Configuration for the bimanual grasping environment with role-separated curriculum."""
 
-    # Debug settings (used by reward functions)
-    task_name: str = "grasp_2g_v1"
-    debug_grasp_left: bool = True
-    debug_grasp_left_interval: int = 200
-    debug_grasp_right: bool = True
-    debug_grasp_right_interval: int = 200
-    debug_grasp_target_vis: bool = True
-    debug_grasp_target_vis_interval: int = 10
-    debug_reach_reward: bool = True
-    debug_reach_reward_interval: int = 200
-    debug_obs_split: bool = True
-    debug_reward_mapping: bool = True
-    actor_obs_split_index: int = 40
-    critic_obs_split_index: int = 40
+    # Debug settings
+    task_name: str = "grasp_2g_v2"
+    debug_enabled: bool = False
+    actor_obs_split_index: int = 41  # +1 for curriculum_stage
+    critic_obs_split_index: int = 41
 
-    # reach 보상 스케일 파라미터 (로그/해석용)
+    # Reward/phase parameters
     grasp2g_reach_std_xy: float = 0.15
     grasp2g_reach_std_z: float = 0.1
     grasp2g_reach_z_weight: float = 2.0
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.07)
 
-    # 보상/페이즈 거리 계산 기준 오프셋 (컵 루트 기준)
-    # 예: (0, 0, 0.05) -> 컵 바닥면 기준 +5cm 지점을 목표로 사용
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.05)
+    # Phase transition settings
+    phase_stability_reach_steps: int = 5   # Relaxed from v1's 10
+    phase_stability_grasp_steps: int = 3   # Relaxed from v1's 5
+    phase_stability_lift_steps: int = 2    # Relaxed from v1's 3
+    phase_demotion_enabled: bool = False
+    phase_demotion_margin: float = 1.5
 
-    enable_gripper_hold: bool = False
+    # ============================================================
+    # CURRICULUM STAGE SETTINGS
+    # ============================================================
+    curriculum_stage: int = 0  # Start with LEFT_ONLY
+    # 0 = LEFT_ONLY: Only left arm learns
+    # 1 = RIGHT_ONLY: Only right arm learns
+    # 2 = BIMANUAL: Both arms learn with coordination
 
-    # Phase transition 안정성 설정 (N-step 연속 조건)
-    phase_stability_reach_steps: int = 10   # Phase 0→1: N step 연속 reach_distance 이내
-    phase_stability_grasp_steps: int = 5    # Phase 1→2: N step 연속 grasp 조건 충족
-    phase_stability_lift_steps: int = 3     # Phase 2→3: N step 연속 lift_height 이상
-    phase_demotion_enabled: bool = False    # 역전환 토글 (기본 비활성)
-    phase_demotion_margin: float = 1.5      # 역전환 거리 배수 (reach_distance * margin)
+    # Stage transition thresholds
+    stage_advance_left_phase: float = 1.5   # Left must reach phase 1.5 to advance
+    stage_advance_right_phase: float = 1.5  # Right must reach phase 1.5 to advance
+    stage_advance_success_rate: float = 0.5 # 50% of envs
+    stage_advance_min_steps: int = 5000     # Min steps per stage
 
-    # 디버그 토글 (로그/시각화 공통)
-    debug_enabled: bool = False
+    # Action masking for inactive arm
+    mask_inactive_arm_actions: bool = True  # Zero out actions for inactive arm
 
     scene: Grasp2gSceneCfg = Grasp2gSceneCfg(num_envs=10**3, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
@@ -939,13 +891,13 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
 
     def __post_init__(self):
         self.decimation = 4
-        self.episode_length_s = 20.0
+        self.episode_length_s = 10.0  # Longer than v1's 8.0 for easier learning
         self.sim.dt = 1.0 / 100.0
         self.sim.render_interval = self.decimation
         self.viewer.eye = (3.5, 3.5, 3.5)
-        # RSL-RL ActorCritic expects 1D observations.
         self.observations.policy.concatenate_terms = True
-        # 커맨드 목표 시각화 프림 경로를 좌/우로 분리
+
+        # Command goal visualization
         left_vis = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/left_cup_pose_goal")
         right_vis = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/right_cup_pose_goal")
         left_vis.markers["frame"].scale = (0.08, 0.08, 0.08)
@@ -953,33 +905,19 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
         self.commands.left_cup_pose.goal_pose_visualizer_cfg = left_vis
         self.commands.right_cup_pose.goal_pose_visualizer_cfg = right_vis
 
-        # 디버그 토글 적용 (콘솔 로그/시각화 공통)
         if not self.debug_enabled:
-            self.debug_grasp_left = False
-            self.debug_grasp_right = False
-            self.debug_reach_reward = False
-            self.debug_grasp_target_vis = False
             self.commands.left_cup_pose.debug_vis = False
             self.commands.right_cup_pose.debug_vis = False
 
-        # assign a default physx material to all scene geometries
-        # we can also do this per-asset in the scene definition
         self.sim.physx = PhysxCfg(
-            solver_type=1,  # TGS
+            solver_type=1,
             max_position_iteration_count=192,
             max_velocity_iteration_count=1,
             bounce_threshold_velocity=0.2,
             friction_offset_threshold=0.01,
             friction_correlation_distance=0.00625,
-            # increase buffers to prevent overflow errors
             gpu_max_rigid_contact_count=2**23,
             gpu_max_rigid_patch_count=2**23,
             gpu_max_num_partitions=8,
             gpu_collision_stack_size=2**24,
-            # set default material properties
-            # default_material=RigidBodyMaterialCfg(
-            #     static_friction=1.0,
-            #     dynamic_friction=1.0,
-            #     restitution=0.0,
-            # ),
         )

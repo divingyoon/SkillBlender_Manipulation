@@ -42,20 +42,38 @@ def _task_prefix(task: str) -> str:
 
 
 def _find_checkpoint(log_dir: Path) -> Path | None:
+    """Find best or latest checkpoint. Supports both rsl_rl and skrl layouts."""
+    # rsl_rl: model_best.pt / model_*.pt in log_dir root
     best = log_dir / "model_best.pt"
     if best.is_file():
         return best
+    # skrl: checkpoints/best_agent.pt / checkpoints/agent_*.pt
+    skrl_best = log_dir / "checkpoints" / "best_agent.pt"
+    if skrl_best.is_file():
+        return skrl_best
+
+    # Search both layouts
     models = []
+    # rsl_rl pattern
     for entry in log_dir.iterdir():
         if entry.name.startswith("model_") and entry.name.endswith(".pt"):
             models.append(entry)
+    # skrl pattern
+    ckpt_dir = log_dir / "checkpoints"
+    if ckpt_dir.is_dir():
+        for entry in ckpt_dir.iterdir():
+            if entry.name.startswith("agent_") and entry.name.endswith(".pt"):
+                models.append(entry)
+
     if not models:
         return None
 
     def _step(p: Path) -> int:
-        name = p.name
+        name = p.stem  # e.g. "model_600" or "agent_80000"
         try:
-            return int(name.split("_")[1].split(".")[0])
+            # extract last numeric part: model_600 -> 600, agent_80000 -> 80000
+            parts = name.split("_")
+            return int(parts[-1])
         except Exception:
             return -1
 
@@ -302,6 +320,57 @@ def main() -> int:
             base_args += ["--swap_lr_prob", str(args.swap_lr_prob)]
     train["base_args"] = base_args
 
+    # ── Pre-analysis: resume 시 기존 로그를 먼저 분석하여 override 적용 ──
+    initial_resume_from = train.get("resume_from", None)
+    if initial_resume_from:
+        task_prefix = train["task"].split("-")[0]
+        resume_log_dir = Path(project["log_root"]) / task_prefix / initial_resume_from
+        if resume_log_dir.is_dir():
+            print(f"[orchestrator] Pre-analysis: analyzing {resume_log_dir} before first run...")
+            pre_metrics = summarize_train_metrics(str(resume_log_dir))
+            pre_payload = {"train": pre_metrics, "eval": {}}
+
+            env_yaml = resume_log_dir / "params" / "env.yaml"
+            reward_names = _extract_reward_keys(env_yaml)
+            reward_override_keys = []
+            for name in reward_names:
+                reward_override_keys.append(f"rewards.{name}.weight")
+                reward_override_keys.append(f"rewards.{name}.params.")
+
+            pre_result = analyze(
+                payload=pre_payload,
+                thresholds=analysis_thresholds,
+                llm_cfg=llm_cfg,
+                allowed_overrides=reward_override_keys or override_policy.get("allowed_overrides", []),
+                rules=analysis_rules,
+            )
+
+            if pre_result.applied_overrides:
+                pending_overrides = list(pre_result.applied_overrides)
+                print(f"[orchestrator] Pre-analysis issues: {pre_result.issues}")
+                print(f"[orchestrator] Pre-analysis overrides ({len(pending_overrides)}):")
+                for ov in pending_overrides:
+                    print(f"  {ov}")
+                # Save pre-analysis log
+                pre_dir = Path(__file__).resolve().parent / "runs"
+                pre_dir.mkdir(parents=True, exist_ok=True)
+                pre_log_path = pre_dir / f"pre_analysis_{initial_resume_from}.json"
+                pre_log = {
+                    "resume_from": initial_resume_from,
+                    "log_dir": str(resume_log_dir),
+                    "issues": pre_result.issues,
+                    "observations": pre_result.observations,
+                    "llm_summary": pre_result.llm_summary,
+                    "applied_overrides": pre_result.applied_overrides,
+                    "override_source": pre_payload.get("override_source", ""),
+                }
+                pre_log_path.write_text(json.dumps(pre_log, indent=2), encoding="utf-8")
+                print(f"[orchestrator] Pre-analysis saved to {pre_log_path}")
+            else:
+                print("[orchestrator] Pre-analysis: no overrides suggested, starting with original config.")
+        else:
+            print(f"[orchestrator] Pre-analysis: log dir {resume_log_dir} not found, skipping.")
+
     for run_idx in range(max_runs):
         run_id = time.strftime("%Y%m%d_%H%M%S") + f"_run{run_idx+1}"
         run_dir = Path(__file__).resolve().parent / "runs" / run_id
@@ -316,7 +385,10 @@ def main() -> int:
         early_stop_reason = None
         while True:
             resume_from = Path(last_log_dir).name if last_log_dir else train.get("resume_from", None)
-            resume_checkpoint = "model_best.pt" if last_log_dir else train.get("resume_checkpoint", None)
+            if last_log_dir:
+                resume_checkpoint = "best_agent.pt" if is_skrl else "model_best.pt"
+            else:
+                resume_checkpoint = train.get("resume_checkpoint", None)
             target_iterations = train.get("max_iterations", None)
             if chunk is not None:
                 target_iterations = chunk
@@ -377,14 +449,20 @@ def main() -> int:
         if train_result.returncode != 0 or train_result.log_dir is None:
             report["decision"] = {"status": "train_failed"}
             (run_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            return 1
+            print(f"[orchestrator] run {run_idx+1}/{max_runs} train failed (returncode={train_result.returncode}), continuing to next run...")
+            if seed is not None:
+                seed += 1
+            continue
 
         log_dir = Path(train_result.log_dir)
         checkpoint = _find_checkpoint(log_dir)
         if checkpoint is None:
             report["decision"] = {"status": "no_checkpoint"}
             (run_dir / "report.json").write_text(json.dumps(report, indent=2), encoding="utf-8")
-            return 1
+            print(f"[orchestrator] run {run_idx+1}/{max_runs} no checkpoint found, continuing to next run...")
+            if seed is not None:
+                seed += 1
+            continue
 
         metrics_path = str(log_dir / "metrics.json")
         skip_eval = bool(eval_cfg.get("skip_eval", False)) or is_skrl
@@ -427,7 +505,7 @@ def main() -> int:
         write_metrics_json(metrics_path, payload)
 
         if skip_eval:
-            success, aggregated = True, {}
+            success, aggregated = False, {}
         else:
             success, aggregated = decide_success(eval_metrics, criteria)
         analysis_result = None
@@ -467,6 +545,10 @@ def main() -> int:
                 "llm_summary": analysis_result.llm_summary,
                 "llm_overrides": analysis_result.llm_overrides,
                 "applied_overrides": applied_overrides,
+                "override_source": payload.get("override_source", ""),
+                "llm_rule_overlap": payload.get("llm_rule_overlap", []),
+                "llm_override_count": payload.get("llm_override_count", 0),
+                "rule_override_count": payload.get("rule_override_count", 0),
             }
             (run_dir / "analysis_prompt.txt").write_text(
                 payload.get("analysis_prompt", ""), encoding="utf-8"
@@ -486,6 +568,9 @@ def main() -> int:
             out_path=str(run_dir / "report.md"),
         )
 
+        # ── Append to cumulative progress log ──
+        _append_progress_log(run_dir.parent / "progress.md", report, payload)
+
         if success and stop_on_success:
             break
 
@@ -493,6 +578,91 @@ def main() -> int:
             seed += 1
 
     return 0
+
+
+def _append_progress_log(progress_path: Path, report: dict, payload: dict) -> None:
+    """Append a run summary to the cumulative progress.md file."""
+    run_id = report.get("run_id", "unknown")
+    decision = report.get("decision", {})
+    analysis = report.get("analysis", {})
+    train_info = report.get("train", {})
+    scalars = payload.get("train", {}).get("scalars", {})
+
+    mean_reward = scalars.get("mean_reward", {})
+    mr_val = mean_reward.get("mean_last_100") if isinstance(mean_reward, dict) else None
+
+    lines = []
+    # Header on first write
+    if not progress_path.exists():
+        lines.append("# Experiment Progress Log")
+        lines.append("")
+        lines.append("자동 학습 루프 진행 기록. 각 run의 상태, LLM 분석, override 변경 사항 추적.")
+        lines.append("")
+        lines.append("---")
+        lines.append("")
+
+    lines.append(f"## Run {run_id}")
+    lines.append(f"- **status**: {decision.get('status', 'unknown')}")
+    lines.append(f"- **iterations**: {train_info.get('total_iterations', 'n/a')}")
+    lines.append(f"- **mean_reward**: {mr_val:.3f}" if mr_val is not None else "- **mean_reward**: n/a")
+    if train_info.get("early_stop_reason"):
+        lines.append(f"- **early_stop**: {train_info['early_stop_reason']}")
+    lines.append("")
+
+    # Key physical metrics snapshot
+    diag_snapshot = [
+        ("eef_dist L/R", "reward_left_eef_dist_diag", "reward_right_eef_dist_diag"),
+        ("dist_delta L/R", "reward_left_eef_dist_delta_diag", "reward_right_eef_dist_delta_diag"),
+        ("hand_closure L/R", "reward_left_hand_closure_diag", "reward_right_hand_closure_diag"),
+        ("phase L/R", "reward_left_grasp2g_phase", "reward_right_grasp2g_phase"),
+        ("obj_height L/R", "reward_left_object_height_diag", "reward_right_object_height_diag"),
+    ]
+    has_any = any(
+        isinstance(scalars.get(lk), dict) and scalars.get(lk, {}).get("mean_last_100") is not None
+        for _, lk, _ in diag_snapshot
+    )
+    if has_any:
+        lines.append("### Key Metrics")
+        lines.append("| Metric | Left | Right |")
+        lines.append("|--------|------|-------|")
+        for label, lk, rk in diag_snapshot:
+            lv = scalars.get(lk, {})
+            rv = scalars.get(rk, {})
+            l_str = f"{lv.get('mean_last_100', 0):.4f}" if isinstance(lv, dict) and lv.get("mean_last_100") is not None else "n/a"
+            r_str = f"{rv.get('mean_last_100', 0):.4f}" if isinstance(rv, dict) and rv.get("mean_last_100") is not None else "n/a"
+            lines.append(f"| {label} | {l_str} | {r_str} |")
+        lines.append("")
+
+    # Issues + LLM reasoning
+    if analysis.get("issues"):
+        lines.append(f"### Issues: {', '.join(analysis['issues'])}")
+        lines.append("")
+
+    if analysis.get("llm_summary"):
+        lines.append("### LLM Reasoning")
+        lines.append("```")
+        # Truncate very long summaries
+        summary = analysis["llm_summary"]
+        if len(summary) > 2000:
+            summary = summary[:2000] + "\n... (truncated)"
+        lines.append(summary)
+        lines.append("```")
+        lines.append("")
+
+    if analysis.get("applied_overrides"):
+        lines.append("### Applied Overrides")
+        for item in analysis["applied_overrides"]:
+            lines.append(f"- `{item}`")
+        source = analysis.get("override_source", "")
+        if source:
+            lines.append(f"- source: **{source}**")
+        lines.append("")
+
+    lines.append("---")
+    lines.append("")
+
+    with open(progress_path, "a", encoding="utf-8") as f:
+        f.write("\n".join(lines))
 
 
 if __name__ == "__main__":

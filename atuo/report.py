@@ -64,20 +64,87 @@ def build_report_md(report: dict, metrics: dict) -> str:
     lines.append(f"- goal_dist_mean: {_fmt_float(goal_dist_mean)}")
     lines.append("")
 
-    if analysis:
-        lines.append("## Analysis")
-        if analysis.get("issues"):
-            lines.append(f"- issues: {', '.join(analysis.get('issues', []))}")
-        if analysis.get("observations"):
-            lines.append(f"- observations: {', '.join(analysis.get('observations', []))}")
-        if analysis.get("llm_summary"):
-            lines.append(f"- llm_summary: {analysis.get('llm_summary')}")
+    # ── Key Diagnostic Metrics ──
+    scalars = train.get("scalars", {})
+    diag_keys = [
+        ("left_eef_dist", "reward_left_eef_dist_diag"),
+        ("right_eef_dist", "reward_right_eef_dist_diag"),
+        ("left_eef_dist_xy", "reward_left_eef_dist_xy_diag"),
+        ("right_eef_dist_xy", "reward_right_eef_dist_xy_diag"),
+        ("left_eef_dist_z", "reward_left_eef_dist_z_diag"),
+        ("right_eef_dist_z", "reward_right_eef_dist_z_diag"),
+        ("left_eef_dist_delta", "reward_left_eef_dist_delta_diag"),
+        ("right_eef_dist_delta", "reward_right_eef_dist_delta_diag"),
+        ("left_hand_closure", "reward_left_hand_closure_diag"),
+        ("right_hand_closure", "reward_right_hand_closure_diag"),
+        ("left_object_height", "reward_left_object_height_diag"),
+        ("right_object_height", "reward_right_object_height_diag"),
+        ("left_object_displacement", "reward_left_object_displacement_diag"),
+        ("right_object_displacement", "reward_right_object_displacement_diag"),
+        ("left_phase", "reward_left_grasp2g_phase"),
+        ("right_phase", "reward_right_grasp2g_phase"),
+    ]
+    has_diag = False
+    for label, key in diag_keys:
+        v = scalars.get(key, {})
+        if isinstance(v, dict) and v.get("mean_last_100") is not None:
+            has_diag = True
+            break
+
+    if has_diag:
+        lines.append("## Diagnostic Metrics")
+        lines.append("| Metric | Mean | Last | Min | Max |")
+        lines.append("|--------|------|------|-----|-----|")
+        for label, key in diag_keys:
+            v = scalars.get(key, {})
+            if isinstance(v, dict) and v.get("mean_last_100") is not None:
+                lines.append(
+                    f"| {label} | {_fmt_float(v.get('mean_last_100'))} "
+                    f"| {_fmt_float(v.get('last'))} "
+                    f"| {_fmt_float(v.get('min'))} "
+                    f"| {_fmt_float(v.get('max'))} |"
+                )
         lines.append("")
+
+    # ── Analysis ──
+    if analysis:
+        lines.append("## Detected Issues")
+        if analysis.get("issues"):
+            for issue in analysis.get("issues", []):
+                lines.append(f"- {issue}")
+        else:
+            lines.append("- (none)")
+        lines.append("")
+
+        if analysis.get("observations"):
+            lines.append("## Observations")
+            for obs in analysis.get("observations", []):
+                lines.append(f"- {obs}")
+            lines.append("")
+
+        if analysis.get("llm_summary"):
+            lines.append("## LLM Analysis (Step-by-Step)")
+            lines.append("```")
+            lines.append(analysis.get("llm_summary", ""))
+            lines.append("```")
+            lines.append("")
 
     if analysis.get("applied_overrides"):
         lines.append("## Applied Overrides")
+        lines.append("| Parameter | Value |")
+        lines.append("|-----------|-------|")
         for item in analysis.get("applied_overrides", []):
-            lines.append(f"- {item}")
+            if "=" in item:
+                k, v = item.split("=", 1)
+                lines.append(f"| `{k.strip()}` | `{v.strip()}` |")
+            else:
+                lines.append(f"| `{item}` | |")
+        lines.append("")
+        # Override source
+        override_source = report.get("train", {}).get("override_source", "")
+        if not override_source:
+            override_source = "llm" if analysis.get("llm_summary") else "rule_based"
+        lines.append(f"- override source: **{override_source}**")
         lines.append("")
 
     lines.append("## Files")

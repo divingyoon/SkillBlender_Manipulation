@@ -1642,6 +1642,74 @@ def hand_action_norm_diagnostic(
     return torch.norm(action_term.processed_actions, dim=-1)
 
 
+def eef_dist_xy_diagnostic(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: XY-plane distance from EEF to object (horizontal approach). Use with weight=0."""
+    object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        object_pos = object_pos + torch.tensor(offset, device=object_pos.device)
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
+    diff = object_pos - eef_pos
+    return torch.norm(diff[:, :2], dim=1)  # XY only
+
+
+def eef_dist_z_diagnostic(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: Z-axis distance from EEF to object (vertical approach). Use with weight=0."""
+    object_pos = env.scene[object_cfg.name].data.root_pos_w - env.scene.env_origins
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        object_pos = object_pos + torch.tensor(offset, device=object_pos.device)
+    body_pos_w = env.scene["robot"].data.body_pos_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    eef_pos = body_pos_w[:, eef_idx] - env.scene.env_origins
+    return torch.abs(object_pos[:, 2] - eef_pos[:, 2])
+
+
+def object_height_diagnostic(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: object Z-position (absolute height). Use with weight=0."""
+    return env.scene[object_cfg.name].data.root_pos_w[:, 2]
+
+
+def object_displacement_diagnostic(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: object displacement from episode start position. Use with weight=0."""
+    return _object_root_displacement_from_init(env, object_cfg)
+
+
+def eef_dist_delta_diagnostic(
+    env: ManagerBasedRLEnv,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Diagnostic: change in EEF distance between steps (negative=approaching). Use with weight=0."""
+    dist = _object_eef_distance(env, eef_link_name, object_cfg)
+    attr_name = f"_prev_eef_dist_{eef_link_name}_{object_cfg.name}"
+    if not hasattr(env, attr_name):
+        setattr(env, attr_name, dist.clone())
+    prev = getattr(env, attr_name)
+    delta = dist - prev
+    # reset on episode boundary
+    if hasattr(env, "reset_buf"):
+        delta = torch.where(env.reset_buf, torch.zeros_like(delta), delta)
+    setattr(env, attr_name, dist.clone())
+    return delta
+
+
 def phase_hand_x_align_object_z_penalty_gated(
     env: ManagerBasedRLEnv,
     command_name: str,

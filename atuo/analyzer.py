@@ -237,6 +237,11 @@ def _format_prompt(
     diag_keys = [
         "reward_left_hand_closure_diag", "reward_right_hand_closure_diag",
         "reward_left_eef_dist_diag", "reward_right_eef_dist_diag",
+        "reward_left_eef_dist_xy_diag", "reward_right_eef_dist_xy_diag",
+        "reward_left_eef_dist_z_diag", "reward_right_eef_dist_z_diag",
+        "reward_left_eef_dist_delta_diag", "reward_right_eef_dist_delta_diag",
+        "reward_left_object_height_diag", "reward_right_object_height_diag",
+        "reward_left_object_displacement_diag", "reward_right_object_displacement_diag",
         "reward_left_hand_action_norm_diag", "reward_right_hand_action_norm_diag",
         "reward_left_arm_action_norm_diag", "reward_right_arm_action_norm_diag",
     ]
@@ -303,7 +308,11 @@ def _format_prompt(
         "- Check if agents progress beyond phase 0\n"
         "- If stuck in phase 0: is reaching reward gradient sufficient? Is a penalty blocking approach?\n"
         "- If stuck in phase 1: is grasping reward activated? Is the gripper closing?\n\n"
-        "Step 3: Action Analysis\n"
+        "Step 3: Physical & Action Analysis\n"
+        "- Check eef_dist_xy vs eef_dist_z: is the arm stuck horizontally or vertically?\n"
+        "- Check eef_dist_delta: negative means approaching, near 0 means stalled, positive means retreating\n"
+        "- Check object_height: if unchanged from ~table level, object never lifted\n"
+        "- Check object_displacement: if high in phase 0, arm is pushing object away before grasping\n"
         "- Check hand_action_norm: if near 0, gripper is not actuating\n"
         "- Check arm_action_norm: if very high but dist not decreasing, there may be a conflict\n\n"
         "Step 4: Propose Overrides\n"

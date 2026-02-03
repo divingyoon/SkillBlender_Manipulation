@@ -73,6 +73,8 @@ def run_train(
     output_dir_path = Path(output_dir).resolve()
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
+    is_skrl = str(agent).startswith("skrl_")
+
     cmd = ["./isaaclab.sh", "-p", train_script, "--task", task, "--agent", agent]
     if num_envs is not None:
         cmd += ["--num_envs", str(num_envs)]
@@ -80,10 +82,23 @@ def run_train(
         cmd += ["--seed", str(seed)]
     if max_iterations is not None:
         cmd += ["--max_iterations", str(max_iterations)]
-    if resume_from:
-        cmd += ["--resume", "--load_run", str(resume_from)]
-    if resume_checkpoint:
-        cmd += ["--checkpoint", str(resume_checkpoint)]
+
+    # Resume handling: rsl_rl vs skrl have different CLI conventions
+    if is_skrl:
+        # skrl: --checkpoint <full_path_to_checkpoint>
+        if resume_from and resume_checkpoint:
+            task_prefix = _task_prefix(task)
+            ckpt_path = log_root_path / task_prefix / resume_from / "checkpoints" / resume_checkpoint
+            cmd += ["--checkpoint", str(ckpt_path)]
+        elif resume_checkpoint and Path(resume_checkpoint).is_absolute():
+            cmd += ["--checkpoint", str(resume_checkpoint)]
+    else:
+        # rsl_rl: --resume --load_run <run_name> --checkpoint <filename>
+        if resume_from:
+            cmd += ["--resume", "--load_run", str(resume_from)]
+        if resume_checkpoint:
+            cmd += ["--checkpoint", str(resume_checkpoint)]
+
     cmd += list(base_args)
     cmd += list(hydra_overrides)
 

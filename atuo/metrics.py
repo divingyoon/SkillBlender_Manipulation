@@ -74,14 +74,74 @@ def _summarize_series(series: list[tuple[int, float]], n: int = 100) -> ScalarSu
 def _tag_to_key(tag: str) -> str:
     """Convert tensorboard tag to a flat key.
 
-    Examples:
+    Handles both rsl_rl and skrl tag formats, normalizing to a common key scheme.
+
+    rsl_rl examples:
         'Train/mean_reward' -> 'mean_reward'
         'Episode_Reward/left_reaching_object' -> 'reward_left_reaching_object'
         'Loss/entropy' -> 'entropy'
-        'Loss/surrogate' -> 'surrogate'
-        'Loss/value_function' -> 'value_function'
         'Curriculum/left_reaching_object' -> 'curriculum_left_reaching_object'
+
+    skrl examples:
+        'Info / Episode_Reward/left_reaching_object' -> 'reward_left_reaching_object'
+        'Reward / Total reward (mean)' -> 'mean_reward'
+        'Loss / Entropy loss' -> 'entropy'
+        'Loss / Policy loss' -> 'surrogate'
+        'Loss / Value loss' -> 'value_function'
+        'Policy / Standard deviation' -> 'policy_action_noise_std'
     """
+    # ── skrl format: "Category / Sub" with spaces around slash ──
+    if " / " in tag:
+        category, sub = tag.split(" / ", 1)
+        category = category.strip()
+        sub = sub.strip()
+
+        if category == "Info" and sub.startswith("Episode_Reward/"):
+            reward_name = sub.split("/", 1)[1]
+            return f"reward_{reward_name}"
+
+        if category == "Reward":
+            _skrl_reward_map = {
+                "Total reward (mean)": "mean_reward",
+                "Total reward (max)": "mean_reward_max_env",
+                "Total reward (min)": "mean_reward_min_env",
+                "Instantaneous reward (mean)": "instantaneous_reward",
+                "Instantaneous reward (max)": "instantaneous_reward_max",
+                "Instantaneous reward (min)": "instantaneous_reward_min",
+            }
+            return _skrl_reward_map.get(sub, f"reward_{sub}")
+
+        if category == "Loss":
+            _skrl_loss_map = {
+                "Entropy loss": "entropy",
+                "Policy loss": "surrogate",
+                "Value loss": "value_function",
+            }
+            return _skrl_loss_map.get(sub, sub.lower().replace(" ", "_"))
+
+        if category == "Policy":
+            _skrl_policy_map = {
+                "Standard deviation": "policy_action_noise_std",
+            }
+            return _skrl_policy_map.get(sub, f"policy_{sub.lower().replace(' ', '_')}")
+
+        if category == "Learning":
+            _skrl_learn_map = {
+                "Learning rate": "learning_rate",
+            }
+            return _skrl_learn_map.get(sub, sub.lower().replace(" ", "_"))
+
+        if category == "Episode":
+            _skrl_ep_map = {
+                "Total timesteps (mean)": "mean_episode_length",
+                "Total timesteps (max)": "max_episode_length",
+                "Total timesteps (min)": "min_episode_length",
+            }
+            return _skrl_ep_map.get(sub, f"episode_{sub.lower().replace(' ', '_')}")
+
+        return f"{category.lower()}_{sub.lower().replace(' ', '_')}"
+
+    # ── rsl_rl format: "Category/name" ──
     if "/" not in tag:
         return tag
     prefix, name = tag.split("/", 1)

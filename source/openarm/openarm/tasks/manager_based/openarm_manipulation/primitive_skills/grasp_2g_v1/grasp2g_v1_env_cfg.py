@@ -775,6 +775,58 @@ class RewardsCfg:
         weight=0.0,
     )
 
+    # ─── Extended Diagnostic terms (raw physical metrics) ───
+    left_eef_dist_xy_diag = RewTerm(
+        func=mdp.eef_dist_xy_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_eef_dist_xy_diag = RewTerm(
+        func=mdp.eef_dist_xy_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    left_eef_dist_z_diag = RewTerm(
+        func=mdp.eef_dist_z_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_eef_dist_z_diag = RewTerm(
+        func=mdp.eef_dist_z_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    left_eef_dist_delta_diag = RewTerm(
+        func=mdp.eef_dist_delta_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_eef_dist_delta_diag = RewTerm(
+        func=mdp.eef_dist_delta_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    left_object_height_diag = RewTerm(
+        func=mdp.object_height_diagnostic,
+        params={"object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_object_height_diag = RewTerm(
+        func=mdp.object_height_diagnostic,
+        params={"object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    left_object_displacement_diag = RewTerm(
+        func=mdp.object_displacement_diagnostic,
+        params={"object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_object_displacement_diag = RewTerm(
+        func=mdp.object_displacement_diagnostic,
+        params={"object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+
     # ─── Regularization ───
     action_rate = RewTerm(func=mdp.action_rate_l2, weight=-1e-4)
 

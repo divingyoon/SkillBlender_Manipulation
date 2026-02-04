@@ -280,7 +280,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=8.0,
+        weight=12.0,
     )
 
     left_object_displacement_penalty = RewTerm(
@@ -452,7 +452,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=8.0,
+        weight=12.0,
     )
 
     right_object_displacement_penalty = RewTerm(
@@ -879,7 +879,7 @@ class Grasp2gV2EnvCfg(ManagerBasedRLEnvCfg):
     grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.07)
 
     # Phase transition settings
-    phase_stability_reach_steps: int = 5   # Relaxed from v1's 10
+    phase_stability_reach_steps: int = 2   # Further relaxed to reduce reach reset churn
     phase_stability_grasp_steps: int = 3   # Relaxed from v1's 5
     phase_stability_lift_steps: int = 2    # Relaxed from v1's 3
     phase_demotion_enabled: bool = False

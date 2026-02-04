@@ -158,7 +158,7 @@ class OpenArmGrasp2gV2EnvCfg(Grasp2gV2EnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.2,
+            scale=0.5,
             use_default_offset=True,
         )
         self.actions.left_hand_action = mdp.BinaryJointPositionActionCfg(
@@ -185,7 +185,7 @@ class OpenArmGrasp2gV2EnvCfg(Grasp2gV2EnvCfg):
                 "openarm_right_joint6",
                 "openarm_right_joint7",
             ],
-            scale=0.2,
+            scale=0.5,
             use_default_offset=True,
         )
 

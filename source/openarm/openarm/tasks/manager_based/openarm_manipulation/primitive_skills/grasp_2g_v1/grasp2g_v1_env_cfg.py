@@ -279,7 +279,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=8.0,
+        weight=12.0,
     )
     right_reaching_object_fine = RewTerm(
         func=mdp.phase_object_ee_distance_xy_then_z,
@@ -300,7 +300,7 @@ class RewardsCfg:
                 "hold_duration": 2.0,
             },
         },
-        weight=8.0,
+        weight=12.0,
     )
 
     # Bimanual reach: min(reach_L, reach_R)
@@ -920,7 +920,7 @@ class Grasp2gEnvCfg(ManagerBasedRLEnvCfg):
     enable_gripper_hold: bool = False
 
     # Phase transition 안정성 설정 (N-step 연속 조건)
-    phase_stability_reach_steps: int = 10   # Phase 0→1: N step 연속 reach_distance 이내
+    phase_stability_reach_steps: int = 2   # Phase 0→1: reduce N-step requirement to avoid rapid resets
     phase_stability_grasp_steps: int = 5    # Phase 1→2: N step 연속 grasp 조건 충족
     phase_stability_lift_steps: int = 3     # Phase 2→3: N step 연속 lift_height 이상
     phase_demotion_enabled: bool = False    # 역전환 토글 (기본 비활성)

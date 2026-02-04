@@ -257,15 +257,16 @@ class RewardsCfg:
         weight=-2.0,
     )
 
-    # Phase 0-1: fine reaching (XY/Z 분리)
-    # std 확대: 0.05→0.15(xy), 0.05→0.10(z) - EEF 초기거리 0.2~0.3m 커버
-    # Curriculum: 초기 8.0 → 3000 step 후 5.0으로 복귀
+    # Phase 0-1: fine reaching (XY-first curriculum)
+    # XY를 먼저 학습한 후 Z 보상 활성화
+    # xy_threshold: XY 거리가 5cm 이하일 때 Z 보상 시작
     left_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+        func=mdp.phase_object_ee_distance_xy_then_z,
         params={
-            "std_xy": 0.15,
+            "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
             "std_z": 0.10,
-            "z_weight": 2.0,
+            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],
@@ -281,11 +282,12 @@ class RewardsCfg:
         weight=8.0,
     )
     right_reaching_object_fine = RewTerm(
-        func=mdp.phase_object_ee_distance_xyz_weighted,
+        func=mdp.phase_object_ee_distance_xy_then_z,
         params={
-            "std_xy": 0.15,
+            "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
             "std_z": 0.10,
-            "z_weight": 2.0,
+            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "phase_weights": [1.0, 1.0, 0.0, 0.0],

@@ -421,6 +421,63 @@ def object_ee_distance_xyz_weighted(
     return 1 - torch.tanh(weighted)
 
 
+def object_ee_distance_xy_only(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "openarm_left_hand",
+) -> torch.Tensor:
+    """Reach reward for XY plane only (ignore Z axis)."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos = obj.data.root_pos_w
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        obj_pos = obj_pos + torch.tensor(offset, device=obj_pos.device)
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    diff = ee_pos - obj_pos
+    dist_xy = torch.linalg.norm(diff[:, :2], dim=1)
+    return 1 - torch.tanh(dist_xy / std_xy)
+
+
+def object_ee_distance_xy_then_z(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    std_z: float,
+    z_weight: float,
+    xy_threshold: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "openarm_left_hand",
+) -> torch.Tensor:
+    """XY-first curriculum reach reward.
+
+    Only activates Z reward when XY distance is below xy_threshold.
+    This encourages the policy to first learn XY positioning before Z.
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos = obj.data.root_pos_w
+    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
+    if isinstance(offset, (list, tuple)) and len(offset) == 3:
+        obj_pos = obj_pos + torch.tensor(offset, device=obj_pos.device)
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    diff = ee_pos - obj_pos
+    dist_xy = torch.linalg.norm(diff[:, :2], dim=1)
+    dist_z = torch.abs(diff[:, 2])
+
+    # XY reward (always active)
+    reward_xy = 1 - torch.tanh(dist_xy / std_xy)
+
+    # Z reward (only when XY is close enough)
+    reward_z = 1 - torch.tanh(dist_z / std_z)
+    z_gate = (dist_xy < xy_threshold).float()
+
+    # Combined: XY always + Z only when XY is good
+    return reward_xy + z_weight * reward_z * z_gate
+
+
 def object_ee_reach_sparse(
     env: ManagerBasedRLEnv,
     reach_distance: float,
@@ -544,6 +601,41 @@ def phase_object_ee_distance_xyz_weighted(
         std_xy=std_xy,
         std_z=std_z,
         z_weight=z_weight,
+        object_cfg=object_cfg,
+        eef_link_name=eef_link_name,
+    )
+    return reward * _phase_weight(phase, phase_weights, env.device)
+
+
+def phase_object_ee_distance_xy_then_z(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    std_z: float,
+    z_weight: float,
+    xy_threshold: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Phase-gated XY-first curriculum reach reward."""
+    phase = _update_grasp2g_phase(
+        env,
+        eef_link_name,
+        object_cfg,
+        phase_params["lift_height"],
+        phase_params["reach_distance"],
+        phase_params.get("align_threshold", 0.0),
+        phase_params["grasp_distance"],
+        phase_params["close_threshold"],
+        phase_params["hold_duration"],
+    )
+    reward = object_ee_distance_xy_then_z(
+        env,
+        std_xy=std_xy,
+        std_z=std_z,
+        z_weight=z_weight,
+        xy_threshold=xy_threshold,
         object_cfg=object_cfg,
         eef_link_name=eef_link_name,
     )
@@ -1792,6 +1884,30 @@ def staged_phase_object_ee_distance_xyz_weighted(
         return torch.zeros(env.num_envs, device=env.device)
     return phase_object_ee_distance_xyz_weighted(
         env, std_xy, std_z, z_weight, eef_link_name, object_cfg, phase_weights, phase_params
+    )
+
+
+def staged_phase_object_ee_distance_xy_then_z(
+    env: ManagerBasedRLEnv,
+    std_xy: float,
+    std_z: float,
+    z_weight: float,
+    xy_threshold: float,
+    eef_link_name: str,
+    object_cfg: SceneEntityCfg,
+    active_stages: list[int],
+    phase_weights: list[float],
+    phase_params: dict,
+) -> torch.Tensor:
+    """Stage-gated XY-first curriculum reach reward.
+
+    XY reward is always active. Z reward only activates when XY distance < xy_threshold.
+    This encourages the policy to first learn horizontal positioning before vertical.
+    """
+    if not _is_stage_active(env, active_stages):
+        return torch.zeros(env.num_envs, device=env.device)
+    return phase_object_ee_distance_xy_then_z(
+        env, std_xy, std_z, z_weight, xy_threshold, eef_link_name, object_cfg, phase_weights, phase_params
     )
 
 

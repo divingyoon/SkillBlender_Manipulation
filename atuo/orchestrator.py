@@ -404,6 +404,8 @@ def main() -> int:
             reward_names = _extract_reward_keys(env_yaml)
             reward_override_keys = []
             for name in reward_names:
+                if name.endswith('_diag'):  # diagnostic 텀은 수정 대상에서 제외
+                    continue
                 reward_override_keys.append(f"env.rewards.{name}.weight")
                 reward_override_keys.append(f"env.rewards.{name}.params.")
 
@@ -606,6 +608,8 @@ def main() -> int:
             reward_names = _extract_reward_keys(env_yaml)
             reward_override_keys = []
             for name in reward_names:
+                if name.endswith('_diag'):  # diagnostic 텀은 수정 대상에서 제외
+                    continue
                 reward_override_keys.append(f"env.rewards.{name}.weight")
                 reward_override_keys.append(f"env.rewards.{name}.params.")
             analysis_result = analyze(

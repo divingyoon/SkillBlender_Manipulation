@@ -261,11 +261,12 @@ class RewardsCfg:
     )
 
     left_reaching_object_fine = RewTerm(
-        func=mdp.staged_phase_object_ee_distance_xyz_weighted,
+        func=mdp.staged_phase_object_ee_distance_xy_then_z,
         params={
-            "std_xy": 0.15,
+            "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
             "std_z": 0.10,
-            "z_weight": 2.0,
+            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
             "active_stages": [0, 2],
@@ -432,11 +433,12 @@ class RewardsCfg:
     )
 
     right_reaching_object_fine = RewTerm(
-        func=mdp.staged_phase_object_ee_distance_xyz_weighted,
+        func=mdp.staged_phase_object_ee_distance_xy_then_z,
         params={
-            "std_xy": 0.15,
+            "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
             "std_z": 0.10,
-            "z_weight": 2.0,
+            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
             "active_stages": [1, 2],
@@ -763,6 +765,27 @@ class RewardsCfg:
     )
     right_eef_dist_delta_diag = RewTerm(
         func=mdp.eef_dist_delta_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    # XY/Z separated diagnostics for curriculum debugging
+    left_eef_dist_xy_diag = RewTerm(
+        func=mdp.eef_dist_xy_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    left_eef_dist_z_diag = RewTerm(
+        func=mdp.eef_dist_z_diagnostic,
+        params={"eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
+        weight=0.0,
+    )
+    right_eef_dist_xy_diag = RewTerm(
+        func=mdp.eef_dist_xy_diagnostic,
+        params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.0,
+    )
+    right_eef_dist_z_diag = RewTerm(
+        func=mdp.eef_dist_z_diagnostic,
         params={"eef_link_name": "openarm_right_hand", "object_cfg": SceneEntityCfg("cup2")},
         weight=0.0,
     )

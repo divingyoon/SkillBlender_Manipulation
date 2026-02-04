@@ -264,8 +264,8 @@ class RewardsCfg:
         func=mdp.phase_object_ee_distance_xy_then_z,
         params={
             "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
-            "std_z": 0.10,
-            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "std_z": 0.06,
+            "z_weight": 2.0,  # Stronger Z gradient while keeping XY-first gate
             "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "openarm_left_hand",
@@ -285,8 +285,8 @@ class RewardsCfg:
         func=mdp.phase_object_ee_distance_xy_then_z,
         params={
             "std_xy": 0.10,  # Reduced from 0.15 for stronger XY gradient
-            "std_z": 0.10,
-            "z_weight": 1.0,  # Equal weight - curriculum handles XY-first ordering
+            "std_z": 0.06,
+            "z_weight": 2.0,  # Stronger Z gradient while keeping XY-first gate
             "xy_threshold": 0.10,  # Z reward when XY < 10cm (same as reach_distance)
             "object_cfg": SceneEntityCfg("cup2"),
             "eef_link_name": "openarm_right_hand",
@@ -401,14 +401,14 @@ class RewardsCfg:
     # Phase 0: reach 동안 방향 정렬.
     left_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_penalty_gated,
-        weight=-1.0,
+        weight=-2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_left_hand"),
             "command_name": "left_cup_pose",
             "eef_link_name": "openarm_left_hand",
             "object_cfg": SceneEntityCfg("cup"),
-            "gate_std": 0.1,
-            "phase_weights": [1.0, 0.3, 0.0, 0.0],
+            "gate_std": 0.05,
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_left_hand",
                 "lift_height": 0.1,
@@ -421,14 +421,14 @@ class RewardsCfg:
     )
     right_end_effector_orientation_tracking = RewTerm(
         func=mdp.phase_hand_x_align_object_z_penalty_gated,
-        weight=-1.0,
+        weight=-2.0,
         params={
             "asset_cfg": SceneEntityCfg("robot", body_names="openarm_right_hand"),
             "command_name": "right_cup_pose",
             "eef_link_name": "openarm_right_hand",
             "object_cfg": SceneEntityCfg("cup2"),
-            "gate_std": 0.1,
-            "phase_weights": [1.0, 0.3, 0.0, 0.0],
+            "gate_std": 0.05,
+            "phase_weights": [1.0, 1.0, 0.0, 0.0],
             "phase_params": {
                 "eef_link_name": "openarm_right_hand",
                 "lift_height": 0.1,

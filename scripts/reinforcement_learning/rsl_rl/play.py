@@ -88,6 +88,7 @@ simulation_app = app_launcher.app
 
 import gymnasium as gym
 import os
+import re
 import time
 import torch
 
@@ -125,6 +126,26 @@ import openarm.tasks  # noqa: F401
 # PLACEHOLDER: Extension template (do not remove this comment)
 
 register_rsl_rl()
+
+
+def _resolve_pipeline_log_components(task_name: str) -> tuple[str, str]:
+    """Resolve <side>/<folder> under pipeline from the registered task config path."""
+    task_key = task_name.split(":")[-1].replace("-Play", "")
+    fallback_folder = task_key.replace("-", "_")
+    try:
+        spec = gym.spec(task_key)
+        env_cfg_entry = spec.kwargs.get("env_cfg_entry_point", "")
+        if isinstance(env_cfg_entry, str):
+            match = re.search(r"\.pipeline\.(?:gripper|hand)\.(left|right|both)\.([A-Za-z0-9_]+)\.", env_cfg_entry)
+            if match:
+                return match.group(1), match.group(2)
+    except Exception:
+        pass
+    if "_right" in fallback_folder.lower():
+        return "right", fallback_folder
+    if "_both" in fallback_folder.lower():
+        return "both", fallback_folder
+    return "left", fallback_folder
 
 
 def _unwrap_actions(action):
@@ -294,9 +315,12 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # override configurations with non-hydra CLI arguments
     agent_cfg: RslRlBaseRunnerCfg = cli_args.update_rsl_rl_cfg(agent_cfg, args_cli)
 
-    # specify directory for logging experiments
+    # CHECKPOINT SEARCH ROOT RULE:
+    #   <sbm_root>/log/rsl_rl/pipeline/<left|right|both>/<task_dir_name>
+    # side/folder are auto-resolved from task's env_cfg_entry_point (pipeline module path).
+    side_dir, task_dir_name = _resolve_pipeline_log_components(train_task_name)
     sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
-    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", agent_cfg.experiment_name)
+    log_root_path = os.path.join(sbm_root, "log", "rsl_rl", "pipeline", side_dir, task_dir_name)
     log_root_path = os.path.abspath(log_root_path)
     print(f"[INFO] Loading experiment from directory: {log_root_path}")
     if args_cli.use_pretrained_checkpoint:
@@ -307,6 +331,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     elif args_cli.checkpoint:
         resume_path = retrieve_file_path(args_cli.checkpoint)
     else:
+        # Default behavior: resolve checkpoint from log_root_path + load_run/load_checkpoint pattern.
+        # Typical run_dir is "testN".
         resume_path = get_checkpoint_path(log_root_path, agent_cfg.load_run, agent_cfg.load_checkpoint)
 
     log_dir = os.path.dirname(resume_path)

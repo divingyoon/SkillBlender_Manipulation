@@ -17,31 +17,25 @@ import gymnasium as gym
 from . import agents
 
 gym.register(
-    id="grasp2g-v2",
-    entry_point="openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v2.grasp2g_hold_env:Grasp2gHoldEnv",
+    id="2g_grasp_left-v1",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.left.2g_grasp_left_v1.grasp_left_hold_env:Grasp2gHoldEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmGrasp2gV2EnvCfg",
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
-        "rsl_rl_hier_cfg_entry_point": f"{agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
-        "skrl_dual_cfg_entry_point": f"{agents.__name__}:skrl_ppo_dualhead_cfg.yaml",
-        "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
     },
 )
 
 gym.register(
-    id="grasp2g-play-v2",
-    entry_point="openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v2.grasp2g_hold_env:Grasp2gHoldEnv",
+    id="2g_grasp_left-play-v1",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.left.2g_grasp_left_v1.grasp_left_hold_env:Grasp2gHoldEnv",
     disable_env_checker=True,
     kwargs={
         "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmGrasp2gV2EnvCfg_PLAY",
         "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
         "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmGrasp2gPPORunnerCfg",
-        "rsl_rl_hier_cfg_entry_point": f"{agents.__name__}.rsl_rl_hierarchical_cfg:OpenArmGrasp2gHierarchicalPPORunnerCfg",
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
-        "skrl_dual_cfg_entry_point": f"{agents.__name__}:skrl_ppo_dualhead_cfg.yaml",
-        "rsl_rl_dual_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_dualhead_cfg:GraspDualHeadPPORunnerCfg",
     },
 )

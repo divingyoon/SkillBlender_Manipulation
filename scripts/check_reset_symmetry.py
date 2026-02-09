@@ -33,7 +33,7 @@ def main():
     # Register OpenArm tasks
     import openarm.tasks  # noqa: F401
     from isaaclab_tasks.utils.parse_cfg import parse_env_cfg
-    from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp_mdp
+    from openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.grasp_2g import mdp as grasp_mdp
     from isaaclab.managers import SceneEntityCfg
 
     env_cfg = parse_env_cfg(

@@ -13,13 +13,11 @@
 # limitations under the License.
 
 import os
-from .assets import *  # noqa
-from . import blending # noqa
-from . import bimanual # noqa
-from . import primitive_skills # noqa
 
 _env_root = os.environ.get("OPENARM_ROOT_DIR")
 if _env_root:
     OPENARM_ROOT_DIR = os.path.abspath(os.path.expanduser(_env_root))
 else:
     OPENARM_ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+
+__all__ = ["OPENARM_ROOT_DIR"]

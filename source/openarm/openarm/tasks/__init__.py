@@ -16,6 +16,8 @@
 # Register Gym environments.
 ##
 
+import importlib
+
 from isaaclab_tasks.utils import import_packages
 
 # Register SkillBlender custom policies with RSL-RL if available.
@@ -32,14 +34,14 @@ _BLACKLIST_PKGS = ["utils", ".mdp"]
 import_packages(__name__, _BLACKLIST_PKGS)
 
 # Explicitly import the new 'approach' task config to ensure registration
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.approach.config
+import openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.both.approach.config
 
 # bimanual/reach
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.reach.config
+import openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.reach.config
 # bimanual/grasp,grasp2g
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp.config
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.config
-import openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g.grasp_2g_env_cfg
+import openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.both.grasp.config
+import openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.grasp_2g.config
+import openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.grasp_2g.grasp_2g_env_cfg
 
 #primitive skills/grasp_2g_v1
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.grasp_2g_v1.config
@@ -50,6 +52,15 @@ import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.ReachIK
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.GraspIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.TransferIK.config
 import openarm.tasks.manager_based.openarm_manipulation.primitive_skills.PourIK.config
+
+# pipeline/gripper/left/2g_grasp_left_v1
+# NOTE: module segment starts with a digit, so standard `import ...` syntax is invalid.
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.left.2g_grasp_left_v1.config"
+)
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.right.2g_grasp_right_v1.config"
+)
 
 # blending/pouring,pouring1,pouring2,pouring3,pouring4
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config

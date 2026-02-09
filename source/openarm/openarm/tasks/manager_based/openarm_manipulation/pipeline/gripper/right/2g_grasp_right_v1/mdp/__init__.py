@@ -12,9 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Primitive skills package.
+from isaaclab.envs.mdp import *  # noqa: F401, F403
 
-Keep this module import-light to avoid circular imports during recursive
-task discovery (`import_packages`).
-Each subpackage registers its own gym tasks in its own `__init__.py`.
-"""
+from .commands_cfg import InitialObjectPoseCommandCfg
+from .observations import *  # noqa: F401, F403
+from .rewards import *  # noqa: F401, F403
+from .terminations import *  # noqa: F401, F403

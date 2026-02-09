@@ -33,7 +33,7 @@ from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 
 from . import mdp
-from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp2g_mdp
+from openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.grasp_2g import mdp as grasp2g_mdp
 
 
 @configclass

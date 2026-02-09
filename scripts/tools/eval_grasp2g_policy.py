@@ -59,7 +59,7 @@ def main() -> int:
     from rsl_rl.runners import DistillationRunner, OnPolicyRunner
 
     import openarm.tasks  # noqa: F401
-    from openarm.tasks.manager_based.openarm_manipulation.bimanual.grasp_2g import mdp as grasp_mdp
+    from openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.grasp_2g import mdp as grasp_mdp
 
     @hydra_task_config(args.task, args.agent)
     def _run(env_cfg, agent_cfg: RslRlBaseRunnerCfg):

@@ -86,6 +86,7 @@ simulation_app = app_launcher.app
 import gymnasium as gym
 import os
 import random
+import re
 
 
 import omni
@@ -141,6 +142,26 @@ import openarm.tasks  # noqa: F401
 
 # PLACEHOLDER: Extension template (do not remove this comment)
 
+
+def _resolve_pipeline_log_components(task_name: str) -> tuple[str, str]:
+    """Resolve <side>/<folder> under pipeline from the registered task config path."""
+    task_key = task_name.split(":")[-1].replace("-Play", "")
+    fallback_folder = task_key.replace("-", "_")
+    try:
+        spec = gym.spec(task_key)
+        env_cfg_entry = spec.kwargs.get("env_cfg_entry_point", "")
+        if isinstance(env_cfg_entry, str):
+            match = re.search(r"\.pipeline\.(?:gripper|hand)\.(left|right|both)\.([A-Za-z0-9_]+)\.", env_cfg_entry)
+            if match:
+                return match.group(1), match.group(2)
+    except Exception:
+        pass
+    if "_right" in fallback_folder.lower():
+        return "right", fallback_folder
+    if "_both" in fallback_folder.lower():
+        return "both", fallback_folder
+    return "left", fallback_folder
+
 # config shortcuts
 if args_cli.agent is None:
     algorithm = args_cli.algorithm.lower()
@@ -153,6 +174,14 @@ else:
 @hydra_task_config(args_cli.task, agent_cfg_entry_point)
 def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agent_cfg: dict):
     """Train with skrl agent."""
+    # Guard against passing a non-skrl agent entry point (e.g., rl_games/rsl_rl).
+    if "trainer" not in agent_cfg or "agent" not in agent_cfg:
+        raise ValueError(
+            "Invalid agent config for skrl/train.py. "
+            "Use a skrl config entry point such as '--agent skrl_cfg_entry_point' "
+            "or omit '--agent' and set '--algorithm PPO'."
+        )
+
     # override configurations with non-hydra CLI arguments
     env_cfg.scene.num_envs = args_cli.num_envs if args_cli.num_envs is not None else env_cfg.scene.num_envs
     env_cfg.sim.device = args_cli.device if args_cli.device is not None else env_cfg.sim.device
@@ -178,13 +207,19 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     agent_cfg["seed"] = args_cli.seed if args_cli.seed is not None else agent_cfg["seed"]
     env_cfg.seed = agent_cfg["seed"]
 
-    # specify directory for logging experiments
+    # LOG PATH RULE:
+    #   <sbm_root>/log/skrl/pipeline/<left|right|both>/<task_dir_name>/testN
+    # side/folder are auto-resolved from task's env_cfg_entry_point (pipeline module path).
     task_name = args_cli.task
-    log_root_path = os.path.join("..", "SkillBlender_Manipulation", "log", "skrl", task_name)
+    side_dir, task_dir_name = _resolve_pipeline_log_components(task_name)
+    sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    log_root_path = os.path.join(sbm_root, "log", "skrl", "pipeline", side_dir, task_dir_name)
     log_root_path = os.path.abspath(log_root_path)
     os.makedirs(log_root_path, exist_ok=True)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
-    # specify directory for logging runs: testN (auto-increment, same as rsl_rl)
+    # LOG RUN-NAME RULE:
+    #   auto-increment "test1", "test2", ...
+    # Edit this section if you need timestamp/custom run names.
     existing = []
     for name in os.listdir(log_root_path):
         if name.startswith("test"):
@@ -216,7 +251,7 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             "IO descriptors are only supported for manager based RL environments. No IO descriptors will be exported."
         )
 
-    # set the log directory for the environment (works for all environment types)
+    # Environment-side logging should point to absolute run directory.
     env_cfg.log_dir = log_dir
 
     # create isaac environment

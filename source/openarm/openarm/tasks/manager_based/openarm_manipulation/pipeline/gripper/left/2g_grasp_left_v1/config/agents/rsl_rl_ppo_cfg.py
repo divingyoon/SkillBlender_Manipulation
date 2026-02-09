@@ -26,7 +26,7 @@ class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
-    experiment_name = "grasp2g"
+    experiment_name = "2g_grasp_left_v1"
     run_name = ""
     resume = False
     empirical_normalization = True
@@ -34,8 +34,8 @@ class OpenArmGrasp2gPPORunnerCfg(RslRlOnPolicyRunnerCfg):
         init_noise_std=1.0,
         actor_obs_normalization=True,
         critic_obs_normalization=True,
-        actor_hidden_dims=[512, 256],
-        critic_hidden_dims=[512, 256],
+        actor_hidden_dims=[256, 128, 64],
+        critic_hidden_dims=[256, 128, 64],
         activation="elu",
         noise_std_type="log",
     )

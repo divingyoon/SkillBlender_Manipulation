@@ -21,15 +21,16 @@ from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.sensors import FrameTransformerCfg
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
+import math
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
 from .. import mdp
-from ..grasp2g_v2_env_cfg import Grasp2gV2EnvCfg
+from ..grasp_right_v1_env_cfg import Grasp2gRightV2EnvCfg
 
 
 @configclass
-class OpenArmGrasp2gV2EnvCfg(Grasp2gV2EnvCfg):
+class OpenArmGrasp2gRightV2EnvCfg(Grasp2gRightV2EnvCfg):
     def __post_init__(self):
         super().__post_init__()
 
@@ -202,9 +203,9 @@ class OpenArmGrasp2gV2EnvCfg(Grasp2gV2EnvCfg):
             },
         )
 
-        # override command generator body
-        self.commands.left_cup_pose.body_name= "openarm_left_hand"
-        self.commands.right_cup_pose.body_name = "openarm_right_hand"
+        # Lift-style command target: sampled TCP pose for right hand.
+        self.commands.object_pose.body_name = "openarm_right_hand"
+        self.commands.object_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
 
         # add frame transformer for visualization
         marker_cfg = FRAME_MARKER_CFG.copy()
@@ -238,7 +239,7 @@ class OpenArmGrasp2gV2EnvCfg(Grasp2gV2EnvCfg):
 
 
 @configclass
-class OpenArmGrasp2gV2EnvCfg_PLAY(OpenArmGrasp2gV2EnvCfg):
+class OpenArmGrasp2gRightV2EnvCfg_PLAY(OpenArmGrasp2gRightV2EnvCfg):
     def __post_init__(self):
         super().__post_init__()
         self.scene.num_envs = 50

@@ -72,7 +72,7 @@ import gymnasium as gym
 import math
 import os
 import random
-from datetime import datetime
+import re
 
 import omni
 from rl_games.common import env_configurations, vecenv
@@ -98,6 +98,26 @@ from isaaclab_tasks.utils.hydra import hydra_task_config
 import openarm.tasks  # noqa: F401
 
 # PLACEHOLDER: Extension template (do not remove this comment)
+
+
+def _resolve_pipeline_log_components(task_name: str) -> tuple[str, str]:
+    """Resolve <side>/<folder> under pipeline from the registered task config path."""
+    task_key = task_name.split(":")[-1].replace("-Play", "")
+    fallback_folder = task_key.replace("-", "_")
+    try:
+        spec = gym.spec(task_key)
+        env_cfg_entry = spec.kwargs.get("env_cfg_entry_point", "")
+        if isinstance(env_cfg_entry, str):
+            match = re.search(r"\.pipeline\.(?:gripper|hand)\.(left|right|both)\.([A-Za-z0-9_]+)\.", env_cfg_entry)
+            if match:
+                return match.group(1), match.group(2)
+    except Exception:
+        pass
+    if "_right" in fallback_folder.lower():
+        return "right", fallback_folder
+    if "_both" in fallback_folder.lower():
+        return "both", fallback_folder
+    return "left", fallback_folder
 
 
 @hydra_task_config(args_cli.task, args_cli.agent)
@@ -135,22 +155,37 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
     # note: certain randomizations occur in the environment initialization so we set the seed here
     env_cfg.seed = agent_cfg["params"]["seed"]
 
-    # specify directory for logging experiments
-    config_name = agent_cfg["params"]["config"]["name"]
-    log_root_path = os.path.join("logs", "rl_games", config_name)
+    # LOG PATH RULE:
+    #   <sbm_root>/log/rl_games/pipeline/<left|right|both>/<task_dir_name>/testN
+    # side/folder are auto-resolved from task's env_cfg_entry_point (pipeline module path).
+    task_name = args_cli.task
+    side_dir, task_dir_name = _resolve_pipeline_log_components(task_name)
+    sbm_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
+    log_root_path = os.path.join(sbm_root, "log", "rl_games", "pipeline", side_dir, task_dir_name)
     if "pbt" in agent_cfg:
         if agent_cfg["pbt"]["directory"] == ".":
             log_root_path = os.path.abspath(log_root_path)
         else:
             log_root_path = os.path.join(agent_cfg["pbt"]["directory"], log_root_path)
 
+    os.makedirs(log_root_path, exist_ok=True)
     print(f"[INFO] Logging experiment in directory: {log_root_path}")
-    # specify directory for logging runs
-    log_dir = agent_cfg["params"]["config"].get("full_experiment_name", datetime.now().strftime("%Y-%m-%d_%H-%M-%S"))
+    # LOG RUN-NAME RULE:
+    #   auto-increment "test1", "test2", ...
+    # Modify this if you prefer timestamp/custom run names.
+    existing = []
+    for name in os.listdir(log_root_path):
+        if name.startswith("test"):
+            suffix = name[4:]
+            if suffix.isdigit():
+                existing.append(int(suffix))
+    next_idx = (max(existing) + 1) if existing else 1
+    log_dir = f"test{next_idx}"
     # set directory into agent config
     # logging directory path: <train_dir>/<full_experiment_name>
     agent_cfg["params"]["config"]["train_dir"] = log_root_path
     agent_cfg["params"]["config"]["full_experiment_name"] = log_dir
+    config_name = agent_cfg["params"]["config"]["name"]
     wandb_project = config_name if args_cli.wandb_project_name is None else args_cli.wandb_project_name
     experiment_name = log_dir if args_cli.wandb_name is None else args_cli.wandb_name
 
@@ -173,8 +208,8 @@ def main(env_cfg: ManagerBasedRLEnvCfg | DirectRLEnvCfg | DirectMARLEnvCfg, agen
             "IO descriptors are only supported for manager based RL environments. No IO descriptors will be exported."
         )
 
-    # set the log directory for the environment (works for all environment types)
-    env_cfg.log_dir = log_dir
+    # Keep env log_dir as absolute run path so play/tools can reuse this folder.
+    env_cfg.log_dir = os.path.join(log_root_path, log_dir)
 
     # create isaac environment
     env = gym.make(args_cli.task, cfg=env_cfg, render_mode="rgb_array" if args_cli.video else None)

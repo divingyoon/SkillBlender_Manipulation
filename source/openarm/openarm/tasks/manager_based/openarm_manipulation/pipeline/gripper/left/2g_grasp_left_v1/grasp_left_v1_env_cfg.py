@@ -177,12 +177,11 @@ class RewardsCfg:
         weight=1.1,
     )
 
-    # Orientation alignment: encourage gripper to align with cup axis
-    # This helps grasp the cup properly from outside (not from inside)
+    # Orientation alignment: encourage hand +X axis to align with object +Z axis.
     end_effector_orientation = RewTerm(
-        func=mdp.eef_to_object_orientation,
-        params={"std": 0.5, "eef_link_name": "openarm_left_hand", "object_cfg": SceneEntityCfg("cup")},
-        weight=2.0,
+        func=mdp.hand_x_align_object_z_reward,
+        params={"command_name": "object_pose", "asset_cfg": SceneEntityCfg("robot", body_names=["openarm_left_hand"])},
+        weight=0.5,
     )
 
     lifting_object = RewTerm(

@@ -62,6 +62,20 @@ importlib.import_module(
     "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.right.2g_grasp_right_v1.config"
 )
 
+# pipeline/hand/left/5g_approach_left_v1, 5g_approach_right_v1
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_approach_left_v1.config"
+)
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.right.5g_approach_right_v1.config"
+)
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v1.config"
+)
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.right.5g_lift_right_v1.config"
+)
+
 # blending/pouring,pouring1,pouring2,pouring3,pouring4
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring1.config

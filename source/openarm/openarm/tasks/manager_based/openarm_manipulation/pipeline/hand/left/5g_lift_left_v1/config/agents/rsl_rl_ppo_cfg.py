@@ -21,7 +21,7 @@ class OpenArmApproachLeftPPORunnerCfg(RslRlOnPolicyRunnerCfg):
     num_steps_per_env = 24
     max_iterations = 10000
     save_interval = 100
-    experiment_name = "pipeline/left/5g_approach_left_v1"
+    experiment_name = "pipeline_left_5g_lift_left_v1"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
         init_noise_std=1.0,

@@ -174,14 +174,14 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.1, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "openarm_left_hand"},
-        weight=1.1,
+        weight=3.0,
     )
 
     # Orientation alignment: encourage hand +X axis to align with object +Z axis.
     end_effector_orientation = RewTerm(
         func=mdp.hand_x_align_object_z_reward,
         params={"command_name": "object_pose", "asset_cfg": SceneEntityCfg("robot", body_names=["openarm_left_hand"])},
-        weight=0.5,
+        weight=0.1,
     )
 
     lifting_object = RewTerm(

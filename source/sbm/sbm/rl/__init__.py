@@ -4,3 +4,4 @@ from .register_rsl_rl import register_rsl_rl
 from .rl_cfg import SbmDualHeadActorCriticCfg, SbmHierarchicalActorCriticCfg
 from .skrl_models import DualHeadGaussianModel, DualHeadValueModel
 from .vecenv_wrapper import RslRlVecEnvWrapper
+from .rl_games_networks import DualHeadA2CNetwork, DualHeadA2CBuilder, register_rl_games_dualhead

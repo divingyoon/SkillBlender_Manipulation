@@ -28,6 +28,14 @@ try:
 except ImportError:
     pass
 
+# Register SkillBlender custom networks with rl_games if available.
+try:
+    from sbm.rl import register_rl_games_dualhead
+
+    register_rl_games_dualhead()
+except ImportError:
+    pass
+
 # The blacklist is used to prevent importing configs from sub-packages
 _BLACKLIST_PKGS = ["utils", ".mdp"]
 # Import all configs in this package
@@ -60,6 +68,11 @@ importlib.import_module(
 )
 importlib.import_module(
     "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.right.2g_grasp_right_v1.config"
+)
+
+# pipeline/gripper/both/2g_pouring_v1
+importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.2g_pouring_v1.config"
 )
 
 # pipeline/hand/left/5g_approach_left_v1, 5g_approach_right_v1

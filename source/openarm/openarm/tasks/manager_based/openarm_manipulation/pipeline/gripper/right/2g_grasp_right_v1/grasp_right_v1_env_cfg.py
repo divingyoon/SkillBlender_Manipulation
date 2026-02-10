@@ -242,12 +242,12 @@ class CurriculumCfg:
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "action_rate", "weight": -2e-1, "num_steps": 50000},
     )
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "joint_vel", "weight": -2e-1, "num_steps": 50000},
     )
 
 
@@ -293,8 +293,8 @@ class Grasp2gRightV2EnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
         # Required for dense contact scenes: avoid "Patch buffer overflow" warnings.
-        self.sim.physx.gpu_max_rigid_patch_count = 2**23
-        self.sim.physx.gpu_max_rigid_contact_count = 2**23
-        self.sim.physx.gpu_collision_stack_size = 2**24
+        self.sim.physx.gpu_max_rigid_patch_count = 2**25
+        self.sim.physx.gpu_max_rigid_contact_count = 2**25
+        self.sim.physx.gpu_collision_stack_size = 2**25
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

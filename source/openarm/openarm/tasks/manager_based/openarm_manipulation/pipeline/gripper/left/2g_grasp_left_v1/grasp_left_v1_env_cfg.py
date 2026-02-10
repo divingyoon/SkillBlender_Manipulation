@@ -289,9 +289,9 @@ class Grasp2gV2EnvCfg(ManagerBasedRLEnvCfg):
             self.commands.object_pose.debug_vis = False
 
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
-        # Required for large batched scenes (1000 envs): avoid missed interactions warnings.
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 1024 * 1024
+        # Aggressive high-capacity setting for 24 GiB GPUs (e.g., RTX 4090).
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
         # Required for dense contact scenes: avoid "Patch buffer overflow" warnings.
         self.sim.physx.gpu_max_rigid_patch_count = 2**23
         self.sim.physx.gpu_max_rigid_contact_count = 2**23

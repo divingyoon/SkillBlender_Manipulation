@@ -54,7 +54,7 @@ params:
   load_path: ''
 
   config:
-    name: pipeline/left/5g_approach_left_v1
+    name: pipeline_left_5g_approach_left_v1
     env_name: rlgpu
     device: 'cuda:0'
     device_name: 'cuda:0'

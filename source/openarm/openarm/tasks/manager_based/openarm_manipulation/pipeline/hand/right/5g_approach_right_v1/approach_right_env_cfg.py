@@ -136,7 +136,7 @@ class EventCfg:
                 "x": (0.25, 0.25),
                 "y": (0.2, 0.2),
                 "z": (0.0, 0.0),
-                "yaw": (-math.pi / 2, -math.pi / 2),
+                "yaw": (math.pi, math.pi),
             },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup"),
@@ -151,7 +151,7 @@ class EventCfg:
                 "x": (0.25, 0.25),
                 "y": (-0.2, -0.2),
                 "z": (0.0, 0.0),
-                "yaw": (-math.pi / 2, -math.pi / 2),
+                "yaw": (0, 0),
             },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup2"),
@@ -175,14 +175,10 @@ class RewardsCfg:
         weight=1.0,
     )
 
-    # Grasp/lift terms disabled for pure approach mode.
-    # lifting_object = RewTerm(...)
-    # object_goal_tracking = RewTerm(...)
-
     cup2_displacement_penalty = RewTerm(
         func=mdp.object_root_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup2"), "scale": 1.0},
-        weight=-8.0,
+        weight=-5.0,
     )
 
     right_hand_joint_target = RewTerm(
@@ -230,7 +226,7 @@ class TerminationsCfg:
 
     cup2_tipping = DoneTerm(
         func=mdp.cup_tipped,
-        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 30.0},
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
     )
 
 
@@ -240,12 +236,12 @@ class CurriculumCfg:
 
     action_rate = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "action_rate", "weight": -2e-1, "num_steps": 20000},
     )
 
     joint_vel = CurrTerm(
         func=mdp.modify_reward_weight,
-        params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000},
+        params={"term_name": "joint_vel", "weight": -2e-1, "num_steps": 20000},
     )
 
 
@@ -263,7 +259,7 @@ class ApproachRightEnvCfg(ManagerBasedRLEnvCfg):
 
     # Cup-local target offset for side approach (x: cup forward, z: up).
     # (0,0,0.05) was near center-top; this pushes the hand to the cup side.
-    grasp2g_target_offset: tuple[float, float, float] = (-0.045, 0.0, 0.04)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
     curriculum_stage: int = 1
     mask_inactive_arm_actions: bool = True
     debug_approach_target_vis: bool = True
@@ -282,8 +278,8 @@ class ApproachRightEnvCfg(ManagerBasedRLEnvCfg):
         self.sim.physx.bounce_threshold_velocity = 0.01
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 1024 * 1024 * 4
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**23
-        self.sim.physx.gpu_max_rigid_contact_count = 2**23
+        self.sim.physx.gpu_max_rigid_patch_count = 2**24
+        self.sim.physx.gpu_max_rigid_contact_count = 2**24
         self.sim.physx.gpu_collision_stack_size = 2**24
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

@@ -62,6 +62,9 @@ def object_ee_distance(
 
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    ee_quat_w = env.scene["robot"].data.body_quat_w[:, eef_idx]
+
+    _maybe_visualize_ll_dg_ee(env, ee_pos_w, ee_quat_w, marker_attr="_debug_ll_dg_ee")
 
     dist = torch.norm(obj_pos_w - ee_pos_w, dim=1)
     return 1 - torch.tanh(dist / std)
@@ -93,6 +96,34 @@ def _maybe_visualize_approach_target(
     env_id = int(getattr(cfg, "debug_approach_target_vis_env_id", 0))
     env_id = max(0, min(env.num_envs - 1, env_id))
     marker.visualize(target_pos_w[env_id : env_id + 1], target_quat_w[env_id : env_id + 1])
+
+
+def _maybe_visualize_ll_dg_ee(
+    env: ManagerBasedRLEnv,
+    ee_pos_w: torch.Tensor,
+    ee_quat_w: torch.Tensor,
+    marker_attr: str,
+) -> None:
+    cfg = getattr(env, "cfg", None)
+    if cfg is None or not getattr(cfg, "debug_ll_dg_ee_vis", True):
+        return
+
+    interval = int(getattr(cfg, "debug_approach_target_vis_interval", 10))
+    step_count = int(getattr(env, "common_step_counter", 0))
+    if interval > 1 and (step_count % interval) != 0:
+        return
+
+    if not hasattr(env, marker_attr):
+        marker_cfg = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Debug/LLDGEE")
+        marker_cfg.markers["frame"].scale = (0.05, 0.05, 0.05)
+        marker = VisualizationMarkers(marker_cfg)
+        marker.set_visibility(True)
+        setattr(env, marker_attr, marker)
+
+    marker = getattr(env, marker_attr)
+    env_id = int(getattr(cfg, "debug_approach_target_vis_env_id", 0))
+    env_id = max(0, min(env.num_envs - 1, env_id))
+    marker.visualize(ee_pos_w[env_id : env_id + 1], ee_quat_w[env_id : env_id + 1])
 
 
 def eef_to_object_orientation(

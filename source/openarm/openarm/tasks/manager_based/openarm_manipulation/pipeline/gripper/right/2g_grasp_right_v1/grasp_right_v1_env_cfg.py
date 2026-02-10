@@ -232,7 +232,7 @@ class TerminationsCfg:
 
     cup2_tipping = DoneTerm(
         func=mdp.cup_tipped,
-        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 30.0},
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
     )
 
 

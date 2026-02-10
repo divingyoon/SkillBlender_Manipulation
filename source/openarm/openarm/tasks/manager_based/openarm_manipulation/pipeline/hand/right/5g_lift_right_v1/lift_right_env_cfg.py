@@ -80,9 +80,9 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.2, 0.45),
-            pos_y=(-0.45, 0.0),
-            pos_z=(0.3, 0.6),
+            pos_x=(0.2, 0.3),
+            pos_y=(-0.2, -0.1),
+            pos_z=(0.3, 0.5),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -124,7 +124,12 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (0.25, 0.25), "y": (0.2, 0.2), "z": (0.0, 0.0), "yaw": (-math.pi / 2, -math.pi / 2)},
+            "pose_range": {
+                "x": (0.25, 0.25),
+                "y": (0.2, 0.2),
+                "z": (0.0, 0.0),
+                "yaw": (math.pi, math.pi),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup"),
         },
@@ -134,7 +139,12 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (0.25, 0.25), "y": (-0.2, -0.2), "z": (0.0, 0.0), "yaw": (-math.pi / 2, -math.pi / 2)},
+            "pose_range": {
+                "x": (0.25, 0.25),
+                "y": (-0.2, -0.2),
+                "z": (0.0, 0.0),
+                "yaw": (0, 0),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup2"),
         },
@@ -145,33 +155,32 @@ class EventCfg:
 class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
-        params={"std": 0.1, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=1.1,
+        params={"std": 0.12, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=2.0,
     )
 
-    # Disable EE-axis alignment term (rl_dg_ee) per task request.
-    # end_effector_orientation = RewTerm(
-    #     func=mdp.eef_to_object_orientation,
-    #     params={"std": 0.5, "eef_link_name": "rl_dg_ee", "object_cfg": SceneEntityCfg("cup2")},
-    #     weight=2.0,
-    # )
+    end_effector_orientation = RewTerm(
+        func=mdp.eef_z_perpendicular_object_z,
+        params={"std": 0.4, "eef_link_name": "rl_dg_ee", "object_cfg": SceneEntityCfg("cup2")},
+        weight=0.2,
+    )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup2")},
-        weight=15.0,
+        weight=10.0,
     )
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
-        weight=16.0,
+        weight=20.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
-        weight=5.0,
+        params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
+        weight=10.0,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -187,13 +196,13 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup2_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")})
-    cup2_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 30.0})
+    cup2_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0})
 
 
 @configclass
 class CurriculumCfg:
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -1e-1, "num_steps": 10000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -1e-1, "num_steps": 10000})
+    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 50000})
+    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 50000})
 
 
 @configclass
@@ -201,7 +210,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_right"
     curriculum_stage: int = 1
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.05)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
 
     scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

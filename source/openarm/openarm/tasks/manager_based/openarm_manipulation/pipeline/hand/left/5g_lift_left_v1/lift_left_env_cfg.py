@@ -80,9 +80,9 @@ class CommandsCfg:
         resampling_time_range=(5.0, 5.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
-            pos_x=(0.2, 0.45),
-            pos_y=(0.0, 0.45),
-            pos_z=(0.3, 0.6),
+            pos_x=(0.2, 0.3),
+            pos_y=(0.1, 0.2),
+            pos_z=(0.3, 0.5),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
@@ -124,7 +124,12 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (0.25, 0.25), "y": (0.2, 0.2), "z": (0.0, 0.0), "yaw": (-math.pi / 2, -math.pi / 2)},
+            "pose_range": {
+                "x": (0.25, 0.25),
+                "y": (0.2, 0.2),
+                "z": (0.0, 0.0),
+                "yaw": (math.pi, math.pi),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup"),
         },
@@ -134,7 +139,12 @@ class EventCfg:
         func=mdp.reset_root_state_uniform,
         mode="reset",
         params={
-            "pose_range": {"x": (0.25, 0.25), "y": (-0.2, -0.2), "z": (0.0, 0.0), "yaw": (-math.pi / 2, -math.pi / 2)},
+            "pose_range": {
+                "x": (0.25, 0.25),
+                "y": (-0.2, -0.2),
+                "z": (0.0, 0.0),
+                "yaw": (0, 0),
+            },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup2"),
         },
@@ -149,12 +159,11 @@ class RewardsCfg:
         weight=1.1,
     )
 
-    # Disable EE-axis alignment term (ll_dg_ee) per task request.
-    # end_effector_orientation = RewTerm(
-    #     func=mdp.eef_to_object_orientation,
-    #     params={"std": 0.5, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-    #     weight=2.0,
-    # )
+    end_effector_orientation = RewTerm(
+        func=mdp.eef_z_perpendicular_object_z,
+        params={"std": 0.4, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
+        weight=1.0,
+    )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
@@ -201,7 +210,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_left"
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, 0.0, 0.05)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

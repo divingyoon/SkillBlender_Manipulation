@@ -94,6 +94,30 @@ def eef_to_object_orientation(
     return 1 - torch.tanh(error / std)
 
 
+def eef_z_perpendicular_object_z(
+    env: ManagerBasedRLEnv,
+    std: float,
+    eef_link_name: str = "rl_dg_ee",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+) -> torch.Tensor:
+    """Reward 90-degree alignment between EE +Z axis and object +Z axis.
+
+    Uses abs(dot(ee_z, obj_z)) as error, so reward is maximal when the axes are perpendicular.
+    """
+    object_quat = env.scene[object_cfg.name].data.root_quat_w
+    body_quat_w = env.scene["robot"].data.body_quat_w
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    eef_quat = body_quat_w[:, eef_idx]
+
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=object_quat.dtype).repeat(env.num_envs, 1)
+    ee_z = quat_apply(eef_quat, z_axis)
+    obj_z = quat_apply(object_quat, z_axis)
+
+    cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
+    error = torch.abs(cos_theta)
+    return 1 - torch.tanh(error / std)
+
+
 def object_is_lifted(
     env: ManagerBasedRLEnv,
     minimal_height: float,

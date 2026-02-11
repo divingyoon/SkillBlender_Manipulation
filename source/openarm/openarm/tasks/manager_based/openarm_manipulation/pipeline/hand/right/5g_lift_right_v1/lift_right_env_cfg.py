@@ -232,7 +232,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
     reach_dynamic_xy_gate: float = 0.03
-    reach_dynamic_z_descent_rate: float = 0.001
+    reach_dynamic_z_descent_rate: float = 0.01
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
     reach_switch_threshold: float = 0.01

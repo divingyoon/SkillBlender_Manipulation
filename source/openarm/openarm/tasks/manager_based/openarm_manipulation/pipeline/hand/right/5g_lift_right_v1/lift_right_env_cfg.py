@@ -228,7 +228,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     curriculum_stage: int = 1
     mask_inactive_arm_actions: bool = True
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
-    reach_dynamic_z_high: float = 0.3
+    reach_dynamic_z_high: float = 0.25
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
     reach_dynamic_xy_gate: float = 0.03

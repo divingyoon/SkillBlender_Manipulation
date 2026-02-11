@@ -248,7 +248,9 @@ def eef_z_perpendicular_object_z(
 
     cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
     error = torch.abs(cos_theta)
-    return 1 - torch.tanh(error / std)
+    orientation_reward = 1 - torch.tanh(error / std)
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return (1.0 - reached_stable) * orientation_reward
 
 
 def _is_reaching_complete(

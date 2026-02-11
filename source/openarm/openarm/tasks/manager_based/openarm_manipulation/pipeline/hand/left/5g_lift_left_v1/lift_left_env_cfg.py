@@ -166,14 +166,14 @@ class EventCfg:
 class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
-        params={"std": 0.22, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.25, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=8.0,
     )
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
-        params={"std": 0.4, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=0.5,
+        params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
+        weight=4.0,
     )
 
     lifting_object = RewTerm(

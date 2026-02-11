@@ -228,6 +228,8 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     curriculum_stage: int = 1
     mask_inactive_arm_actions: bool = True
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
+    reach_switch_threshold: float = 0.01
+    reach_switch_hold_steps: int = 10
 
     scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

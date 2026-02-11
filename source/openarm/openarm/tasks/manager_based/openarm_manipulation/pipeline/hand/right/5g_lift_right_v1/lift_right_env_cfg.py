@@ -166,8 +166,8 @@ class EventCfg:
 class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
-        params={"std": 0.12, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=5.0,
+        params={"std": 0.22, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=8.0,
     )
 
     end_effector_orientation = RewTerm(
@@ -228,11 +228,11 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     curriculum_stage: int = 1
     mask_inactive_arm_actions: bool = True
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
-    reach_dynamic_z_high: float = 0.24
+    reach_dynamic_z_high: float = 0.3
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
-    reach_displacement_free_threshold: float = 0.005
-    reach_displacement_suppress_scale: float = 0.01
+    reach_displacement_free_threshold: float = 0.015
+    reach_displacement_suppress_scale: float = 0.03
     reach_switch_threshold: float = 0.01
     reach_switch_hold_steps: int = 10
 

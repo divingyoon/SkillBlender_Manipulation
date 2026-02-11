@@ -46,19 +46,48 @@ def object_ee_distance(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
     eef_link_name: str = "rl_dg_ee",
 ) -> torch.Tensor:
-    """Reward the agent for reaching the object using tanh-kernel."""
+    """Reward the agent for reaching the object using tanh-kernel.
+
+    Uses dynamic z offset: starts high (0.15) to approach from above,
+    then lowers to grasp position (0.08) as xy alignment improves.
+    """
     obj: RigidObject = env.scene[object_cfg.name]
-    obj_pos_w = obj.data.root_pos_w
-    offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
-    if isinstance(offset, (list, tuple)) and len(offset) == 3:
-        offset_local = torch.tensor(offset, device=obj_pos_w.device, dtype=obj_pos_w.dtype).unsqueeze(0)
-        offset_local = offset_local.expand(obj.data.root_quat_w.shape[0], -1)
-        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
-        obj_pos_w = obj_pos_w + offset_w
-        _maybe_visualize_approach_target_all(env, obj_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_right")
+    obj_pos_w = obj.data.root_pos_w.clone()
+
+    # Get EE position first for dynamic offset calculation
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
-    dist = torch.norm(obj_pos_w - ee_pos_w, dim=1)
+
+    # Base offset from config
+    base_offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.08))
+
+    if isinstance(base_offset, (list, tuple)) and len(base_offset) == 3:
+        # Calculate xy distance to object for dynamic z offset
+        xy_dist = torch.norm(ee_pos_w[:, :2] - obj_pos_w[:, :2], dim=1)
+
+        # Dynamic z offset: stay high until xy is aligned, then descend
+        # xy_dist > 0.03m -> z = 0.2 (stay above, don't descend)
+        # xy_dist < 0.01m -> z = base_offset[2] (grasp position)
+        z_high = 0.2
+        z_low = base_offset[2]
+        t = torch.clamp((0.03 - xy_dist) / 0.02, 0.0, 1.0)
+        dynamic_z = z_high * (1.0 - t) + z_low * t
+
+        # Build dynamic offset (per environment)
+        offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
+        offset_local[:, 0] = base_offset[0]
+        offset_local[:, 1] = base_offset[1]
+        offset_local[:, 2] = dynamic_z
+
+        # Transform offset to world frame using object orientation
+        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
+        target_pos_w = obj_pos_w + offset_w
+
+        _maybe_visualize_approach_target_all(env, target_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_right")
+    else:
+        target_pos_w = obj_pos_w
+
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     return 1 - torch.tanh(dist / std)
 
 
@@ -150,14 +179,51 @@ def eef_z_perpendicular_object_z(
     return 1 - torch.tanh(error / std)
 
 
+def _is_reaching_complete(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    reach_threshold: float = 0.01,
+) -> torch.Tensor:
+    """Check if EE has reached the grasp position (z_low offset near object).
+
+    Returns a boolean mask (float 0/1) per environment.
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos_w = obj.data.root_pos_w.clone()
+
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    base_offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.08))
+    if isinstance(base_offset, (list, tuple)) and len(base_offset) == 3:
+        # Use z_low (grasp position) for the gate check
+        offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
+        offset_local[:, 0] = base_offset[0]
+        offset_local[:, 1] = base_offset[1]
+        offset_local[:, 2] = base_offset[2]  # z_low = grasp position
+        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
+        target_pos_w = obj_pos_w + offset_w
+    else:
+        target_pos_w = obj_pos_w
+
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+    return (dist < reach_threshold).float()
+
+
 def object_is_lifted(
     env: ManagerBasedRLEnv,
     minimal_height: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+    eef_link_name: str = "rl_dg_ee",
 ) -> torch.Tensor:
-    """Binary reward if object is lifted above minimal height."""
+    """Binary reward if object is lifted above minimal height.
+
+    Only activates when EE has reached the grasp position first.
+    """
     obj: RigidObject = env.scene[object_cfg.name]
-    return (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    reached = _is_reaching_complete(env, object_cfg, eef_link_name)
+    return reached * (obj.data.root_pos_w[:, 2] > minimal_height).float()
 
 
 def object_goal_distance(
@@ -167,15 +233,20 @@ def object_goal_distance(
     command_name: str,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+    eef_link_name: str = "rl_dg_ee",
 ) -> torch.Tensor:
-    """Reward tracking the goal pose using tanh-kernel."""
+    """Reward tracking the goal pose using tanh-kernel.
+
+    Only activates when EE has reached the grasp position first.
+    """
     robot: RigidObject = env.scene[robot_cfg.name]
     obj: RigidObject = env.scene[object_cfg.name]
     command = env.command_manager.get_command(command_name)
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
-    return (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+    reached = _is_reaching_complete(env, object_cfg, eef_link_name)
+    return reached * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
 def object_displacement_penalty(

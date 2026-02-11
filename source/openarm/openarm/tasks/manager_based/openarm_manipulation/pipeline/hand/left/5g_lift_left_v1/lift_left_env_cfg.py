@@ -167,13 +167,13 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.12, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=2.0,
+        weight=5.0,
     )
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
         params={"std": 0.4, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=0.2,
+        weight=0.5,
     )
 
     lifting_object = RewTerm(
@@ -197,7 +197,7 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.02},
-        weight=-5.0,
+        weight=-0.5,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -239,8 +239,8 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     curriculum: CurriculumCfg = CurriculumCfg()
 
     def __post_init__(self):
-        self.decimation = 2
-        self.episode_length_s = 5.0
+        self.decimation = 4
+        self.episode_length_s = 10.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
         self.commands.object_pose.debug_vis = True

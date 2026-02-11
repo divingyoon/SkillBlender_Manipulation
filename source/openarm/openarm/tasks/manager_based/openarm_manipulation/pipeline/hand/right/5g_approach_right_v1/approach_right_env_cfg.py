@@ -279,8 +279,8 @@ class ApproachRightEnvCfg(ManagerBasedRLEnvCfg):
         # Aggressive high-capacity setting for 24 GiB GPUs (e.g., RTX 4090).
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**24
-        self.sim.physx.gpu_max_rigid_contact_count = 2**24
-        self.sim.physx.gpu_collision_stack_size = 2**24
+        self.sim.physx.gpu_max_rigid_patch_count = 2**25
+        self.sim.physx.gpu_max_rigid_contact_count = 2**25
+        self.sim.physx.gpu_collision_stack_size = 2**25
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

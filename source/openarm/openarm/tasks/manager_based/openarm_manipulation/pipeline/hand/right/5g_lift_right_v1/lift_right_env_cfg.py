@@ -226,6 +226,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 5.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
+        self.commands.object_pose.debug_vis = True
 
         self.observations.policy.concatenate_terms = True
 

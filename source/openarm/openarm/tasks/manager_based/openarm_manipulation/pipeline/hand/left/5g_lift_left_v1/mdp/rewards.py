@@ -40,11 +40,28 @@ def object_position_in_robot_root_frame(
     return obj_pos_b
 
 
+def _get_episode_initial_object_xy(
+    env: ManagerBasedRLEnv,
+    obj: RigidObject,
+    cache_attr: str,
+) -> torch.Tensor:
+    """Track per-episode initial object XY in world frame."""
+    current_xy = obj.data.root_pos_w[:, :2]
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, current_xy.clone())
+    initial_xy = getattr(env, cache_attr)
+    reset_mask = (env.episode_length_buf == 0).squeeze(-1)
+    initial_xy[reset_mask] = current_xy[reset_mask]
+    setattr(env, cache_attr, initial_xy)
+    return initial_xy
+
+
 def _compute_grasp_target_pos_w(
     env: ManagerBasedRLEnv,
     obj: RigidObject,
     ee_pos_w: torch.Tensor,
     use_dynamic_z: bool,
+    dynamic_z_state_attr: str | None = None,
 ) -> torch.Tensor:
     """Compute grasp target from grasp2g offset in world frame."""
     cfg = getattr(env, "cfg", None)
@@ -67,10 +84,30 @@ def _compute_grasp_target_pos_w(
         z_high = float(getattr(cfg, "reach_dynamic_z_high", 0.2))
         x_hi = float(getattr(cfg, "reach_dynamic_xy_hi", 0.06))
         x_lo = float(getattr(cfg, "reach_dynamic_xy_lo", 0.015))
+        x_gate = float(getattr(cfg, "reach_dynamic_xy_gate", x_hi))
+        x_gate = min(x_gate, x_hi)
+        x_gate = max(x_gate, x_lo + 1e-6)
         x_hi = max(x_hi, x_lo + 1e-6)
-        u = torch.clamp((x_hi - xy_dist) / (x_hi - x_lo), 0.0, 1.0)
+
+        # Keep high-Z approach until XY is close enough, then start descending.
+        u = torch.clamp((x_gate - xy_dist) / (x_gate - x_lo), 0.0, 1.0)
         u = u * u * (3.0 - 2.0 * u)  # smoothstep
-        z_value = z_high * (1.0 - u) + float(base_offset[2]) * u
+        z_value_raw = z_high * (1.0 - u) + float(base_offset[2]) * u
+
+        # Limit per-step Z descent speed to avoid sudden dives toward the cup.
+        descent_rate = float(getattr(cfg, "reach_dynamic_z_descent_rate", 0.0))
+        if descent_rate > 0.0 and dynamic_z_state_attr is not None:
+            if not hasattr(env, dynamic_z_state_attr):
+                setattr(env, dynamic_z_state_attr, torch.full_like(z_value_raw, z_high))
+            z_prev = getattr(env, dynamic_z_state_attr)
+            reset_mask = (env.episode_length_buf == 0).squeeze(-1)
+            z_prev[reset_mask] = z_high
+
+            z_floor = z_prev - descent_rate
+            z_value = torch.maximum(z_value_raw, z_floor)
+            setattr(env, dynamic_z_state_attr, z_value)
+        else:
+            z_value = z_value_raw
 
     offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
     offset_local[:, 0] = base_offset[0]
@@ -99,7 +136,13 @@ def object_ee_distance(
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
 
-    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=True)
+    target_pos_w = _compute_grasp_target_pos_w(
+        env,
+        obj,
+        ee_pos_w,
+        use_dynamic_z=True,
+        dynamic_z_state_attr="_reach_dynamic_z_prev_left",
+    )
     _maybe_visualize_approach_target_all(env, target_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_left")
 
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
@@ -110,7 +153,7 @@ def object_ee_distance(
     disp_free = float(getattr(cfg, "reach_displacement_free_threshold", 0.005))
     disp_scale = float(getattr(cfg, "reach_displacement_suppress_scale", 0.01))
     current_xy = obj.data.root_pos_w[:, :2]
-    initial_xy = obj.data.default_root_state[:, :2]
+    initial_xy = _get_episode_initial_object_xy(env, obj, "_cup_initial_xy_w_left")
     displacement_xy = torch.norm(current_xy - initial_xy, dim=1)
     displacement_excess = torch.clamp(displacement_xy - disp_free, min=0.0)
     if disp_scale > 0.0:
@@ -305,7 +348,7 @@ def object_displacement_penalty(
     obj: RigidObject = env.scene[object_cfg.name]
 
     current_pos = obj.data.root_pos_w[:, :2]
-    initial_pos = obj.data.default_root_state[:, :2]
+    initial_pos = _get_episode_initial_object_xy(env, obj, "_cup_initial_xy_w_left")
 
     displacement = torch.norm(current_pos - initial_pos, dim=1)
     penalty = torch.clamp(displacement - threshold, min=0.0)

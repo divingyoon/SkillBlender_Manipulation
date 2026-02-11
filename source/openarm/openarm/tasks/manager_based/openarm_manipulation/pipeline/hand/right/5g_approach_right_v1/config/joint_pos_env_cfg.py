@@ -21,6 +21,10 @@ from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
+# Thumb action controls finger 1 (thumb) + finger 5 (pinky): 8 joints.
+LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+
 from .. import mdp
 from ..approach_right_env_cfg import ApproachRightEnvCfg
 
@@ -152,12 +156,14 @@ class OpenArmApproachRightEnvCfg(ApproachRightEnvCfg):
             use_default_offset=True,
         )
 
-        # Grasp-specific binary open/close hand action is disabled in approach mode.
-        # self.actions.right_hand_action = mdp.BinaryJointPositionActionCfg(...)
-        self.actions.right_hand_action = mdp.JointPositionActionCfg(
+        # Right hand: finger 2-4 synergy (1D) + thumb/pinky individual (8D).
+        self.actions.right_hand_action = mdp.FingerSynergyActionCfg(
             asset_name="robot",
-            joint_names=["rj_dg_.*"],
-            scale=0.1,
+        )
+        self.actions.right_thumb_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=RIGHT_THUMB_JOINTS,
+            scale=0.5,
             use_default_offset=True,
         )
 
@@ -176,10 +182,13 @@ class OpenArmApproachRightEnvCfg(ApproachRightEnvCfg):
             use_default_offset=True,
         )
 
-        self.actions.left_hand_action = mdp.JointPositionActionCfg(
+        self.actions.left_hand_action = mdp.FingerSynergyActionLeftCfg(
             asset_name="robot",
-            joint_names=["lj_dg_.*"],
-            scale=0.1,
+        )
+        self.actions.left_thumb_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_THUMB_JOINTS,
+            scale=0.5,
             use_default_offset=True,
         )
 

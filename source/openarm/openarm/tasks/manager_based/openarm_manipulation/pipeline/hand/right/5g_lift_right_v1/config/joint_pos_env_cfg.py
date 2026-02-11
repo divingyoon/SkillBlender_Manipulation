@@ -22,6 +22,15 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
+# Hand joint names
+# Thumb action now controls finger 1 (thumb) + finger 5 (pinky): 8 joints
+LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+
+# Fingers 2-4: controlled via synergy (defined in mdp/actions.py)
+# Full hand joints (for reference only)
+LEFT_HAND_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in range(1, 6) for joint in range(1, 5)]
+RIGHT_HAND_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in range(1, 6) for joint in range(1, 5)]
 
 from .. import mdp
 from ..lift_right_env_cfg import Lift5gRightEnvCfg
@@ -121,26 +130,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
             ),
         )
 
-        self.actions.right_arm_action = mdp.JointPositionActionCfg(
-            asset_name="robot",
-            joint_names=[
-                "openarm_right_joint1",
-                "openarm_right_joint2",
-                "openarm_right_joint3",
-                "openarm_right_joint4",
-                "openarm_right_joint5",
-                "openarm_right_joint6",
-                "openarm_right_joint7",
-            ],
-            scale=0.5,
-            use_default_offset=True,
-        )
-        self.actions.right_hand_action = mdp.JointPositionActionCfg(
-            asset_name="robot",
-            joint_names=["rj_dg_.*"],
-            scale=0.1,
-            use_default_offset=True,
-        )
+        # Action order: left_arm/hand/thumb, right_arm/hand/thumb
         self.actions.left_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=[
@@ -155,10 +145,38 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
             scale=0.5,
             use_default_offset=True,
         )
-        self.actions.left_hand_action = mdp.JointPositionActionCfg(
+        # Left hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
+        self.actions.left_hand_action = mdp.FingerSynergyActionLeftCfg(
             asset_name="robot",
-            joint_names=["lj_dg_.*"],
-            scale=0.1,
+        )
+        self.actions.left_thumb_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_THUMB_JOINTS,
+            scale=0.5,
+            use_default_offset=True,
+        )
+        self.actions.right_arm_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=[
+                "openarm_right_joint1",
+                "openarm_right_joint2",
+                "openarm_right_joint3",
+                "openarm_right_joint4",
+                "openarm_right_joint5",
+                "openarm_right_joint6",
+                "openarm_right_joint7",
+            ],
+            scale=0.5,
+            use_default_offset=True,
+        )
+        # Right hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
+        self.actions.right_hand_action = mdp.FingerSynergyActionCfg(
+            asset_name="robot",
+        )
+        self.actions.right_thumb_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=RIGHT_THUMB_JOINTS,
+            scale=0.5,
             use_default_offset=True,
         )
 

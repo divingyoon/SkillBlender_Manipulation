@@ -18,6 +18,8 @@ import torch
 from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
+from isaaclab.markers import VisualizationMarkers
+from isaaclab.markers.config import FRAME_MARKER_CFG
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.math import combine_frame_transforms, quat_apply, subtract_frame_transforms
 
@@ -49,11 +51,41 @@ def object_ee_distance(
     obj_pos_w = obj.data.root_pos_w
     offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.0))
     if isinstance(offset, (list, tuple)) and len(offset) == 3:
-        obj_pos_w = obj_pos_w + torch.tensor(offset, device=obj_pos_w.device)
+        offset_local = torch.tensor(offset, device=obj_pos_w.device, dtype=obj_pos_w.dtype).unsqueeze(0)
+        offset_local = offset_local.expand(obj.data.root_quat_w.shape[0], -1)
+        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
+        obj_pos_w = obj_pos_w + offset_w
+        _maybe_visualize_approach_target_all(env, obj_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_right")
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
     dist = torch.norm(obj_pos_w - ee_pos_w, dim=1)
     return 1 - torch.tanh(dist / std)
+
+
+def _maybe_visualize_approach_target_all(
+    env: ManagerBasedRLEnv,
+    target_pos_w: torch.Tensor,
+    target_quat_w: torch.Tensor,
+    marker_attr: str,
+) -> None:
+    cfg = getattr(env, "cfg", None)
+    if cfg is None or not getattr(cfg, "debug_approach_target_vis", True):
+        return
+
+    interval = int(getattr(cfg, "debug_approach_target_vis_interval", 10))
+    step_count = int(getattr(env, "common_step_counter", 0))
+    if interval > 1 and (step_count % interval) != 0:
+        return
+
+    if not hasattr(env, marker_attr):
+        marker_cfg = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Debug/ApproachTargetRight")
+        marker_cfg.markers["frame"].scale = (0.04, 0.04, 0.04)
+        marker = VisualizationMarkers(marker_cfg)
+        marker.set_visibility(True)
+        setattr(env, marker_attr, marker)
+
+    marker = getattr(env, marker_attr)
+    marker.visualize(target_pos_w, target_quat_w)
 
 
 def _object_eef_any_axis_alignment(
@@ -144,3 +176,26 @@ def object_goal_distance(
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
     return (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+
+
+def object_displacement_penalty(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+    threshold: float = 0.02,
+) -> torch.Tensor:
+    """Penalize object movement from initial position (XY only, ignore Z for lifting).
+
+    Returns negative reward proportional to XY displacement.
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+
+    # Get current and initial positions
+    current_pos = obj.data.root_pos_w[:, :2]  # XY only
+    initial_pos = obj.data.default_root_state[:, :2]  # XY only
+
+    displacement = torch.norm(current_pos - initial_pos, dim=1)
+
+    # Penalize displacement beyond threshold
+    penalty = torch.clamp(displacement - threshold, min=0.0)
+
+    return penalty

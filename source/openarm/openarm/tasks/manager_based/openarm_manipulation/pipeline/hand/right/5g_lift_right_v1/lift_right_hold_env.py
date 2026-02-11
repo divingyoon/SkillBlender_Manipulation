@@ -43,10 +43,18 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
             self._right_arm_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
         if "left_hand_action" in self._action_slices:
             sl = self._action_slices["left_hand_action"]
-            self._left_hand_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
+            # FingerSynergyAction maps -1 to fully open and +1 to fully close.
+            # Use -1 for inactive hand so it stays open instead of half-closed.
+            self._left_hand_hold = -torch.ones(self.num_envs, sl.stop - sl.start, device=self.device)
         if "right_hand_action" in self._action_slices:
             sl = self._action_slices["right_hand_action"]
-            self._right_hand_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
+            self._right_hand_hold = -torch.ones(self.num_envs, sl.stop - sl.start, device=self.device)
+        if "left_thumb_action" in self._action_slices:
+            sl = self._action_slices["left_thumb_action"]
+            self._left_thumb_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
+        if "right_thumb_action" in self._action_slices:
+            sl = self._action_slices["right_thumb_action"]
+            self._right_thumb_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
 
     def _get_curriculum_stage(self) -> int:
         return int(getattr(self.cfg, "curriculum_stage", 2))
@@ -62,11 +70,15 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
                     action[:, self._action_slices["right_arm_action"]] = self._right_arm_hold
                 if "right_hand_action" in self._action_slices:
                     action[:, self._action_slices["right_hand_action"]] = self._right_hand_hold
+                if "right_thumb_action" in self._action_slices:
+                    action[:, self._action_slices["right_thumb_action"]] = self._right_thumb_hold
 
             elif stage == 1:
                 if "left_arm_action" in self._action_slices:
                     action[:, self._action_slices["left_arm_action"]] = self._left_arm_hold
                 if "left_hand_action" in self._action_slices:
                     action[:, self._action_slices["left_hand_action"]] = self._left_hand_hold
+                if "left_thumb_action" in self._action_slices:
+                    action[:, self._action_slices["left_thumb_action"]] = self._left_thumb_hold
 
         return super().step(action)

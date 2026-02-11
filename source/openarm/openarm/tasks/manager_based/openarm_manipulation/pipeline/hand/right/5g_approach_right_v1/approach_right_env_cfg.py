@@ -76,8 +76,10 @@ class ActionsCfg:
 
     right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
+    right_thumb_action: ActionTerm = MISSING
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
+    left_thumb_action: ActionTerm = MISSING
 
 
 @configclass
@@ -114,6 +116,7 @@ class ObservationsCfg:
         )
         right_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         right_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
+        right_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_thumb_action"})
 
         def __post_init__(self):
             self.enable_corruption = True

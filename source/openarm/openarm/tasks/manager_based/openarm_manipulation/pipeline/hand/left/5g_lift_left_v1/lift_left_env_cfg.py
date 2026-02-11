@@ -34,6 +34,7 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import GroundPlaneCfg, UsdF
 from isaaclab.utils import configclass
 from isaaclab.utils.assets import ISAAC_NUCLEUS_DIR
 from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
+from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from . import mdp
 
@@ -66,10 +67,18 @@ class Lift5gLeftSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
+    # Order: left_arm/hand/thumb, right_arm/hand/thumb
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
+    left_thumb_action: ActionTerm = MISSING
     right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
+    right_thumb_action: ActionTerm = MISSING
+
+
+# Create larger marker config for better visibility
+GOAL_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/goal_pose")
+GOAL_MARKER_CFG.markers["frame"].scale = (0.1, 0.1, 0.1)
 
 
 @configclass
@@ -87,6 +96,7 @@ class CommandsCfg:
             pitch=(0.0, 0.0),
             yaw=(0.0, 0.0),
         ),
+        goal_pose_visualizer_cfg=GOAL_MARKER_CFG,
     )
 
 
@@ -108,6 +118,7 @@ class ObservationsCfg:
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
         left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
         left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
+        left_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_thumb_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -183,6 +194,12 @@ class RewardsCfg:
         weight=10.0,
     )
 
+    object_displacement = RewTerm(
+        func=mdp.object_displacement_penalty,
+        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.02},
+        weight=-5.0,
+    )
+
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
@@ -210,7 +227,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_left"
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

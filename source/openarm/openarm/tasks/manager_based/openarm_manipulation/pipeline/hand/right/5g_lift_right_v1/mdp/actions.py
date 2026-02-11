@@ -57,11 +57,6 @@ DEFAULT_CLOSE_POSE_LEFT = {
     "lj_dg_4_1": 0.0, "lj_dg_4_2": 0.8, "lj_dg_4_3": 0.8, "lj_dg_4_4": 0.4,
 }
 
-# Backwards compatibility aliases
-DEFAULT_OPEN_POSE = DEFAULT_OPEN_POSE_RIGHT
-DEFAULT_CLOSE_POSE = DEFAULT_CLOSE_POSE_RIGHT
-
-
 class FingerSynergyAction(ActionTerm):
     """Synergy-based action for fingers 2-5.
 

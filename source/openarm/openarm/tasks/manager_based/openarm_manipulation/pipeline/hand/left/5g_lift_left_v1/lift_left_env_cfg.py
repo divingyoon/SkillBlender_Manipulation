@@ -218,8 +218,8 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 50000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 50000})
+    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
+    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
 
 
 @configclass

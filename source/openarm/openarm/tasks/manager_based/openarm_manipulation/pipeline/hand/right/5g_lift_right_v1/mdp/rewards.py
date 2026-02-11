@@ -40,6 +40,49 @@ def object_position_in_robot_root_frame(
     return obj_pos_b
 
 
+def _compute_grasp_target_pos_w(
+    env: ManagerBasedRLEnv,
+    obj: RigidObject,
+    ee_pos_w: torch.Tensor,
+    use_dynamic_z: bool,
+) -> torch.Tensor:
+    """Compute grasp target from grasp2g offset in world frame."""
+    cfg = getattr(env, "cfg", None)
+    obj_pos_w = obj.data.root_pos_w.clone()
+    base_offset = getattr(cfg, "grasp2g_target_offset", (0.0, 0.0, 0.08))
+
+    if not (isinstance(base_offset, (list, tuple)) and len(base_offset) == 3):
+        return obj_pos_w
+
+    offset_xy_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
+    offset_xy_local[:, 0] = base_offset[0]
+    offset_xy_local[:, 1] = base_offset[1]
+    offset_xy_w = quat_apply(obj.data.root_quat_w, offset_xy_local)
+    target_xy_w = obj_pos_w[:, :2] + offset_xy_w[:, :2]
+
+    z_value: torch.Tensor | float = base_offset[2]
+    if use_dynamic_z:
+        # Use XY distance to the offset target (not cup center) for z transition.
+        xy_dist = torch.norm(ee_pos_w[:, :2] - target_xy_w, dim=1)
+        z_high = float(getattr(cfg, "reach_dynamic_z_high", 0.2))
+        x_hi = float(getattr(cfg, "reach_dynamic_xy_hi", 0.06))
+        x_lo = float(getattr(cfg, "reach_dynamic_xy_lo", 0.015))
+        x_hi = max(x_hi, x_lo + 1e-6)
+        u = torch.clamp((x_hi - xy_dist) / (x_hi - x_lo), 0.0, 1.0)
+        u = u * u * (3.0 - 2.0 * u)  # smoothstep
+        z_value = z_high * (1.0 - u) + float(base_offset[2]) * u
+
+    offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
+    offset_local[:, 0] = base_offset[0]
+    offset_local[:, 1] = base_offset[1]
+    if isinstance(z_value, torch.Tensor):
+        offset_local[:, 2] = z_value
+    else:
+        offset_local[:, 2] = float(z_value)
+    offset_w = quat_apply(obj.data.root_quat_w, offset_local)
+    return obj_pos_w + offset_w
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -52,45 +95,27 @@ def object_ee_distance(
     then lowers to grasp position (0.08) as xy alignment improves.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    obj_pos_w = obj.data.root_pos_w.clone()
-
     # Get EE position first for dynamic offset calculation
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
 
-    # Base offset from config
-    base_offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.08))
-
-    if isinstance(base_offset, (list, tuple)) and len(base_offset) == 3:
-        # Calculate xy distance to object for dynamic z offset
-        xy_dist = torch.norm(ee_pos_w[:, :2] - obj_pos_w[:, :2], dim=1)
-
-        # Dynamic z offset with smooth transition:
-        # xy_dist >= 0.06m -> z_high, xy_dist <= 0.015m -> z_low.
-        z_high = 0.2
-        z_low = base_offset[2]
-        x_hi = 0.06
-        x_lo = 0.015
-        u = torch.clamp((x_hi - xy_dist) / (x_hi - x_lo), 0.0, 1.0)
-        u = u * u * (3.0 - 2.0 * u)  # smoothstep
-        dynamic_z = z_high * (1.0 - u) + z_low * u
-
-        # Build dynamic offset (per environment)
-        offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
-        offset_local[:, 0] = base_offset[0]
-        offset_local[:, 1] = base_offset[1]
-        offset_local[:, 2] = dynamic_z
-
-        # Transform offset to world frame using object orientation
-        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
-        target_pos_w = obj_pos_w + offset_w
-
-        _maybe_visualize_approach_target_all(env, target_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_right")
-    else:
-        target_pos_w = obj_pos_w
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=True)
+    _maybe_visualize_approach_target_all(env, target_pos_w, obj.data.root_quat_w, marker_attr="_debug_approach_target_right")
 
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
+
+    # Suppress reaching reward when cup is pushed in XY during approach.
+    cfg = getattr(env, "cfg", None)
+    disp_free = float(getattr(cfg, "reach_displacement_free_threshold", 0.005))
+    disp_scale = float(getattr(cfg, "reach_displacement_suppress_scale", 0.01))
+    current_xy = obj.data.root_pos_w[:, :2]
+    initial_xy = obj.data.default_root_state[:, :2]
+    displacement_xy = torch.norm(current_xy - initial_xy, dim=1)
+    displacement_excess = torch.clamp(displacement_xy - disp_free, min=0.0)
+    if disp_scale > 0.0:
+        reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
+
     reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return (1.0 - reached_stable) * reach_reward
 
@@ -194,22 +219,9 @@ def _is_reaching_complete(
     Returns a boolean mask (float 0/1) per environment.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    obj_pos_w = obj.data.root_pos_w.clone()
-
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
-
-    base_offset = getattr(getattr(env, "cfg", None), "grasp2g_target_offset", (0.0, 0.0, 0.08))
-    if isinstance(base_offset, (list, tuple)) and len(base_offset) == 3:
-        # Use z_low (grasp position) for the gate check
-        offset_local = torch.zeros(obj_pos_w.shape[0], 3, device=obj_pos_w.device, dtype=obj_pos_w.dtype)
-        offset_local[:, 0] = base_offset[0]
-        offset_local[:, 1] = base_offset[1]
-        offset_local[:, 2] = base_offset[2]  # z_low = grasp position
-        offset_w = quat_apply(obj.data.root_quat_w, offset_local)
-        target_pos_w = obj_pos_w + offset_w
-    else:
-        target_pos_w = obj_pos_w
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
 
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     return (dist < reach_threshold).float()

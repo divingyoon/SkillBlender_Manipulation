@@ -263,6 +263,8 @@ class ApproachLeftEnvCfg(ManagerBasedRLEnvCfg):
     # Cup-local target offset for side approach (x: cup forward, z: up).
     # (0,0,0.05) was near center-top; this pushes the hand to the cup side.
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
+    reach_switch_threshold: float = 0.01
+    reach_switch_hold_steps: int = 10
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
     debug_ll_dg_ee_vis: bool = True

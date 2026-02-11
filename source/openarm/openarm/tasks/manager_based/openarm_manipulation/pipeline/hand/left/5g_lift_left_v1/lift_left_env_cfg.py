@@ -196,8 +196,8 @@ class RewardsCfg:
 
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
-        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.02},
-        weight=-0.5,
+        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
+        weight=-1.5,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -213,7 +213,7 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
-    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
 
 
 @configclass
@@ -228,6 +228,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
+    reach_dynamic_z_high: float = 0.24
+    reach_dynamic_xy_hi: float = 0.10
+    reach_dynamic_xy_lo: float = 0.03
+    reach_displacement_free_threshold: float = 0.005
+    reach_displacement_suppress_scale: float = 0.01
     reach_switch_threshold: float = 0.01
     reach_switch_hold_steps: int = 10
 

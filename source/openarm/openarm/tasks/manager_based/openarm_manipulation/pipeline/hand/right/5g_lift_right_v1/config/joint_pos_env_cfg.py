@@ -142,7 +142,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.5,
+            scale=0.3,
             use_default_offset=True,
         )
         # Left hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
@@ -166,7 +166,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
                 "openarm_right_joint6",
                 "openarm_right_joint7",
             ],
-            scale=0.5,
+            scale=0.3,
             use_default_offset=True,
         )
         # Right hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)

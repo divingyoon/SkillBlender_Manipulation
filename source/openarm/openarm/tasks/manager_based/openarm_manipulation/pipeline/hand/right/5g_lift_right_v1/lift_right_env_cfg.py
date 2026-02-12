@@ -172,7 +172,7 @@ class RewardsCfg:
 
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        params={"std": 0.1, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
         weight=4.0,
     )
 
@@ -196,7 +196,7 @@ class RewardsCfg:
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
+        params={"std": 0.05, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
         weight=10.0,
     )
 
@@ -204,6 +204,12 @@ class RewardsCfg:
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup2"), "threshold": 0.01},
         weight=-1.5,
+    )
+
+    finger_normal_range = RewTerm(
+        func=mdp.finger_normal_range_penalty,
+        params={},
+        weight=-1.0,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)

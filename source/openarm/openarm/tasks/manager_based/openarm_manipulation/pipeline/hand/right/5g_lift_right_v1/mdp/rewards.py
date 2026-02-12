@@ -391,3 +391,35 @@ def object_displacement_penalty(
     penalty = torch.clamp(displacement - threshold, min=0.0)
 
     return penalty
+
+
+def finger_normal_range_penalty(
+    env: ManagerBasedRLEnv,
+) -> torch.Tensor:
+    """Penalize right thumb+pinky joints going outside their normal curl range.
+
+    Returns total violation amount (positive). Use negative weight in config.
+    Joints outside the normal range (e.g. bending backward) accumulate violation in radians.
+    """
+    robot = env.scene["robot"]
+
+    # Right hand normal ranges (mirrored from left)
+    # 1_1 (thumb spread) excluded - full range is acceptable
+    _RANGES = {
+        "rj_dg_1_2": (-1.571, 0.0),      # negative = curl
+        "rj_dg_1_3": (0.0, 1.571),       # positive = curl
+        "rj_dg_1_4": (0.0, 1.571),       # positive = curl
+        "rj_dg_5_1": (-0.1, 0.1),        # should stay near 0
+        "rj_dg_5_2": (-0.05, 0.611),     # 0.0 ideal, slight negative tolerance
+        "rj_dg_5_3": (0.0, 1.571),       # positive = curl
+        "rj_dg_5_4": (0.0, 1.571),       # positive = curl
+    }
+
+    total_violation = torch.zeros(env.num_envs, device=env.device)
+
+    for joint_name, (lo, hi) in _RANGES.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_violation += torch.clamp(lo - pos, min=0.0) + torch.clamp(pos - hi, min=0.0)
+
+    return total_violation

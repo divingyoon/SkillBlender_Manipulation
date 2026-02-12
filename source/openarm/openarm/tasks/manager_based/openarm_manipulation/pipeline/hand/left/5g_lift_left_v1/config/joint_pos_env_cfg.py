@@ -75,8 +75,30 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                     "openarm_right_joint5": 0.0,
                     "openarm_right_joint6": 0.0,
                     "openarm_right_joint7": 1.0,
-                    "lj_dg_.*": 0.0,
-                    "rj_dg_.*": 0.0,
+                    # Left synergy fingers (2,3,4) - controlled by synergy action
+                    "lj_dg_[2-4]_.*": 0.0,
+                    # Left thumb (1) - normal range / center
+                    "lj_dg_1_1": -0.253,  # [-0.8901, 0.3840] full range
+                    "lj_dg_1_2": 0.786,   # [0.0, 1.571] center
+                    "lj_dg_1_3": -0.786,  # [-1.571, 0.0] center
+                    "lj_dg_1_4": -0.786,  # [-1.571, 0.0] center
+                    # Left pinky (5) - normal range / center
+                    "lj_dg_5_1": 0.0,     # 0.0 ideal
+                    "lj_dg_5_2": 0.0,     # [-0.6109, 0.0] 0.0 ideal
+                    "lj_dg_5_3": 0.786,   # [0.0, 1.571] center
+                    "lj_dg_5_4": 0.786,   # [0.0, 1.571] center
+                    # Right synergy fingers (2,3,4)
+                    "rj_dg_[2-4]_.*": 0.0,
+                    # Right thumb (1) - normal range / center
+                    "rj_dg_1_1": 0.253,   # [-0.3840, 0.8901] full range
+                    "rj_dg_1_2": -0.786,  # [-1.571, 0.0] center
+                    "rj_dg_1_3": 0.786,   # [0.0, 1.571] center
+                    "rj_dg_1_4": 0.786,   # [0.0, 1.571] center
+                    # Right pinky (5) - normal range / center
+                    "rj_dg_5_1": 0.0,     # 0.0 ideal
+                    "rj_dg_5_2": 0.0,     # [0.0, 0.6109] 0.0 ideal
+                    "rj_dg_5_3": 0.786,   # [0.0, 1.571] center
+                    "rj_dg_5_4": 0.786,   # [0.0, 1.571] center
                 },
             ),
             actuators={
@@ -154,7 +176,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         self.actions.left_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=LEFT_THUMB_JOINTS,
-            scale=0.5,
+            scale=0.786,
             use_default_offset=True,
         )
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
@@ -178,7 +200,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         self.actions.right_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=RIGHT_THUMB_JOINTS,
-            scale=0.5,
+            scale=0.786,
             use_default_offset=True,
         )
 

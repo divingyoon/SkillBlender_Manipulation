@@ -169,7 +169,6 @@ class RewardsCfg:
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=8.0,
     )
-
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
         params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
@@ -206,6 +205,12 @@ class RewardsCfg:
         weight=-1.5,
     )
 
+    finger_normal_range = RewTerm(
+        func=mdp.finger_normal_range_penalty,
+        params={},
+        weight=-1.0,
+    )
+
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
@@ -233,15 +238,15 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_left"
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.05, 0.08)
+    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
     reach_dynamic_z_high: float = 0.25
     reach_dynamic_xy_hi: float = 0.10
-    reach_dynamic_xy_lo: float = 0.02
-    reach_dynamic_xy_gate: float = 0.10
-    reach_dynamic_z_descent_rate: float = 0.005
+    reach_dynamic_xy_lo: float = 0.03
+    reach_dynamic_xy_gate: float = 0.03
+    reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.05
+    reach_switch_threshold: float = 0.01
     reach_switch_hold_steps: int = 10
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)

@@ -20,3 +20,4 @@ auto/runs
 
 # ignore run artifacts
 atuo/runs/
+env_setup/.bashrc

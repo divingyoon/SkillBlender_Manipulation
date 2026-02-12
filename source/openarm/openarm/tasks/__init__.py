@@ -86,6 +86,9 @@ importlib.import_module(
     "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v1.config"
 )
 importlib.import_module(
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v3.config"
+)
+importlib.import_module(
     "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.right.5g_lift_right_v1.config"
 )
 

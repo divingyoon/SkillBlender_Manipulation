@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Lift-style right 5g environment following 2g_grasp_right_v1 reward structure."""
+"""Lift-style left 5g environment following 2g_grasp_left_v1 reward structure."""
 
 from dataclasses import MISSING
 import math
@@ -40,7 +40,7 @@ from . import mdp
 
 
 @configclass
-class Lift5gRightSceneCfg(InteractiveSceneCfg):
+class Lift5gLeftSceneCfg(InteractiveSceneCfg):
     robot: ArticulationCfg = MISSING
     cup: RigidObjectCfg = MISSING
     cup2: RigidObjectCfg = MISSING
@@ -90,7 +90,7 @@ class CommandsCfg:
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
-            pos_y=(-0.2, -0.1),
+            pos_y=(0.1, 0.2),
             pos_z=(0.3, 0.5),
             roll=(0.0, 0.0),
             pitch=(0.0, 0.0),
@@ -104,21 +104,21 @@ class CommandsCfg:
 class ObservationsCfg:
     @configclass
     class PolicyCfg(ObsGroup):
-        right_joint_pos = ObsTerm(
+        left_joint_pos = ObsTerm(
             func=mdp.joint_pos_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint.*", "rj_dg_.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
-        right_joint_vel = ObsTerm(
+        left_joint_vel = ObsTerm(
             func=mdp.joint_vel_rel,
-            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint.*", "rj_dg_.*"])},
+            params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
             noise=Unoise(n_min=-0.01, n_max=0.01),
         )
-        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame, params={"object_cfg": SceneEntityCfg("cup2")})
+        object_position = ObsTerm(func=mdp.object_position_in_robot_root_frame, params={"object_cfg": SceneEntityCfg("cup")})
         target_object_position = ObsTerm(func=mdp.generated_commands, params={"command_name": "object_pose"})
-        right_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
-        right_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
-        right_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_thumb_action"})
+        left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
+        left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
+        left_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_thumb_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -166,49 +166,48 @@ class EventCfg:
 class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
-        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=8.0,
     )
-
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=4.0,
     )
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
-        params={"std": 0.3, "eef_link_name": "rl_dg_ee", "object_cfg": SceneEntityCfg("cup2")},
+        params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
         weight=4.0,
     )
 
     finger_grasp = RewTerm(
         func=mdp.finger_grasp_reward,
-        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=6.0,
     )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
-        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup2")},
+        params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup")},
         weight=10.0,
     )
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
+        params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
         weight=20.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
+        params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
         weight=10.0,
     )
 
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
-        params={"object_cfg": SceneEntityCfg("cup2"), "threshold": 0.01},
+        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
         weight=-1.5,
     )
 
@@ -220,7 +219,7 @@ class RewardsCfg:
 
     finger_reaching_pose = RewTerm(
         func=mdp.finger_reaching_pose_reward,
-        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=2.0,
     )
 
@@ -229,15 +228,15 @@ class RewardsCfg:
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
         weight=-1e-4,
-        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint.*", "rj_dg_.*"])},
+        params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 
 
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    cup2_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")})
-    cup2_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 90.0})
+    cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
 
 
 @configclass
@@ -247,9 +246,9 @@ class CurriculumCfg:
 
 
 @configclass
-class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
-    task_name: str = "lift_5g_right"
-    curriculum_stage: int = 1
+class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
+    task_name: str = "lift_5g_left_v3"
+    curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
     grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
     reach_dynamic_z_high: float = 0.25
@@ -262,7 +261,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     reach_switch_threshold: float = 0.035
     reach_switch_hold_steps: int = 10
 
-    scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

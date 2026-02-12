@@ -486,3 +486,125 @@ def finger_grasp_reward(
 
     reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_stable * reward
+
+
+def contact_persistence_reward(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    min_contacts: int = 3,
+    contact_threshold: float = 0.05,
+) -> torch.Tensor:
+    """Reward maintaining sufficient fingertip contacts."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    contact_forces = contact_sensor.data.net_forces_w
+    force_magnitudes = torch.norm(contact_forces, dim=-1)
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+    num_contacts = (force_magnitudes > contact_threshold).sum(dim=-1).float()
+    return torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
+
+
+def slip_magnitude_penalty(
+    env: ManagerBasedRLEnv,
+    robot_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    max_slip: float = 0.15,
+    sensor_cfg: SceneEntityCfg | None = None,
+    contact_threshold: float = 0.05,
+) -> torch.Tensor:
+    """Penalty for fingertip-object relative slip."""
+    robot = env.scene[robot_cfg.name]
+    link_vel = robot.data.body_lin_vel_w
+    if robot_cfg.body_ids is not None:
+        link_vel = link_vel[:, robot_cfg.body_ids, :]
+
+    obj = env.scene[object_cfg.name]
+    obj_vel = obj.data.root_lin_vel_w.unsqueeze(1)
+    rel_vel = link_vel - obj_vel
+    slip_mag = torch.norm(rel_vel, dim=-1)
+    avg_slip = slip_mag.mean(dim=-1)
+
+    penalty = 1.0 - torch.exp(-torch.square(avg_slip / max(max_slip, 1e-6)))
+
+    if sensor_cfg is not None:
+        contact_sensor = env.scene[sensor_cfg.name]
+        force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+        if sensor_cfg.body_ids is not None:
+            force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+        has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
+        penalty = penalty * has_contact.float()
+
+    return penalty
+
+
+def normal_force_stability_reward(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    contact_threshold: float = 0.05,
+) -> torch.Tensor:
+    """Reward smooth contact-force changes over time."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+
+    buffer_name = f"_prev_force_mags_{sensor_cfg.name}"
+    if hasattr(env, buffer_name):
+        prev_forces = getattr(env, buffer_name)
+        delta = torch.abs(force_magnitudes - prev_forces)
+        stability = 1.0 / (1.0 + delta.mean(dim=-1))
+    else:
+        stability = torch.ones(env.num_envs, device=env.device)
+    setattr(env, buffer_name, force_magnitudes.clone())
+
+    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
+    return stability * has_contact.float()
+
+
+def force_spike_penalty(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    spike_threshold: float = 10.0,
+    contact_threshold: float = 0.05,
+) -> torch.Tensor:
+    """Penalty for abrupt contact-force spikes."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+
+    buffer_name = f"_prev_force_rate_{sensor_cfg.name}"
+    if hasattr(env, buffer_name):
+        prev_forces = getattr(env, buffer_name)
+        force_rate = torch.abs(force_magnitudes - prev_forces) / max(env.step_dt, 1e-6)
+        max_rate = force_rate.max(dim=-1)[0]
+        penalty = torch.clamp((max_rate - spike_threshold) / max(spike_threshold, 1e-6), 0.0, 1.0)
+    else:
+        penalty = torch.zeros(env.num_envs, device=env.device)
+    setattr(env, buffer_name, force_magnitudes.clone())
+
+    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
+    return penalty * has_contact.float()
+
+
+def overgrip_penalty(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    target_force_range: tuple[float, float] = (1.0, 12.0),
+    contact_threshold: float = 0.05,
+) -> torch.Tensor:
+    """Penalty for under/over target grip force band."""
+    contact_sensor = env.scene[sensor_cfg.name]
+    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+
+    total_force = force_magnitudes.sum(dim=-1)
+    min_force, max_force = target_force_range
+
+    undergrip = torch.clamp(min_force - total_force, 0.0, max(min_force, 1e-6)) / max(min_force, 1e-6)
+    overgrip = torch.clamp(total_force - max_force, 0.0, max(max_force, 1e-6)) / max(max_force, 1e-6)
+    penalty = undergrip + overgrip
+
+    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
+    return penalty * has_contact.float()

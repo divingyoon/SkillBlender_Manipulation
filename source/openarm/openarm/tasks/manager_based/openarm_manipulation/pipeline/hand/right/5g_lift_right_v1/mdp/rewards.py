@@ -457,3 +457,41 @@ def finger_reaching_pose_reward(
 
     reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return (1.0 - reached_stable) * reward
+
+
+def finger_grasp_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+    eef_link_name: str = "rl_dg_ee",
+) -> torch.Tensor:
+    """Reward all right fingers closing toward grasp pose after reaching is complete.
+
+    Only active after _is_reaching_stably_complete.
+    Acts like a binary gripper: maximally close all fingers.
+    """
+    robot = env.scene["robot"]
+
+    _CLOSE_POSE = {
+        # Thumb
+        "rj_dg_1_1": 0.0, "rj_dg_1_2": -1.4, "rj_dg_1_3": 0.5, "rj_dg_1_4": 0.9,
+        # Index
+        "rj_dg_2_1": 0.0, "rj_dg_2_2": 0.5, "rj_dg_2_3": 0.8, "rj_dg_2_4": 1.0,
+        # Middle
+        "rj_dg_3_1": 0.0, "rj_dg_3_2": 0.5, "rj_dg_3_3": 0.8, "rj_dg_3_4": 1.0,
+        # Ring
+        "rj_dg_4_1": 0.0, "rj_dg_4_2": 0.5, "rj_dg_4_3": 0.8, "rj_dg_4_4": 1.0,
+        # Pinky
+        "rj_dg_5_1": 0.0, "rj_dg_5_2": 0.0, "rj_dg_5_3": 0.9, "rj_dg_5_4": 0.9,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _CLOSE_POSE.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return reached_stable * reward

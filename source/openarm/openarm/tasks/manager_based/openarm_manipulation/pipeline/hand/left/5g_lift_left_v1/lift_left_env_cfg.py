@@ -87,7 +87,7 @@ class CommandsCfg:
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
             pos_y=(0.1, 0.2),
@@ -181,6 +181,12 @@ class RewardsCfg:
         weight=4.0,
     )
 
+    finger_grasp = RewTerm(
+        func=mdp.finger_grasp_reward,
+        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=6.0,
+    )
+
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup")},
@@ -252,7 +258,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.01
+    reach_switch_threshold: float = 0.035
     reach_switch_hold_steps: int = 10
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)

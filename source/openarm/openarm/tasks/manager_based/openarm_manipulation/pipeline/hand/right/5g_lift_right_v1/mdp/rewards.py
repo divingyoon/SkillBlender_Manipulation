@@ -423,3 +423,37 @@ def finger_normal_range_penalty(
         total_violation += torch.clamp(lo - pos, min=0.0) + torch.clamp(pos - hi, min=0.0)
 
     return total_violation
+
+
+def finger_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup2"),
+    eef_link_name: str = "rl_dg_ee",
+) -> torch.Tensor:
+    """Reward right thumb+pinky staying near initial open pose during reaching.
+
+    Prevents excessive curling into the palm while approaching.
+    Deactivates once reaching is stably complete to allow free grasping.
+    """
+    robot = env.scene["robot"]
+
+    # Target = initial positions (open/ready pose)
+    _TARGETS = {
+        "rj_dg_1_2": -1.571,   # max open
+        "rj_dg_1_3": 0.0,
+        "rj_dg_1_4": 0.0,
+        "rj_dg_5_3": 0.0,
+        "rj_dg_5_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return (1.0 - reached_stable) * reward

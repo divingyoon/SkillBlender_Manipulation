@@ -76,28 +76,28 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
                     "openarm_right_joint7": 1.0,
                     # Left synergy fingers (2,3,4) - controlled by synergy action
                     "lj_dg_[2-4]_.*": 0.0,
-                    # Left thumb (1) - normal range / center
-                    "lj_dg_1_1": -0.253,  # [-0.8901, 0.3840] full range
-                    "lj_dg_1_2": 0.786,   # [0.0, 1.571] center
-                    "lj_dg_1_3": -0.786,  # [-1.571, 0.0] center
-                    "lj_dg_1_4": -0.786,  # [-1.571, 0.0] center
-                    # Left pinky (5) - normal range / center
-                    "lj_dg_5_1": 0.0,     # 0.0 ideal
-                    "lj_dg_5_2": 0.0,     # [-0.6109, 0.0] 0.0 ideal
-                    "lj_dg_5_3": 0.786,   # [0.0, 1.571] center
-                    "lj_dg_5_4": 0.786,   # [0.0, 1.571] center
+                    # Left thumb (1)
+                    "lj_dg_1_1": 0.0,
+                    "lj_dg_1_2": 1.571,   # [0.0, 1.571] max open
+                    "lj_dg_1_3": 0.0,
+                    "lj_dg_1_4": 0.0,
+                    # Left pinky (5)
+                    "lj_dg_5_1": 0.0,
+                    "lj_dg_5_2": 0.0,
+                    "lj_dg_5_3": 0.0,
+                    "lj_dg_5_4": 0.0,
                     # Right synergy fingers (2,3,4)
                     "rj_dg_[2-4]_.*": 0.0,
-                    # Right thumb (1) - normal range / center
-                    "rj_dg_1_1": 0.253,   # [-0.3840, 0.8901] full range
-                    "rj_dg_1_2": -0.786,  # [-1.571, 0.0] center
-                    "rj_dg_1_3": 0.786,   # [0.0, 1.571] center
-                    "rj_dg_1_4": 0.786,   # [0.0, 1.571] center
-                    # Right pinky (5) - normal range / center
-                    "rj_dg_5_1": 0.0,     # 0.0 ideal
-                    "rj_dg_5_2": 0.0,     # [0.0, 0.6109] 0.0 ideal
-                    "rj_dg_5_3": 0.786,   # [0.0, 1.571] center
-                    "rj_dg_5_4": 0.786,   # [0.0, 1.571] center
+                    # Right thumb (1)
+                    "rj_dg_1_1": 0.0,
+                    "rj_dg_1_2": -1.571,  # [-1.571, 0.0] max open
+                    "rj_dg_1_3": 0.0,
+                    "rj_dg_1_4": 0.0,
+                    # Right pinky (5)
+                    "rj_dg_5_1": 0.0,
+                    "rj_dg_5_2": 0.0,
+                    "rj_dg_5_3": 0.0,
+                    "rj_dg_5_4": 0.0,
                 },
             ),
             actuators={

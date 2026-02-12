@@ -212,6 +212,12 @@ class RewardsCfg:
         weight=-1.0,
     )
 
+    finger_reaching_pose = RewTerm(
+        func=mdp.finger_reaching_pose_reward,
+        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=2.0,
+    )
+
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(

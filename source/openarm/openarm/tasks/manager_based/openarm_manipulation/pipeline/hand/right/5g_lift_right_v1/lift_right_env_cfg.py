@@ -170,6 +170,12 @@ class RewardsCfg:
         weight=8.0,
     )
 
+    reaching_object_fine = RewTerm(
+        func=mdp.object_ee_distance_fine,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=4.0,
+    )
+
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
         params={"std": 0.3, "eef_link_name": "rl_dg_ee", "object_cfg": SceneEntityCfg("cup2")},
@@ -235,7 +241,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.005
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.015
+    reach_switch_threshold: float = 0.05
     reach_switch_hold_steps: int = 10
 
     scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)

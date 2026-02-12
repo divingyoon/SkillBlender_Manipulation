@@ -163,6 +163,32 @@ def object_ee_distance(
     return (1.0 - reached_stable) * reach_reward
 
 
+def object_ee_distance_fine(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Fine-grained reaching reward toward the static grasp target (use_dynamic_z=False).
+
+    Provides gradient to guide the EE from the dynamic target position
+    all the way down to the actual grasp position (Z=offset[2]).
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    target_pos_w = _compute_grasp_target_pos_w(
+        env, obj, ee_pos_w, use_dynamic_z=False,
+    )
+
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+    reach_reward = 1 - torch.tanh(dist / std)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return (1.0 - reached_stable) * reach_reward
+
+
 def _maybe_visualize_approach_target_all(
     env: ManagerBasedRLEnv,
     target_pos_w: torch.Tensor,

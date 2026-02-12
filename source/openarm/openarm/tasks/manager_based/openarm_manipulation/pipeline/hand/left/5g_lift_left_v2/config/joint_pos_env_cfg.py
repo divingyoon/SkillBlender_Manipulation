@@ -29,8 +29,11 @@ from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
 RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
 
-# Fingers 2-4: controlled via synergy (defined in mdp/actions.py)
-# Full hand joints (for reference only)
+# Fingers 2-4: independently controlled (no synergy action).
+NON_THUMB_JOINTS_LEFT = [f"lj_dg_{finger}_{joint}" for finger in range(2, 5) for joint in range(1, 5)]
+NON_THUMB_JOINTS_RIGHT = [f"rj_dg_{finger}_{joint}" for finger in range(2, 5) for joint in range(1, 5)]
+
+# Full hand joints (reference)
 LEFT_HAND_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in range(1, 6) for joint in range(1, 5)]
 RIGHT_HAND_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in range(1, 6) for joint in range(1, 5)]
 
@@ -77,7 +80,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                     "openarm_right_joint5": 0.0,
                     "openarm_right_joint6": 0.0,
                     "openarm_right_joint7": 1.0,
-                    # Left synergy fingers (2,3,4) - controlled by synergy action
+                    # Left fingers 2,3,4 (independent)
                     "lj_dg_[2-4]_.*": 0.0,
                     # Left thumb (1)
                     "lj_dg_1_1": 0.0,
@@ -89,7 +92,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                     "lj_dg_5_2": 0.0,
                     "lj_dg_5_3": 0.0,
                     "lj_dg_5_4": 0.0,
-                    # Right synergy fingers (2,3,4)
+                    # Right fingers 2,3,4 (independent)
                     "rj_dg_[2-4]_.*": 0.0,
                     # Right thumb (1)
                     "rj_dg_1_1": 0.0,
@@ -158,18 +161,16 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         # Contact sensors are available in t3 robot USD (sensor_link bodies).
         self.scene.left_contact_sensor = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_.*_sensor_link",
-            filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup.*", "{ENV_REGEX_NS}/Cup2.*"],
             history_length=3,
             track_air_time=False,
         )
         self.scene.right_contact_sensor = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/tesollo_right_.*_sensor_link",
-            filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup.*", "{ENV_REGEX_NS}/Cup2.*"],
             history_length=3,
             track_air_time=False,
         )
 
-        # Action order: left_arm/hand/thumb, right_arm/hand/thumb
+        # Left-only action order: left_arm/hand/thumb
         self.actions.left_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=[
@@ -184,39 +185,48 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             scale=0.2,
             use_default_offset=True,
         )
-        # Left hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
-        self.actions.left_hand_action = mdp.FingerSynergyActionLeftCfg(
+        # Left hand fingers 2-4: independent 12-DoF joint control.
+        self.actions.left_hand_action = mdp.JointPositionActionCfg(
             asset_name="robot",
-            # Uses default: NON_THUMB_JOINTS_LEFT (fingers 2-4)
+            joint_names=NON_THUMB_JOINTS_LEFT,
+            scale={
+                "lj_dg_2_1": 0.2, "lj_dg_2_2": 0.8, "lj_dg_2_3": 0.6, "lj_dg_2_4": 0.6,
+                "lj_dg_3_1": 0.2, "lj_dg_3_2": 0.8, "lj_dg_3_3": 0.6, "lj_dg_3_4": 0.6,
+                "lj_dg_4_1": 0.2, "lj_dg_4_2": 0.8, "lj_dg_4_3": 0.6, "lj_dg_4_4": 0.6,
+            },
+            clip={
+                "lj_dg_2_1": (-0.1, 0.1), "lj_dg_2_2": (0.0, 2.0), "lj_dg_2_3": (0.0, 1.571), "lj_dg_2_4": (0.0, 1.571),
+                "lj_dg_3_1": (-0.1, 0.1), "lj_dg_3_2": (0.0, 2.0), "lj_dg_3_3": (0.0, 1.571), "lj_dg_3_4": (0.0, 1.571),
+                "lj_dg_4_1": (-0.1, 0.1), "lj_dg_4_2": (0.0, 2.0), "lj_dg_4_3": (0.0, 1.571), "lj_dg_4_4": (0.0, 1.571),
+            },
+            use_default_offset=True,
         )
         self.actions.left_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=LEFT_THUMB_JOINTS,
-            scale=0.786,
-            use_default_offset=True,
-        )
-        self.actions.right_arm_action = mdp.JointPositionActionCfg(
-            asset_name="robot",
-            joint_names=[
-                "openarm_right_joint1",
-                "openarm_right_joint2",
-                "openarm_right_joint3",
-                "openarm_right_joint4",
-                "openarm_right_joint5",
-                "openarm_right_joint6",
-                "openarm_right_joint7",
-            ],
-            scale=0.2,
-            use_default_offset=True,
-        )
-        # Right hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
-        self.actions.right_hand_action = mdp.FingerSynergyActionCfg(
-            asset_name="robot",
-        )
-        self.actions.right_thumb_action = mdp.JointPositionActionCfg(
-            asset_name="robot",
-            joint_names=RIGHT_THUMB_JOINTS,
-            scale=0.786,
+            scale={
+                "lj_dg_1_1": 0.8,
+                "lj_dg_1_2": 1.0,
+                "lj_dg_1_3": 0.8,
+                "lj_dg_1_4": 0.8,
+                "lj_dg_5_1": 0.1,
+                "lj_dg_5_2": 0.4,
+                "lj_dg_5_3": 0.8,
+                "lj_dg_5_4": 0.8,
+            },
+            clip={
+                # 1_1: no strict preference; keep broad anatomical range.
+                "lj_dg_1_1": (-0.8901179, 0.3839724),
+                # Thumb requested ranges
+                "lj_dg_1_2": (0.0, 1.571),
+                "lj_dg_1_3": (-1.571, 0.0),
+                "lj_dg_1_4": (-1.571, 0.0),
+                # Pinky requested ranges
+                "lj_dg_5_1": (-0.1, 0.1),
+                "lj_dg_5_2": (-0.6109, 0.0),
+                "lj_dg_5_3": (0.0, 1.571),
+                "lj_dg_5_4": (0.0, 1.571),
+            },
             use_default_offset=True,
         )
 
@@ -228,7 +238,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
 class OpenArmLift5gLeftEnvCfg_PLAY(OpenArmLift5gLeftEnvCfg):
     def __post_init__(self):
         super().__post_init__()
-        self.scene.num_envs = 50
+        self.scene.num_envs = 8
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
         self.observations.policy.concatenate_terms = True

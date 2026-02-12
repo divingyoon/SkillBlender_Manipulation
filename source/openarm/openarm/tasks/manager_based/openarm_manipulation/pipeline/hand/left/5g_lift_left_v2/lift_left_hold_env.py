@@ -44,12 +44,10 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
             self._right_arm_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
         if "left_hand_action" in self._action_slices:
             sl = self._action_slices["left_hand_action"]
-            # FingerSynergyAction maps -1 to fully open and +1 to fully close.
-            # Use -1 for inactive hand so it stays open instead of half-closed.
-            self._left_hand_hold = -torch.ones(self.num_envs, sl.stop - sl.start, device=self.device)
+            self._left_hand_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
         if "right_hand_action" in self._action_slices:
             sl = self._action_slices["right_hand_action"]
-            self._right_hand_hold = -torch.ones(self.num_envs, sl.stop - sl.start, device=self.device)
+            self._right_hand_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
         if "left_thumb_action" in self._action_slices:
             sl = self._action_slices["left_thumb_action"]
             self._left_thumb_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)

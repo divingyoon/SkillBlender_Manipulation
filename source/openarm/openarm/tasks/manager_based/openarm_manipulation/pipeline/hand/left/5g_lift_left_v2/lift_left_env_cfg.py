@@ -70,13 +70,10 @@ class Lift5gLeftSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
-    # Order: left_arm/hand/thumb, right_arm/hand/thumb
+    # Left-only policy actions.
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
     left_thumb_action: ActionTerm = MISSING
-    right_arm_action: ActionTerm = MISSING
-    right_hand_action: ActionTerm = MISSING
-    right_thumb_action: ActionTerm = MISSING
 
 
 # Create larger marker config for better visibility
@@ -84,16 +81,16 @@ GOAL_MARKER_CFG = FRAME_MARKER_CFG.replace(prim_path="/Visuals/Command/goal_pose
 GOAL_MARKER_CFG.markers["frame"].scale = (0.1, 0.1, 0.1)
 
 LEFT_CONTACT_LINKS = [
-    "ll_dg_1_3",
-    "ll_dg_1_4",
-    "ll_dg_2_3",
-    "ll_dg_2_4",
-    "ll_dg_3_3",
-    "ll_dg_3_4",
-    "ll_dg_4_3",
-    "ll_dg_4_4",
-    "ll_dg_5_3",
-    "ll_dg_5_4",
+    "tesollo_left_ll_dg_1_3",
+    "tesollo_left_ll_dg_1_4",
+    "tesollo_left_ll_dg_2_3",
+    "tesollo_left_ll_dg_2_4",
+    "tesollo_left_ll_dg_3_3",
+    "tesollo_left_ll_dg_3_4",
+    "tesollo_left_ll_dg_4_3",
+    "tesollo_left_ll_dg_4_4",
+    "tesollo_left_ll_dg_5_3",
+    "tesollo_left_ll_dg_5_4",
 ]
 
 
@@ -103,7 +100,7 @@ class CommandsCfg:
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
             pos_y=(0.1, 0.2),
@@ -174,6 +171,18 @@ class EventCfg:
             },
             "velocity_range": {},
             "asset_cfg": SceneEntityCfg("cup2"),
+        },
+    )
+
+    # Keep right side fixed so left-only policy does not need right-side actions.
+    lock_right_joints = EventTerm(
+        func=mdp.reset_joints_by_scale,
+        mode="interval",
+        interval_range_s=(0.02, 0.02),
+        params={
+            "position_range": (1.0, 1.0),
+            "velocity_range": (0.0, 0.0),
+            "asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint.*", "rj_dg_.*"]),
         },
     )
 
@@ -333,7 +342,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_switch_threshold: float = 0.025
     reach_switch_hold_steps: int = 10
 
-    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

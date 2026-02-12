@@ -260,7 +260,7 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
     reach_switch_threshold: float = 0.035
-    reach_switch_hold_steps: int = 10
+    reach_switch_hold_steps: int = 4
 
     scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

@@ -176,7 +176,26 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         self.actions.left_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=LEFT_THUMB_JOINTS,
-            scale=0.786,
+            scale={
+                "lj_dg_1_1": 0.8901179,
+                "lj_dg_1_2": 1.5705927,
+                "lj_dg_1_3": 1.5707963,
+                "lj_dg_1_4": 1.5707963,
+                "lj_dg_5_1": 1.0471976,
+                "lj_dg_5_2": 0.6108652,
+                "lj_dg_5_3": 1.5707963,
+                "lj_dg_5_4": 1.5707963,
+            },
+            clip={
+                "lj_dg_1_1": (-0.8901179, 0.3839724),
+                "lj_dg_1_2": (0.0, 3.1415927),
+                "lj_dg_1_3": (-1.5707963, 1.5707963),
+                "lj_dg_1_4": (-1.5707963, 1.5707963),
+                "lj_dg_5_1": (-1.0471976, 0.0174533),
+                "lj_dg_5_2": (-0.6108652, 0.418879),
+                "lj_dg_5_3": (-1.5707963, 1.5707963),
+                "lj_dg_5_4": (-1.5707963, 1.5707963),
+            },
             use_default_offset=True,
         )
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
@@ -200,7 +219,26 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         self.actions.right_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=RIGHT_THUMB_JOINTS,
-            scale=0.786,
+            scale={
+                "rj_dg_1_1": 0.8901179,
+                "rj_dg_1_2": 1.5705927,
+                "rj_dg_1_3": 1.5707963,
+                "rj_dg_1_4": 1.5707963,
+                "rj_dg_5_1": 1.0471976,
+                "rj_dg_5_2": 0.6108652,
+                "rj_dg_5_3": 1.5707963,
+                "rj_dg_5_4": 1.5707963,
+            },
+            clip={
+                "rj_dg_1_1": (-0.3839724, 0.8901179),
+                "rj_dg_1_2": (-3.1415927, 0.0),
+                "rj_dg_1_3": (-1.5707963, 1.5707963),
+                "rj_dg_1_4": (-1.5707963, 1.5707963),
+                "rj_dg_5_1": (-0.0174533, 1.0471976),
+                "rj_dg_5_2": (-0.418879, 0.6108652),
+                "rj_dg_5_3": (-1.5707963, 1.5707963),
+                "rj_dg_5_4": (-1.5707963, 1.5707963),
+            },
             use_default_offset=True,
         )
 

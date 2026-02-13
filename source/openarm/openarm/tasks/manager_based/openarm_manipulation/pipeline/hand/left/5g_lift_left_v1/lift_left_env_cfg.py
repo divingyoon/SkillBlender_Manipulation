@@ -184,7 +184,13 @@ class RewardsCfg:
     finger_grasp = RewTerm(
         func=mdp.finger_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=6.0,
+        weight=15.0,  # 6.0 → 15.0: 손가락 닫기 동기 강화
+    )
+
+    finger_contact = RewTerm(
+        func=mdp.finger_contact_reward,
+        params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=8.0,  # 컵과 손가락 접촉 시 추가 보상
     )
 
     lifting_object = RewTerm(
@@ -220,7 +226,7 @@ class RewardsCfg:
     finger_reaching_pose = RewTerm(
         func=mdp.finger_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=2.0,
+        weight=0.5,  # 2.0 → 0.5: 손가락 펴기 유도 감소
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -258,10 +264,10 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.035
-    reach_switch_hold_steps: int = 4
+    reach_switch_threshold: float = 0.045  # 0.035 → 0.045: 게이트 조건 완화
+    reach_switch_hold_steps: int = 2  # 4 → 2: 더 빠른 grasp 리워드 활성화
 
-    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)  # 소규모 학습용
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

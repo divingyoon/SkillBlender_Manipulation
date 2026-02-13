@@ -450,6 +450,56 @@ def finger_reaching_pose_reward(
     return (1.0 - reached_stable) * reward
 
 
+def finger_contact_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("contact_forces"),
+) -> torch.Tensor:
+    """Reward for fingers making contact with the object.
+
+    Uses contact force sensor to detect physical contact between
+    finger links and the cup. Only active after reaching is complete.
+    """
+    # Finger body indices to check for contact
+    _FINGER_BODIES = [
+        "ll_dg_1_4", "ll_dg_2_4", "ll_dg_3_4", "ll_dg_4_4", "ll_dg_5_4",  # fingertips
+        "ll_dg_1_3", "ll_dg_2_3", "ll_dg_3_3", "ll_dg_4_3", "ll_dg_5_3",  # middle phalanges
+    ]
+
+    robot = env.scene["robot"]
+    obj = env.scene[object_cfg.name]
+
+    # Get fingertip positions
+    finger_pos_list = []
+    for body_name in _FINGER_BODIES:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            finger_pos_list.append(robot.data.body_pos_w[:, body_idx])
+
+    if not finger_pos_list:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    finger_positions = torch.stack(finger_pos_list, dim=1)  # (num_envs, num_fingers, 3)
+    obj_pos = obj.data.root_pos_w.unsqueeze(1)  # (num_envs, 1, 3)
+
+    # Distance from each finger to object center
+    distances = torch.norm(finger_positions - obj_pos, dim=2)  # (num_envs, num_fingers)
+
+    # Count fingers within contact threshold (e.g., 5cm from cup center)
+    contact_threshold = 0.06
+    contacts = (distances < contact_threshold).float()
+    num_contacts = contacts.sum(dim=1)  # (num_envs,)
+
+    # Normalize by max possible contacts
+    max_contacts = float(len(finger_pos_list))
+    contact_ratio = num_contacts / max_contacts
+
+    # Only reward after reaching is complete
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return reached_stable * contact_ratio
+
+
 def finger_grasp_reward(
     env: ManagerBasedRLEnv,
     std: float,

@@ -295,6 +295,27 @@ def _is_reaching_complete(
     return (dist < reach_threshold).float()
 
 
+def _reaching_soft_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Continuous [0, 1] gate based on EE distance to static grasp target."""
+    cfg = getattr(env, "cfg", None)
+    near = float(getattr(cfg, "reach_soft_gate_near", 0.02))
+    far = float(getattr(cfg, "reach_soft_gate_far", 0.08))
+    far = max(far, near + 1e-6)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    gate = torch.clamp((far - dist) / (far - near), 0.0, 1.0)
+    return gate
+
+
 def _is_reaching_stably_complete(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
@@ -329,6 +350,17 @@ def _is_reaching_stably_complete(
     return (counter >= hold_steps).to(dtype=reached_now.dtype)
 
 
+def _reaching_progress_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Combine soft and stable gates for robust phase transition."""
+    stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    soft = _reaching_soft_gate(env, object_cfg, eef_link_name)
+    return torch.maximum(stable, soft)
+
+
 def object_is_lifted(
     env: ManagerBasedRLEnv,
     minimal_height: float,
@@ -340,7 +372,7 @@ def object_is_lifted(
     Only activates when EE has reached the grasp position first.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    reached = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    reached = _reaching_progress_gate(env, object_cfg, eef_link_name)
     return reached * (obj.data.root_pos_w[:, 2] > minimal_height).float()
 
 
@@ -363,7 +395,7 @@ def object_goal_distance(
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
-    reached = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    reached = _reaching_progress_gate(env, object_cfg, eef_link_name)
     return reached * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
@@ -484,8 +516,8 @@ def finger_grasp_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * reward
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * reward
 
 
 def contact_persistence_reward(
@@ -504,8 +536,8 @@ def contact_persistence_reward(
         force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
     num_contacts = (force_magnitudes > contact_threshold).sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * reward
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * reward
 
 
 def slip_magnitude_penalty(
@@ -539,8 +571,8 @@ def slip_magnitude_penalty(
         has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
         penalty = penalty * has_contact.float()
 
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * penalty
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * penalty
 
 
 def normal_force_stability_reward(
@@ -566,8 +598,8 @@ def normal_force_stability_reward(
     setattr(env, buffer_name, force_magnitudes.clone())
 
     has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * stability * has_contact.float()
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * stability * has_contact.float()
 
 
 def force_spike_penalty(
@@ -595,8 +627,8 @@ def force_spike_penalty(
     setattr(env, buffer_name, force_magnitudes.clone())
 
     has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * penalty * has_contact.float()
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * penalty * has_contact.float()
 
 
 def overgrip_penalty(
@@ -621,5 +653,5 @@ def overgrip_penalty(
     penalty = undergrip + overgrip
 
     has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_stable * penalty * has_contact.float()
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * penalty * has_contact.float()

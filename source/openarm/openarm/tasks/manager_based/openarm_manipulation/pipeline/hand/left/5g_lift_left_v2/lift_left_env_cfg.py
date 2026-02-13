@@ -317,8 +317,9 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+    # Keep smoothness regularization mild so policy still explores grasp motions.
+    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -2e-2, "num_steps": 100000})
+    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -2e-2, "num_steps": 100000})
 
 
 @configclass
@@ -339,8 +340,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reward_stage_1_step: int = 20_000
     reward_stage_2_step: int = 50_000
     reward_stage_3_step: int = 90_000
-    reach_switch_threshold: float = 0.025
-    reach_switch_hold_steps: int = 10
+    reach_switch_threshold: float = 0.04
+    reach_switch_hold_steps: int = 4
+    # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
+    reach_soft_gate_near: float = 0.025
+    reach_soft_gate_far: float = 0.08
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

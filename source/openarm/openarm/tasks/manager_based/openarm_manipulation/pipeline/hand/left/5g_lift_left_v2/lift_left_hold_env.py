@@ -105,37 +105,37 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
             }
         elif stage == 1:
             weights = {
-                "finger_grasp": 3.0,
-                "contact_persistence": 1.5,
-                "slip_penalty": -0.5,
+                "finger_grasp": 10.0,
+                "contact_persistence": 6.0,
+                "slip_penalty": -0.4,
                 "normal_force_stability": 0.2,
-                "force_spike": -0.1,
+                "force_spike": -0.05,
                 "overgrip": -0.2,
-                "lifting_object": 5.0,
+                "lifting_object": 12.0,
                 "object_goal_tracking": 0.0,
                 "object_goal_tracking_fine_grained": 0.0,
             }
         elif stage == 2:
             weights = {
-                "finger_grasp": 6.0,
-                "contact_persistence": 2.5,
-                "slip_penalty": -1.2,
+                "finger_grasp": 12.0,
+                "contact_persistence": 7.0,
+                "slip_penalty": -0.5,
                 "normal_force_stability": 0.6,
-                "force_spike": -0.3,
-                "overgrip": -0.6,
-                "lifting_object": 10.0,
+                "force_spike": -0.05,
+                "overgrip": -0.2,
+                "lifting_object": 16.0,
                 "object_goal_tracking": 10.0,
                 "object_goal_tracking_fine_grained": 5.0,
             }
         else:
             weights = {
-                "finger_grasp": 6.0,
-                "contact_persistence": 3.0,
-                "slip_penalty": -2.0,
+                "finger_grasp": 14.0,
+                "contact_persistence": 8.0,
+                "slip_penalty": -0.6,
                 "normal_force_stability": 1.0,
-                "force_spike": -0.5,
-                "overgrip": -1.0,
-                "lifting_object": 10.0,
+                "force_spike": -0.1,
+                "overgrip": -0.3,
+                "lifting_object": 20.0,
                 "object_goal_tracking": 20.0,
                 "object_goal_tracking_fine_grained": 10.0,
             }
@@ -145,7 +145,6 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
 
     def step(self, action: torch.Tensor):
         action = action.to(self.device)
-        self._apply_staged_reward_curriculum()
 
         if self.mask_inactive_arm:
             stage = self._get_curriculum_stage()

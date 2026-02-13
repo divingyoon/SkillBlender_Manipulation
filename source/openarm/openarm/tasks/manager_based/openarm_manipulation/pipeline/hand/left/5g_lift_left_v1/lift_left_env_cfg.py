@@ -247,8 +247,10 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+    # 커리큘럼 비활성화 - 그립 학습 전에 속도 페널티 증가 시 학습 실패
+    # action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
+    # joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+    pass
 
 
 @configclass
@@ -286,10 +288,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.observations.policy.concatenate_terms = True
 
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**25
-        self.sim.physx.gpu_max_rigid_contact_count = 2**25
-        self.sim.physx.gpu_collision_stack_size = 2**25
+        # 256 환경용 (2048 대비 1/8 축소)
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 8 * 1024 * 1024
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2 * 1024 * 1024
+        self.sim.physx.gpu_max_rigid_patch_count = 2**22
+        self.sim.physx.gpu_max_rigid_contact_count = 2**22
+        self.sim.physx.gpu_collision_stack_size = 2**22
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

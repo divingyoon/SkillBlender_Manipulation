@@ -192,30 +192,30 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,
+        weight=2.0,
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,
+        weight=1.0,
     )
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
         params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=4.0,
+        weight=1.0,
     )
 
     finger_grasp = RewTerm(
         func=mdp.finger_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=6.0,
+        weight=14.0,
     )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup")},
-        weight=10.0,
+        weight=20.0,
     )
 
     object_goal_tracking = RewTerm(
@@ -233,7 +233,7 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-1.5,
+        weight=-0.2,
     )
 
     finger_normal_range = RewTerm(
@@ -252,10 +252,10 @@ class RewardsCfg:
         func=mdp.contact_persistence_reward,
         params={
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "min_contacts": 3,
-            "contact_threshold": 0.05,
+            "min_contacts": 2,
+            "contact_threshold": 0.02,
         },
-        weight=3.0,
+        weight=8.0,
     )
 
     slip_penalty = RewTerm(
@@ -267,7 +267,7 @@ class RewardsCfg:
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
             "contact_threshold": 0.05,
         },
-        weight=-2.0,
+        weight=-0.4,
     )
 
     normal_force_stability = RewTerm(
@@ -286,7 +286,7 @@ class RewardsCfg:
             "spike_threshold": 10.0,
             "contact_threshold": 0.05,
         },
-        weight=-0.5,
+        weight=-0.05,
     )
 
     overgrip = RewTerm(
@@ -296,7 +296,7 @@ class RewardsCfg:
             "target_force_range": (1.0, 12.0),
             "contact_threshold": 0.05,
         },
-        weight=-1.0,
+        weight=-0.2,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -312,14 +312,13 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
-    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 120.0})
 
 
 @configclass
 class CurriculumCfg:
-    # Keep smoothness regularization mild so policy still explores grasp motions.
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -2e-2, "num_steps": 100000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -2e-2, "num_steps": 100000})
+    # Disable curriculum terms for now; keep fixed reward weights.
+    pass
 
 
 @configclass
@@ -337,14 +336,14 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_displacement_suppress_scale: float = 0.03
     # Step milestones for staged reward curriculum.
     # stage0: approach, stage1: grasp, stage2: lift, stage3: goal tracking
-    reward_stage_1_step: int = 20_000
+    reward_stage_1_step: int = 0
     reward_stage_2_step: int = 50_000
     reward_stage_3_step: int = 90_000
-    reach_switch_threshold: float = 0.04
-    reach_switch_hold_steps: int = 4
+    reach_switch_threshold: float = 0.045
+    reach_switch_hold_steps: int = 2
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
-    reach_soft_gate_near: float = 0.025
-    reach_soft_gate_far: float = 0.08
+    reach_soft_gate_near: float = 0.03
+    reach_soft_gate_far: float = 0.12
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
@@ -365,10 +364,12 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.observations.policy.concatenate_terms = True
 
         self.sim.physx.bounce_threshold_velocity = 0.01
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**25
-        self.sim.physx.gpu_max_rigid_contact_count = 2**25
-        self.sim.physx.gpu_collision_stack_size = 2**25
+        # Original values were tuned for ~2048 envs. Scale with env count to reduce memory pressure.
+        env_scale = max(float(self.scene.num_envs) / 2048.0, 0.0)
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = max(8 * 1024 * 1024, int((64 * 1024 * 1024) * env_scale))
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = max(4 * 1024 * 1024, int((16 * 1024 * 1024) * env_scale))
+        self.sim.physx.gpu_max_rigid_patch_count = max(2**23, int((2**25) * env_scale))
+        self.sim.physx.gpu_max_rigid_contact_count = max(2**23, int((2**25) * env_scale))
+        self.sim.physx.gpu_collision_stack_size = max(2**23, int((2**25) * env_scale))
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

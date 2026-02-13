@@ -506,33 +506,42 @@ def finger_grasp_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward all left fingers closing toward grasp pose after reaching is complete.
+    """Reward fingers moving in the closing direction after reaching is complete.
+
+    Instead of targeting a fixed close pose, rewards positive velocity
+    in the curl direction. This works regardless of cup size.
 
     Only active after _is_reaching_stably_complete.
-    Acts like a binary gripper: maximally close all fingers.
     """
     robot = env.scene["robot"]
 
-    _CLOSE_POSE = {
-        # Thumb
-        "lj_dg_1_1": 0.0, "lj_dg_1_2": 1.4, "lj_dg_1_3": -0.5, "lj_dg_1_4": -0.9,
-        # Index
-        "lj_dg_2_1": 0.0, "lj_dg_2_2": 0.5, "lj_dg_2_3": 0.8, "lj_dg_2_4": 1.0,
-        # Middle
-        "lj_dg_3_1": 0.0, "lj_dg_3_2": 0.5, "lj_dg_3_3": 0.8, "lj_dg_3_4": 1.0,
-        # Ring
-        "lj_dg_4_1": 0.0, "lj_dg_4_2": 0.5, "lj_dg_4_3": 0.8, "lj_dg_4_4": 1.0,
-        # Pinky
-        "lj_dg_5_1": 0.0, "lj_dg_5_2": 0.0, "lj_dg_5_3": 0.9, "lj_dg_5_4": 0.9,
+    # Curl direction: positive velocity = closing
+    # For thumb 1_3, 1_4: negative velocity = closing (joints go negative to curl)
+    _CURL_DIRECTIONS = {
+        # Thumb: 1_2 increases, 1_3/1_4 decrease to curl
+        "lj_dg_1_2": +1.0,
+        "lj_dg_1_3": -1.0,
+        "lj_dg_1_4": -1.0,
+        # Index/Middle/Ring: all increase to curl
+        "lj_dg_2_2": +1.0, "lj_dg_2_3": +1.0, "lj_dg_2_4": +1.0,
+        "lj_dg_3_2": +1.0, "lj_dg_3_3": +1.0, "lj_dg_3_4": +1.0,
+        "lj_dg_4_2": +1.0, "lj_dg_4_3": +1.0, "lj_dg_4_4": +1.0,
+        # Pinky: increase to curl
+        "lj_dg_5_3": +1.0, "lj_dg_5_4": +1.0,
     }
 
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in _CLOSE_POSE.items():
+    # Sum of velocity in curl direction (positive = closing)
+    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, direction in _CURL_DIRECTIONS.items():
         joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
+        vel = robot.data.joint_vel[:, joint_idx]
+        # Positive reward when velocity matches curl direction
+        curl_velocity_sum += direction * vel
 
-    reward = 1.0 - torch.tanh(total_sq_error / std)
+    # Normalize and apply tanh for smooth reward
+    reward = torch.tanh(curl_velocity_sum / std)
+    # Clamp to only reward positive curl (closing), not penalize opening
+    reward = torch.clamp(reward, min=0.0)
 
     reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_stable * reward

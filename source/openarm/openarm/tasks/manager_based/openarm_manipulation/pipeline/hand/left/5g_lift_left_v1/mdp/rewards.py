@@ -416,24 +416,51 @@ def finger_normal_range_penalty(
     return total_violation
 
 
-def finger_reaching_pose_reward(
+def thumb_reaching_pose_reward(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward left thumb+pinky staying near initial open pose during reaching.
+    """Reward thumb (finger 1) staying near initial open pose during reaching.
 
-    Prevents excessive curling into the palm while approaching.
     Deactivates once reaching is stably complete to allow free grasping.
     """
     robot = env.scene["robot"]
 
-    # Target = initial positions (open/ready pose)
+    # Thumb target = open pose
     _TARGETS = {
         "lj_dg_1_2": 1.571,    # max open
         "lj_dg_1_3": 0.0,
         "lj_dg_1_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return (1.0 - reached_stable) * reward
+
+
+def pinky_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward pinky (finger 5) staying near initial open pose during reaching.
+
+    Deactivates once reaching is stably complete to allow free grasping.
+    """
+    robot = env.scene["robot"]
+
+    # Pinky target = open pose
+    _TARGETS = {
         "lj_dg_5_3": 0.0,
         "lj_dg_5_4": 0.0,
     }
@@ -500,48 +527,97 @@ def finger_contact_reward(
     return reached_stable * contact_ratio
 
 
-def finger_grasp_reward(
+def thumb_grasp_reward(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward fingers moving in the closing direction after reaching is complete.
-
-    Instead of targeting a fixed close pose, rewards positive velocity
-    in the curl direction. This works regardless of cup size.
+    """Reward thumb (finger 1) moving in the closing direction.
 
     Only active after _is_reaching_stably_complete.
     """
     robot = env.scene["robot"]
 
-    # Curl direction: positive velocity = closing
-    # For thumb 1_3, 1_4: negative velocity = closing (joints go negative to curl)
+    # Thumb curl directions
     _CURL_DIRECTIONS = {
-        # Thumb: 1_2 increases, 1_3/1_4 decrease to curl
-        "lj_dg_1_2": +1.0,
-        "lj_dg_1_3": -1.0,
-        "lj_dg_1_4": -1.0,
-        # Index/Middle/Ring: all increase to curl
-        "lj_dg_2_2": +1.0, "lj_dg_2_3": +1.0, "lj_dg_2_4": +1.0,
-        "lj_dg_3_2": +1.0, "lj_dg_3_3": +1.0, "lj_dg_3_4": +1.0,
-        "lj_dg_4_2": +1.0, "lj_dg_4_3": +1.0, "lj_dg_4_4": +1.0,
-        # Pinky: increase to curl
-        "lj_dg_5_3": +1.0, "lj_dg_5_4": +1.0,
+        "lj_dg_1_2": +1.0,  # increases to curl
+        "lj_dg_1_3": -1.0,  # decreases to curl
+        "lj_dg_1_4": -1.0,  # decreases to curl
     }
 
-    # Sum of velocity in curl direction (positive = closing)
     curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
     for joint_name, direction in _CURL_DIRECTIONS.items():
         joint_idx = robot.data.joint_names.index(joint_name)
         vel = robot.data.joint_vel[:, joint_idx]
-        # Positive reward when velocity matches curl direction
         curl_velocity_sum += direction * vel
 
-    # Normalize and apply tanh for smooth reward
     reward = torch.tanh(curl_velocity_sum / std)
-    # Clamp to only reward positive curl (closing), not penalize opening
     reward = torch.clamp(reward, min=0.0)
 
     reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_stable * reward
+
+
+def pinky_grasp_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward pinky (finger 5) moving in the closing direction.
+
+    Only active after _is_reaching_stably_complete.
+    """
+    robot = env.scene["robot"]
+
+    # Pinky curl directions
+    _CURL_DIRECTIONS = {
+        "lj_dg_5_3": +1.0,  # increases to curl
+        "lj_dg_5_4": +1.0,  # increases to curl
+    }
+
+    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, direction in _CURL_DIRECTIONS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        vel = robot.data.joint_vel[:, joint_idx]
+        curl_velocity_sum += direction * vel
+
+    reward = torch.tanh(curl_velocity_sum / std)
+    reward = torch.clamp(reward, min=0.0)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return reached_stable * reward
+
+
+def synergy_grip_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "left_hand_action",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward synergy fingers (2,3,4) based on reaching phase.
+
+    - Before reaching complete: reward OPEN (grip_strength < 0)
+    - After reaching complete: reward CLOSED (grip_strength > 0)
+
+    grip_strength in [-1, 1]: -1 = open, +1 = closed
+    """
+    # Get the raw action (grip_strength) from action manager
+    action_term = env.action_manager.get_term(action_name)
+    grip_strength = action_term.raw_actions[:, 0]  # shape: (num_envs,)
+
+    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+
+    # Before reaching: reward open (negative grip_strength)
+    # Map grip_strength from [-1, 1] to [1, 0] (more open = higher reward)
+    open_reward = torch.clamp((1.0 - grip_strength) / 2.0, min=0.0, max=1.0)
+
+    # After reaching: reward closed (positive grip_strength)
+    # Map grip_strength from [-1, 1] to [0, 1] (more closed = higher reward)
+    close_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
+
+    # Combine based on reaching state
+    reward = (1.0 - reached_stable) * open_reward + reached_stable * close_reward
+
+    return reward

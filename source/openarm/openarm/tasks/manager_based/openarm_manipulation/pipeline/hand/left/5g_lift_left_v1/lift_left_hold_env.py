@@ -52,9 +52,15 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
         if "left_thumb_action" in self._action_slices:
             sl = self._action_slices["left_thumb_action"]
             self._left_thumb_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
+        if "left_pinky_action" in self._action_slices:
+            sl = self._action_slices["left_pinky_action"]
+            self._left_pinky_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
         if "right_thumb_action" in self._action_slices:
             sl = self._action_slices["right_thumb_action"]
             self._right_thumb_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
+        if "right_pinky_action" in self._action_slices:
+            sl = self._action_slices["right_pinky_action"]
+            self._right_pinky_hold = torch.zeros(self.num_envs, sl.stop - sl.start, device=self.device)
 
     def _get_curriculum_stage(self) -> int:
         return int(getattr(self.cfg, "curriculum_stage", 2))
@@ -72,6 +78,8 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
                     action[:, self._action_slices["right_hand_action"]] = self._right_hand_hold
                 if "right_thumb_action" in self._action_slices:
                     action[:, self._action_slices["right_thumb_action"]] = self._right_thumb_hold
+                if "right_pinky_action" in self._action_slices:
+                    action[:, self._action_slices["right_pinky_action"]] = self._right_pinky_hold
 
             elif stage == 1:
                 if "left_arm_action" in self._action_slices:
@@ -80,5 +88,7 @@ class Lift5gHoldEnv(ManagerBasedRLEnv):
                     action[:, self._action_slices["left_hand_action"]] = self._left_hand_hold
                 if "left_thumb_action" in self._action_slices:
                     action[:, self._action_slices["left_thumb_action"]] = self._left_thumb_hold
+                if "left_pinky_action" in self._action_slices:
+                    action[:, self._action_slices["left_pinky_action"]] = self._left_pinky_hold
 
         return super().step(action)

@@ -74,6 +74,7 @@ class ActionsCfg:
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
     left_thumb_action: ActionTerm = MISSING
+    left_pinky_action: ActionTerm = MISSING
 
 
 # Create larger marker config for better visibility
@@ -132,6 +133,7 @@ class ObservationsCfg:
         left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
         left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
         left_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_thumb_action"})
+        left_pinky_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_pinky_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -257,6 +259,29 @@ class RewardsCfg:
         },
         weight=8.0,
     )
+    finger_contact_coverage = RewTerm(
+        func=mdp.contact_finger_coverage_reward,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "distance_threshold": 0.055,
+            "min_fingers_bonus": 4,
+            "bonus_scale": 1.0,
+        },
+        weight=6.0,
+    )
+    strict_grasp_success = RewTerm(
+        func=mdp.strict_grasp_lift_success,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "distance_threshold": 0.055,
+            "required_fingers": 4,
+            "minimal_height": 0.04,
+            "hold_steps": 8,
+        },
+        weight=0.0,
+    )
 
     slip_penalty = RewTerm(
         func=mdp.slip_magnitude_penalty,
@@ -339,11 +364,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reward_stage_1_step: int = 0
     reward_stage_2_step: int = 50_000
     reward_stage_3_step: int = 90_000
-    reach_switch_threshold: float = 0.045
-    reach_switch_hold_steps: int = 2
+    reach_switch_threshold: float = 0.05
+    reach_switch_hold_steps: int = 1
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
-    reach_soft_gate_near: float = 0.03
-    reach_soft_gate_far: float = 0.12
+    reach_soft_gate_near: float = 0.02
+    reach_soft_gate_far: float = 0.16
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

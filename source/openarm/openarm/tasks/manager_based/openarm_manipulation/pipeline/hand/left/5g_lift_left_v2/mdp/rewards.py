@@ -27,6 +27,15 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
+_LEFT_FINGER_CONTACT_LINKS = {
+    1: ("tesollo_left_ll_dg_1_3", "tesollo_left_ll_dg_1_4"),
+    2: ("tesollo_left_ll_dg_2_3", "tesollo_left_ll_dg_2_4"),
+    3: ("tesollo_left_ll_dg_3_3", "tesollo_left_ll_dg_3_4"),
+    4: ("tesollo_left_ll_dg_4_3", "tesollo_left_ll_dg_4_4"),
+    5: ("tesollo_left_ll_dg_5_3", "tesollo_left_ll_dg_5_4"),
+}
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -358,7 +367,103 @@ def _reaching_progress_gate(
     """Combine soft and stable gates for robust phase transition."""
     stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     soft = _reaching_soft_gate(env, object_cfg, eef_link_name)
-    return torch.maximum(stable, soft)
+    soft_relaxed = torch.clamp(soft * 1.2, 0.0, 1.0)
+    return torch.maximum(stable, soft_relaxed)
+
+
+def _left_finger_contact_flags(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    distance_threshold: float = 0.055,
+) -> torch.Tensor:
+    """Estimate per-finger contact flags using link-to-object distances."""
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    obj_pos_w = obj.data.root_pos_w[:, :3]
+
+    # Cache body indices once to avoid repeated name lookups.
+    if not hasattr(env, "_left_finger_contact_link_indices"):
+        body_names = robot.data.body_names
+        link_indices: dict[int, list[int]] = {}
+        for finger_id, link_names in _LEFT_FINGER_CONTACT_LINKS.items():
+            ids: list[int] = []
+            for name in link_names:
+                if name in body_names:
+                    ids.append(body_names.index(name))
+            link_indices[finger_id] = ids
+        env._left_finger_contact_link_indices = link_indices
+
+    link_indices = env._left_finger_contact_link_indices
+    contact_flags: list[torch.Tensor] = []
+    large = torch.full((env.num_envs,), 1e6, device=env.device, dtype=obj_pos_w.dtype)
+
+    for finger_id in (1, 2, 3, 4, 5):
+        min_dist = large
+        for body_idx in link_indices.get(finger_id, []):
+            link_pos_w = robot.data.body_pos_w[:, body_idx, :3]
+            dist = torch.norm(link_pos_w - obj_pos_w, dim=1)
+            min_dist = torch.minimum(min_dist, dist)
+        contact_flags.append(min_dist < distance_threshold)
+
+    return torch.stack(contact_flags, dim=1)
+
+
+def contact_finger_coverage_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    distance_threshold: float = 0.055,
+    min_fingers_bonus: int = 4,
+    bonus_scale: float = 1.0,
+) -> torch.Tensor:
+    """Reward broader multi-finger coverage to avoid 2-3-finger local optima."""
+    contact_flags = _left_finger_contact_flags(env, object_cfg, distance_threshold=distance_threshold)
+    num_fingers = contact_flags.sum(dim=1).float()
+    coverage = num_fingers / 5.0
+
+    min_fingers_bonus = max(1, min(5, int(min_fingers_bonus)))
+    bonus_span = float(max(1, 6 - min_fingers_bonus))
+    bonus = torch.clamp((num_fingers - float(min_fingers_bonus - 1)) / bonus_span, 0.0, 1.0)
+
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * (coverage + float(bonus_scale) * bonus)
+
+
+def strict_grasp_lift_success(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    distance_threshold: float = 0.055,
+    required_fingers: int = 4,
+    minimal_height: float = 0.04,
+    hold_steps: int = 8,
+) -> torch.Tensor:
+    """Binary success metric: multi-finger grasp maintained while object is lifted."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    contact_flags = _left_finger_contact_flags(env, object_cfg, distance_threshold=distance_threshold)
+    num_fingers = contact_flags.sum(dim=1)
+    required_fingers = max(1, min(5, int(required_fingers)))
+    hold_steps = max(1, int(hold_steps))
+
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (reached_gate > 0.2)
+
+    if not hasattr(env, "_strict_grasp_success_counter"):
+        env._strict_grasp_success_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+    counter = env._strict_grasp_success_counter
+
+    # Update once per sim step even if queried by multiple terms.
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if not hasattr(env, "_strict_grasp_success_last_step"):
+        env._strict_grasp_success_last_step = -2
+    if env._strict_grasp_success_last_step != step_count:
+        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
+        counter[reset_mask] = 0
+        counter = torch.where(success_now, counter + 1, torch.zeros_like(counter))
+        env._strict_grasp_success_counter = counter
+        env._strict_grasp_success_last_step = step_count
+
+    return (counter >= hold_steps).to(dtype=obj.data.root_pos_w.dtype)
 
 
 def object_is_lifted(

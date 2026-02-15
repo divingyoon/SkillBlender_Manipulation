@@ -25,9 +25,9 @@ from isaaclab.utils import configclass
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
 # Hand joint names
-# Thumb action now controls finger 1 (thumb) + finger 5 (pinky): 8 joints
-LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
-RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+# Split thumb and pinky into separate action heads to avoid coupled optimization.
+LEFT_THUMB_JOINTS = [f"lj_dg_1_{joint}" for joint in range(1, 5)]
+LEFT_PINKY_JOINTS = [f"lj_dg_5_{joint}" for joint in range(1, 5)]
 
 # Fingers 2-4: independently controlled (no synergy action).
 NON_THUMB_JOINTS_LEFT = [f"lj_dg_{finger}_{joint}" for finger in range(2, 5) for joint in range(1, 5)]
@@ -170,7 +170,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             track_air_time=False,
         )
 
-        # Left-only action order: left_arm/hand/thumb
+        # Left-only action order: left_arm/hand/thumb/pinky
         self.actions.left_arm_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=[
@@ -209,10 +209,6 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "lj_dg_1_2": 1.0,
                 "lj_dg_1_3": 0.8,
                 "lj_dg_1_4": 0.8,
-                "lj_dg_5_1": 0.1,
-                "lj_dg_5_2": 0.4,
-                "lj_dg_5_3": 0.8,
-                "lj_dg_5_4": 0.8,
             },
             clip={
                 # 1_1: no strict preference; keep broad anatomical range.
@@ -221,6 +217,19 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "lj_dg_1_2": (0.0, 1.571),
                 "lj_dg_1_3": (-1.571, 0.0),
                 "lj_dg_1_4": (-1.571, 0.0),
+            },
+            use_default_offset=True,
+        )
+        self.actions.left_pinky_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_PINKY_JOINTS,
+            scale={
+                "lj_dg_5_1": 0.1,
+                "lj_dg_5_2": 0.4,
+                "lj_dg_5_3": 0.8,
+                "lj_dg_5_4": 0.8,
+            },
+            clip={
                 # Pinky requested ranges
                 "lj_dg_5_1": (-0.1, 0.1),
                 "lj_dg_5_2": (-0.6109, 0.0),

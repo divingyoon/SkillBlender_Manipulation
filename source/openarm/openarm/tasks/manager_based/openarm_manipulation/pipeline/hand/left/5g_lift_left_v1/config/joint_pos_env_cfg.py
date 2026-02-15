@@ -24,9 +24,13 @@ from isaaclab.utils import configclass
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
 # Hand joint names
-# Thumb action now controls finger 1 (thumb) + finger 5 (pinky): 8 joints
-LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
-RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+# Thumb (finger 1): 4 joints
+LEFT_THUMB_JOINTS = [f"lj_dg_1_{joint}" for joint in range(1, 5)]
+RIGHT_THUMB_JOINTS = [f"rj_dg_1_{joint}" for joint in range(1, 5)]
+
+# Pinky (finger 5): 4 joints - separated for independent control
+LEFT_PINKY_JOINTS = [f"lj_dg_5_{joint}" for joint in range(1, 5)]
+RIGHT_PINKY_JOINTS = [f"rj_dg_5_{joint}" for joint in range(1, 5)]
 
 # Fingers 2-4: controlled via synergy (defined in mdp/actions.py)
 # Full hand joints (for reference only)
@@ -173,6 +177,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             asset_name="robot",
             # Uses default: NON_THUMB_JOINTS_LEFT (fingers 2-4)
         )
+        # Thumb action (finger 1 only): 4 DOF
         self.actions.left_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=LEFT_THUMB_JOINTS,
@@ -181,16 +186,26 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "lj_dg_1_2": 1.5705927,
                 "lj_dg_1_3": 1.5707963,
                 "lj_dg_1_4": 1.5707963,
-                "lj_dg_5_1": 1.0471976,
-                "lj_dg_5_2": 0.6108652,
-                "lj_dg_5_3": 1.5707963,
-                "lj_dg_5_4": 1.5707963,
             },
             clip={
                 "lj_dg_1_1": (-0.8901179, 0.3839724),
                 "lj_dg_1_2": (0.0, 3.1415927),
                 "lj_dg_1_3": (-1.5707963, 1.5707963),
                 "lj_dg_1_4": (-1.5707963, 1.5707963),
+            },
+            use_default_offset=True,
+        )
+        # Pinky action (finger 5 only): 4 DOF - separated for independent control
+        self.actions.left_pinky_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_PINKY_JOINTS,
+            scale={
+                "lj_dg_5_1": 1.0471976,
+                "lj_dg_5_2": 0.6108652,
+                "lj_dg_5_3": 1.5707963,
+                "lj_dg_5_4": 1.5707963,
+            },
+            clip={
                 "lj_dg_5_1": (-1.0471976, 0.0174533),
                 "lj_dg_5_2": (-0.6108652, 0.418879),
                 "lj_dg_5_3": (-1.5707963, 1.5707963),
@@ -216,6 +231,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         self.actions.right_hand_action = mdp.FingerSynergyActionCfg(
             asset_name="robot",
         )
+        # Right thumb action (finger 1 only): 4 DOF
         self.actions.right_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=RIGHT_THUMB_JOINTS,
@@ -224,16 +240,26 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "rj_dg_1_2": 1.5705927,
                 "rj_dg_1_3": 1.5707963,
                 "rj_dg_1_4": 1.5707963,
-                "rj_dg_5_1": 1.0471976,
-                "rj_dg_5_2": 0.6108652,
-                "rj_dg_5_3": 1.5707963,
-                "rj_dg_5_4": 1.5707963,
             },
             clip={
                 "rj_dg_1_1": (-0.3839724, 0.8901179),
                 "rj_dg_1_2": (-3.1415927, 0.0),
                 "rj_dg_1_3": (-1.5707963, 1.5707963),
                 "rj_dg_1_4": (-1.5707963, 1.5707963),
+            },
+            use_default_offset=True,
+        )
+        # Right pinky action (finger 5 only): 4 DOF
+        self.actions.right_pinky_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=RIGHT_PINKY_JOINTS,
+            scale={
+                "rj_dg_5_1": 1.0471976,
+                "rj_dg_5_2": 0.6108652,
+                "rj_dg_5_3": 1.5707963,
+                "rj_dg_5_4": 1.5707963,
+            },
+            clip={
                 "rj_dg_5_1": (-0.0174533, 1.0471976),
                 "rj_dg_5_2": (-0.418879, 0.6108652),
                 "rj_dg_5_3": (-1.5707963, 1.5707963),

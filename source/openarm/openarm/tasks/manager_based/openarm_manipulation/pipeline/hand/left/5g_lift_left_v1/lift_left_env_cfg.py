@@ -67,13 +67,15 @@ class Lift5gLeftSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
-    # Order: left_arm/hand/thumb, right_arm/hand/thumb
+    # Order: left_arm/hand/thumb/pinky, right_arm/hand/thumb/pinky
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
     left_thumb_action: ActionTerm = MISSING
+    left_pinky_action: ActionTerm = MISSING
     right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
     right_thumb_action: ActionTerm = MISSING
+    right_pinky_action: ActionTerm = MISSING
 
 
 # Create larger marker config for better visibility
@@ -119,6 +121,7 @@ class ObservationsCfg:
         left_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_arm_action"})
         left_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_hand_action"})
         left_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_thumb_action"})
+        left_pinky_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_pinky_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -181,10 +184,25 @@ class RewardsCfg:
         weight=4.0,
     )
 
-    finger_grasp = RewTerm(
-        func=mdp.finger_grasp_reward,
+    # 엄지(1번) 그립 리워드 - 독립 제어
+    thumb_grasp = RewTerm(
+        func=mdp.thumb_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=15.0,  # 6.0 → 15.0: 손가락 닫기 동기 강화
+        weight=15.0,
+    )
+
+    # 새끼(5번) 그립 리워드 - 독립 제어
+    pinky_grasp = RewTerm(
+        func=mdp.pinky_grasp_reward,
+        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=8.0,  # 엄지보다 낮은 가중치 (보조 역할)
+    )
+
+    # 시너지(2,3,4번) 그립 리워드
+    synergy_grip = RewTerm(
+        func=mdp.synergy_grip_reward,
+        params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=15.0,
     )
 
     finger_contact = RewTerm(
@@ -223,10 +241,18 @@ class RewardsCfg:
         weight=-1.0,
     )
 
-    finger_reaching_pose = RewTerm(
-        func=mdp.finger_reaching_pose_reward,
+    # 엄지(1번) reaching 전 열어두기
+    thumb_reaching_pose = RewTerm(
+        func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=0.5,  # 2.0 → 0.5: 손가락 펴기 유도 감소
+        weight=1.0,
+    )
+
+    # 새끼(5번) reaching 전 열어두기
+    pinky_reaching_pose = RewTerm(
+        func=mdp.pinky_reaching_pose_reward,
+        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=0.5,  # 새끼는 덜 중요
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)

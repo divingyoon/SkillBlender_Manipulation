@@ -87,6 +87,20 @@ def _finger_contact_flags_from_sensor(
     return finger_flags
 
 
+def _select_sensor_body_names(
+    sensor_body_names: list[str] | tuple[str, ...] | None,
+    body_ids,
+) -> list[str] | tuple[str, ...] | None:
+    """Select sensor body names using body_ids that may be slice/list/tensor."""
+    if sensor_body_names is None or body_ids is None:
+        return sensor_body_names
+    if isinstance(body_ids, slice):
+        return sensor_body_names[body_ids]
+    if torch.is_tensor(body_ids):
+        body_ids = body_ids.tolist()
+    return [sensor_body_names[int(i)] for i in body_ids]
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -437,8 +451,7 @@ def _left_finger_contact_flags(
         sensor_body_names = getattr(contact_sensor.data, "body_names", None)
     if sensor_cfg.body_ids is not None:
         force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-        if sensor_body_names is not None:
-            sensor_body_names = [sensor_body_names[i] for i in sensor_cfg.body_ids]
+        sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
     return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
 
 
@@ -688,8 +701,7 @@ def contact_persistence_reward(
         sensor_body_names = getattr(contact_sensor.data, "body_names", None)
     if sensor_cfg.body_ids is not None:
         force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-        if sensor_body_names is not None:
-            sensor_body_names = [sensor_body_names[i] for i in sensor_cfg.body_ids]
+        sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
     finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
     num_contacts = finger_flags.sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)

@@ -261,7 +261,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_switch_threshold: float = 0.035
     reach_switch_hold_steps: int = 10
 
-    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()

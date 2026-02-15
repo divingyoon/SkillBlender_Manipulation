@@ -268,3 +268,48 @@ class FingerSynergyActionLeftCfg(ActionTermCfg):
             self.open_pose = DEFAULT_OPEN_POSE_LEFT
         if self.close_pose is None:
             self.close_pose = DEFAULT_CLOSE_POSE_LEFT
+
+
+class NoOpAction(ActionTerm):
+    """Action term with zero-dimensional action that does nothing."""
+
+    cfg: "NoOpActionCfg"
+    _asset: Articulation
+
+    def __init__(self, cfg: "NoOpActionCfg", env: ManagerBasedEnv) -> None:
+        super().__init__(cfg, env)
+        self._raw_actions = torch.zeros(self.num_envs, 0, device=self.device)
+        self._processed_actions = torch.zeros(self.num_envs, 0, device=self.device)
+
+    @property
+    def action_dim(self) -> int:
+        return 0
+
+    @property
+    def raw_actions(self) -> torch.Tensor:
+        return self._raw_actions
+
+    @property
+    def processed_actions(self) -> torch.Tensor:
+        return self._processed_actions
+
+    def process_actions(self, actions: torch.Tensor) -> None:
+        # keep empty buffers for consistency
+        self._raw_actions = actions
+        self._processed_actions = actions
+
+    def apply_actions(self) -> None:
+        # intentionally no-op
+        return
+
+    def reset(self, env_ids: torch.Tensor) -> None:
+        # no state to reset
+        return
+
+
+@configclass
+class NoOpActionCfg(ActionTermCfg):
+    """Configuration for a zero-dimensional no-op action term."""
+
+    class_type: type[ActionTerm] = NoOpAction
+    asset_name: str = "robot"

@@ -27,13 +27,64 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-_LEFT_FINGER_CONTACT_LINKS = {
-    1: ("tesollo_left_ll_dg_1_3", "tesollo_left_ll_dg_1_4"),
-    2: ("tesollo_left_ll_dg_2_3", "tesollo_left_ll_dg_2_4"),
-    3: ("tesollo_left_ll_dg_3_3", "tesollo_left_ll_dg_3_4"),
-    4: ("tesollo_left_ll_dg_4_3", "tesollo_left_ll_dg_4_4"),
-    5: ("tesollo_left_ll_dg_5_3", "tesollo_left_ll_dg_5_4"),
-}
+def _finger_contact_flags_from_sensor(
+    force_magnitudes: torch.Tensor,
+    contact_threshold: float,
+    sensor_body_names: list[str] | tuple[str, ...] | None = None,
+) -> torch.Tensor:
+    """Aggregate link-level contact forces into finger-level boolean flags.
+
+    For the T3 left hand, preferred mapping is by sensor link names:
+    - finger_1: seg3, tip
+    - finger_2/3/4: seg2, seg3, tip
+    - finger_5: seg3, tip
+    plus 3 palm sensors (ignored for finger coverage).
+    """
+    num_links = force_magnitudes.shape[1]
+    link_flags = force_magnitudes > contact_threshold
+
+    # 1) Preferred: explicit mapping by sensor link names when available.
+    if sensor_body_names is not None and len(sensor_body_names) == num_links:
+        finger_flags: list[torch.Tensor] = []
+        for finger_id in (1, 2, 3, 4, 5):
+            idxs = [i for i, name in enumerate(sensor_body_names) if f"finger_{finger_id}_" in str(name)]
+            if idxs:
+                finger_flags.append(link_flags[:, idxs].any(dim=1))
+            else:
+                finger_flags.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
+        return torch.stack(finger_flags, dim=1)
+
+    # 2) Fallback for known T3 ordering without names:
+    # [palm1, palm2, palm3, f1(2), f2(3), f3(3), f4(3), f5(2)] = 16
+    if num_links == 16:
+        groups = [
+            link_flags[:, 3:5],    # finger 1
+            link_flags[:, 5:8],    # finger 2
+            link_flags[:, 8:11],   # finger 3
+            link_flags[:, 11:14],  # finger 4
+            link_flags[:, 14:16],  # finger 5
+        ]
+        return torch.stack([g.any(dim=1) for g in groups], dim=1)
+
+    # 3) Older compact setup: 10 links -> pairwise mapping.
+    if num_links >= 10:
+        trimmed = link_flags[:, :10]
+        finger_flags = trimmed.reshape(trimmed.shape[0], 5, 2).any(dim=2)
+    else:
+        # Last-resort fallback: contiguous chunks into up to 5 groups.
+        group_count = max(1, min(5, num_links))
+        chunk = max(1, num_links // group_count)
+        groups: list[torch.Tensor] = []
+        for i in range(group_count):
+            s = i * chunk
+            e = num_links if i == group_count - 1 else min(num_links, (i + 1) * chunk)
+            if s >= num_links:
+                groups.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
+            else:
+                groups.append(link_flags[:, s:e].any(dim=1))
+        finger_flags = torch.stack(groups, dim=1)
+
+    return finger_flags
 
 
 def object_position_in_robot_root_frame(
@@ -373,51 +424,40 @@ def _reaching_progress_gate(
 
 def _left_finger_contact_flags(
     env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    distance_threshold: float = 0.055,
+    contact_threshold: float = 0.02,
 ) -> torch.Tensor:
-    """Estimate per-finger contact flags using link-to-object distances."""
-    robot = env.scene["robot"]
-    obj: RigidObject = env.scene[object_cfg.name]
-    obj_pos_w = obj.data.root_pos_w[:, :3]
-
-    # Cache body indices once to avoid repeated name lookups.
-    if not hasattr(env, "_left_finger_contact_link_indices"):
-        body_names = robot.data.body_names
-        link_indices: dict[int, list[int]] = {}
-        for finger_id, link_names in _LEFT_FINGER_CONTACT_LINKS.items():
-            ids: list[int] = []
-            for name in link_names:
-                if name in body_names:
-                    ids.append(body_names.index(name))
-            link_indices[finger_id] = ids
-        env._left_finger_contact_link_indices = link_indices
-
-    link_indices = env._left_finger_contact_link_indices
-    contact_flags: list[torch.Tensor] = []
-    large = torch.full((env.num_envs,), 1e6, device=env.device, dtype=obj_pos_w.dtype)
-
-    for finger_id in (1, 2, 3, 4, 5):
-        min_dist = large
-        for body_idx in link_indices.get(finger_id, []):
-            link_pos_w = robot.data.body_pos_w[:, body_idx, :3]
-            dist = torch.norm(link_pos_w - obj_pos_w, dim=1)
-            min_dist = torch.minimum(min_dist, dist)
-        contact_flags.append(min_dist < distance_threshold)
-
-    return torch.stack(contact_flags, dim=1)
+    """Estimate per-finger contact flags from contact sensor forces."""
+    del object_cfg  # kept for backward signature compatibility
+    contact_sensor = env.scene[sensor_cfg.name]
+    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+    sensor_body_names = getattr(contact_sensor, "body_names", None)
+    if sensor_body_names is None:
+        sensor_body_names = getattr(contact_sensor.data, "body_names", None)
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+        if sensor_body_names is not None:
+            sensor_body_names = [sensor_body_names[i] for i in sensor_cfg.body_ids]
+    return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
 
 
 def contact_finger_coverage_reward(
     env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
-    distance_threshold: float = 0.055,
+    contact_threshold: float = 0.02,
     min_fingers_bonus: int = 4,
     bonus_scale: float = 1.0,
 ) -> torch.Tensor:
     """Reward broader multi-finger coverage to avoid 2-3-finger local optima."""
-    contact_flags = _left_finger_contact_flags(env, object_cfg, distance_threshold=distance_threshold)
+    contact_flags = _left_finger_contact_flags(
+        env,
+        sensor_cfg=sensor_cfg,
+        object_cfg=object_cfg,
+        contact_threshold=contact_threshold,
+    )
     num_fingers = contact_flags.sum(dim=1).float()
     coverage = num_fingers / 5.0
 
@@ -431,16 +471,22 @@ def contact_finger_coverage_reward(
 
 def strict_grasp_lift_success(
     env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
-    distance_threshold: float = 0.055,
+    contact_threshold: float = 0.02,
     required_fingers: int = 4,
     minimal_height: float = 0.04,
     hold_steps: int = 8,
 ) -> torch.Tensor:
     """Binary success metric: multi-finger grasp maintained while object is lifted."""
     obj: RigidObject = env.scene[object_cfg.name]
-    contact_flags = _left_finger_contact_flags(env, object_cfg, distance_threshold=distance_threshold)
+    contact_flags = _left_finger_contact_flags(
+        env,
+        sensor_cfg=sensor_cfg,
+        object_cfg=object_cfg,
+        contact_threshold=contact_threshold,
+    )
     num_fingers = contact_flags.sum(dim=1)
     required_fingers = max(1, min(5, int(required_fingers)))
     hold_steps = max(1, int(hold_steps))
@@ -633,13 +679,19 @@ def contact_persistence_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward maintaining sufficient fingertip contacts."""
+    """Reward maintaining sufficient finger-level contacts."""
     contact_sensor = env.scene[sensor_cfg.name]
     contact_forces = contact_sensor.data.net_forces_w
     force_magnitudes = torch.norm(contact_forces, dim=-1)
+    sensor_body_names = getattr(contact_sensor, "body_names", None)
+    if sensor_body_names is None:
+        sensor_body_names = getattr(contact_sensor.data, "body_names", None)
     if sensor_cfg.body_ids is not None:
         force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-    num_contacts = (force_magnitudes > contact_threshold).sum(dim=-1).float()
+        if sensor_body_names is not None:
+            sensor_body_names = [sensor_body_names[i] for i in sensor_cfg.body_ids]
+    finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
+    num_contacts = finger_flags.sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
     reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
     return reached_gate * reward

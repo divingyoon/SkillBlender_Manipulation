@@ -39,3 +39,27 @@ gym.register(
         "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
     },
 )
+
+gym.register(
+    id="5g_lift_left-v3-20d",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v3.lift_left_hold_env:Lift5gHoldEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg20D",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmLiftLeftV3PPORunnerCfg",
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+    },
+)
+
+gym.register(
+    id="5g_lift_left-play-v3-20d",
+    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v3.lift_left_hold_env:Lift5gHoldEnv",
+    disable_env_checker=True,
+    kwargs={
+        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg20D_PLAY",
+        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmLiftLeftV3PPORunnerCfg",
+        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+    },
+)

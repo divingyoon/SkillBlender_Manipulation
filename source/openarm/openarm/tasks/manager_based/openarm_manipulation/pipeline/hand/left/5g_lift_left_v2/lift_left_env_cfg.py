@@ -247,40 +247,42 @@ class RewardsCfg:
     finger_reaching_pose = RewTerm(
         func=mdp.finger_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=2.0,
+        weight=0.2,
     )
 
     contact_persistence = RewTerm(
         func=mdp.contact_persistence_reward,
         params={
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "min_contacts": 2,
+            "min_contacts": 3,
             "contact_threshold": 0.02,
         },
-        weight=8.0,
+        weight=2.5,
     )
     finger_contact_coverage = RewTerm(
         func=mdp.contact_finger_coverage_reward,
         params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
-            "distance_threshold": 0.055,
+            "contact_threshold": 0.02,
             "min_fingers_bonus": 4,
             "bonus_scale": 1.0,
         },
-        weight=6.0,
+        weight=8.0,
     )
     strict_grasp_success = RewTerm(
         func=mdp.strict_grasp_lift_success,
         params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
-            "distance_threshold": 0.055,
+            "contact_threshold": 0.02,
             "required_fingers": 4,
             "minimal_height": 0.04,
-            "hold_steps": 8,
+            "hold_steps": 6,
         },
-        weight=0.0,
+        weight=4.0,
     )
 
     slip_penalty = RewTerm(

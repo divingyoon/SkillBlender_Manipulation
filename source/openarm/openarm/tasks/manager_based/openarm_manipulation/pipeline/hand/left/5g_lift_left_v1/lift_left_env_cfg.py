@@ -170,12 +170,12 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,
+        weight=8.0,  # 원래대로
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,
+        weight=4.0,  # 원래대로
     )
 
     end_effector_orientation = RewTerm(
@@ -188,21 +188,21 @@ class RewardsCfg:
     thumb_grasp = RewTerm(
         func=mdp.thumb_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=15.0,
+        weight=20.0,  # 15.0 → 20.0: grasp 동기 강화
     )
 
     # 새끼(5번) 그립 리워드 - 독립 제어
     pinky_grasp = RewTerm(
         func=mdp.pinky_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,  # 엄지보다 낮은 가중치 (보조 역할)
+        weight=10.0,  # 8.0 → 10.0
     )
 
-    # 시너지(2,3,4번) 그립 리워드
+    # 시너지(2,3,4번) 그립 리워드 - reaching 전: 열어두기(낮은 보상), reaching 후: 닫기(높은 보상)
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
         params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=15.0,
+        weight=20.0,  # reaching 후 닫기 보상 높임 (열어두기는 함수 내부에서 낮게 처리)
     )
 
     finger_contact = RewTerm(
@@ -292,8 +292,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.045  # 0.035 → 0.045: 게이트 조건 완화
-    reach_switch_hold_steps: int = 2  # 4 → 2: 더 빠른 grasp 리워드 활성화
+    reach_switch_threshold: float = 0.05
+    reach_switch_hold_steps: int = 2  # 2스텝 유지
+    # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
+    reach_soft_gate_near: float = 0.02
+    reach_soft_gate_far: float = 0.16
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)  # 소규모 학습용
     observations: ObservationsCfg = ObservationsCfg()

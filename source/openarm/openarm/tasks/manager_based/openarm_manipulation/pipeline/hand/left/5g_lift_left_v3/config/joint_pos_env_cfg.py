@@ -216,3 +216,33 @@ class OpenArmLift5gLeftEnvCfg_PLAY(OpenArmLift5gLeftEnvCfg):
         self.scene.env_spacing = 2.5
         self.observations.policy.enable_corruption = False
         self.observations.policy.concatenate_terms = True
+
+
+@configclass
+class OpenArmLift5gLeftEnvCfg20D(OpenArmLift5gLeftEnvCfg):
+    """v3 variant with full 20-DoF direct control for the left hand."""
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        # Left hand: direct 20DoF control using normalized action mapped to joint limits.
+        self.actions.left_hand_action = mdp.JointPositionToLimitsActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_HAND_JOINTS,
+            scale=1.0,
+            rescale_to_limits=True,
+            preserve_order=True,
+        )
+
+        # Disable legacy left_thumb_action term in this variant.
+        self.actions.left_thumb_action = mdp.NoOpActionCfg(asset_name="robot")
+
+
+@configclass
+class OpenArmLift5gLeftEnvCfg20D_PLAY(OpenArmLift5gLeftEnvCfg20D):
+    def __post_init__(self):
+        super().__post_init__()
+        self.scene.num_envs = 50
+        self.scene.env_spacing = 2.5
+        self.observations.policy.enable_corruption = False
+        self.observations.policy.concatenate_terms = True

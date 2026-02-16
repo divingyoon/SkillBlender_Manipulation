@@ -275,6 +275,42 @@ def _stage_nu(
     return mu_trigger * stable_lift
 
 
+def _debug_stage_triggers(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("left_contact_sensor"),
+) -> None:
+    """Print DexPour stage triggers (env 0 only) for terminal debugging."""
+    cfg = getattr(env, "cfg", None)
+    debug_enabled = bool(getattr(cfg, "debug_stage_triggers", True))
+    interval = int(getattr(cfg, "debug_stage_triggers_interval", 50))
+    interval = max(1, interval)
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if (not debug_enabled) or (step_count < 0) or (step_count % interval != 0):
+        return
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    lambda_t = _stage_lambda(env, object_cfg, eef_link_name)
+    mu_t = _stage_mu(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    nu_t = _stage_nu(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    finger_flags = _left_finger_contact_flags(env, sensor_cfg=sensor_cfg, object_cfg=object_cfg, contact_threshold=0.02)
+    contacts = finger_flags.sum(dim=1).float()
+
+    print(
+        f"[Step {step_count}] "
+        f"dist={dist[0].item():.4f}m | "
+        f"contacts={contacts[0].item():.0f}/5 | "
+        f"lambda={lambda_t[0].item():.0f} mu={mu_t[0].item():.0f} nu={nu_t[0].item():.0f} | "
+        f"cup_z={obj.data.root_pos_w[0, 2].item():.3f}"
+    )
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -316,6 +352,7 @@ def object_ee_distance(
 
     # Stage-1 reward: active while λ == 0.
     lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    _debug_stage_triggers(env, object_cfg, eef_link_name)
     return (1.0 - lambda_trigger) * reach_reward
 
 
@@ -1000,8 +1037,10 @@ def finger_grasp_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    mu_trigger = _stage_mu(env, object_cfg, eef_link_name)
+    # Pre-contact closing incentive: active after reaching (lambda=1) before secure grasp (mu=1).
+    return lambda_trigger * (1.0 - mu_trigger) * reward
 
 
 def finger_wrap_cylinder_reward(
@@ -1129,6 +1168,83 @@ def finger_wrap_coverage_reward(
     coverage_reward = pair_scores / float(max(1, pair_count))
     reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
     return reached_gate * coverage_reward
+
+
+def finger_tip_orientation_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward fingertip normals pointing toward cup center (XY plane).
+
+    Active in pre-contact grasp phase (lambda=1, mu=0) to guide cup-facing hand posture.
+    """
+    del std  # interface compatibility; this reward uses bounded dot-alignment directly.
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+
+    # (body_name, offset_axis, offset_val, normal_axis)
+    tip_info = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363, "y"),  # thumb
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255, "x"),   # index
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255, "x"),   # middle
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255, "x"),   # ring
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363, "x"),   # pinky
+    ]
+
+    total_reward = torch.zeros(env.num_envs, device=env.device)
+    num_tips = 0
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=env.device)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device)
+
+    for body_name, offset_axis, offset_val, normal_axis in tip_info:
+        if body_name not in robot.data.body_names:
+            continue
+        body_idx = robot.data.body_names.index(body_name)
+        link_pos = robot.data.body_pos_w[:, body_idx]
+        link_quat = robot.data.body_quat_w[:, body_idx]
+
+        if offset_axis == "x":
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+        elif offset_axis == "y":
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+        else:
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+        world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+        tip_pos = link_pos + world_offset
+        tip_pos_xy = tip_pos[:, :2]
+
+        if normal_axis == "x":
+            local_normal = x_axis.unsqueeze(0).repeat(env.num_envs, 1)
+        elif normal_axis == "y":
+            local_normal = y_axis.unsqueeze(0).repeat(env.num_envs, 1)
+        else:
+            local_normal = z_axis.unsqueeze(0).repeat(env.num_envs, 1)
+
+        normal_world = quat_apply(link_quat, local_normal)
+        normal_xy = normal_world[:, :2]
+        normal_xy = normal_xy / (torch.norm(normal_xy, dim=1, keepdim=True) + 1e-6)
+
+        dir_to_cup = cup_pos_xy - tip_pos_xy
+        dir_to_cup = dir_to_cup / (torch.norm(dir_to_cup, dim=1, keepdim=True) + 1e-6)
+
+        alignment = torch.sum(normal_xy * dir_to_cup, dim=1)
+        tip_reward = torch.clamp(alignment, min=0.0)
+
+        total_reward += tip_reward
+        num_tips += 1
+
+    if num_tips > 0:
+        total_reward = total_reward / float(num_tips)
+
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    mu_trigger = _stage_mu(env, object_cfg, eef_link_name)
+    return lambda_trigger * (1.0 - mu_trigger) * total_reward
 
 
 def contact_persistence_reward(

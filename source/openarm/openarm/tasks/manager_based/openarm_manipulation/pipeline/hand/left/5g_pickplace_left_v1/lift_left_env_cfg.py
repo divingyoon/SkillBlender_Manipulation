@@ -207,6 +207,16 @@ class RewardsCfg:
         params={"std": 0.2, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
         weight=16.0,
     )
+    finger_closing_pregrasp = RewTerm(
+        func=mdp.finger_grasp_reward,
+        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=8.0,
+    )
+    fingertip_cup_facing_pregrasp = RewTerm(
+        func=mdp.finger_tip_orientation_reward,
+        params={"std": 0.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=6.0,
+    )
 
     # v1의 grasp 계열을 contact-sensor 기반으로 대체.
     grasp_contact_persistence = RewTerm(
@@ -351,6 +361,8 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     dexpour_require_thumb_contact: bool = True
     # Optional smoothing for nu trigger; default is strict binary trigger.
     dexpour_use_soft_nu_gate: bool = False
+    debug_stage_triggers: bool = True
+    debug_stage_triggers_interval: int = 50
     reach_switch_threshold: float = 0.05
     reach_switch_hold_steps: int = 2
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.

@@ -405,8 +405,8 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
 
         self.sim.physx.bounce_threshold_velocity = 0.01
         # 256 환경용 (v1와 동일)
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 8 * 1024 * 1024
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2 * 1024 * 1024
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
         self.sim.physx.gpu_max_rigid_patch_count = 2**24
         self.sim.physx.gpu_max_rigid_contact_count = 2**24
         self.sim.physx.gpu_collision_stack_size = 2**24

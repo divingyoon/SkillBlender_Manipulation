@@ -204,8 +204,8 @@ class RewardsCfg:
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
-        params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=4.0,
+        params={"std": 0.2, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
+        weight=10.0,
     )
 
     # v1의 grasp 계열을 contact-sensor 기반으로 대체.
@@ -217,6 +217,7 @@ class RewardsCfg:
             "contact_threshold": 0.02,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
+            "require_thumb_contact": True,
         },
         weight=8.0,
     )
@@ -229,6 +230,7 @@ class RewardsCfg:
             "contact_threshold": 0.02,
             "min_fingers_bonus": 4,
             "bonus_scale": 1.0,
+            "require_thumb_contact": True,
         },
         weight=12.0,
     )
@@ -242,6 +244,7 @@ class RewardsCfg:
             "required_fingers": 4,
             "minimal_height": 0.04,
             "hold_steps": 6,
+            "require_thumb_contact": True,
         },
         weight=20.0,
     )
@@ -320,7 +323,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_left_v2"
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
+    grasp2g_target_offset: tuple[float, float, float] = (0.01, -0.06, 0.08)
     reach_dynamic_z_high: float = 0.25
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03

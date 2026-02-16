@@ -101,6 +101,36 @@ def _select_sensor_body_names(
     return [sensor_body_names[int(i)] for i in body_ids]
 
 
+def _sensor_force_magnitudes_filtered(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+) -> tuple[torch.Tensor, list[str] | tuple[str, ...] | None]:
+    """Return per-body contact force magnitudes, preferring filtered object-contact matrix.
+
+    When ``filter_prim_paths_expr`` is provided in ContactSensorCfg, ``force_matrix_w`` contains
+    contacts only against those filtered prims (Cup/Cup2 in this task). Using ``net_forces_w``
+    would include table/self contacts and can contaminate grasp rewards.
+    """
+    contact_sensor = env.scene[sensor_cfg.name]
+    sensor_body_names = getattr(contact_sensor, "body_names", None)
+    if sensor_body_names is None:
+        sensor_body_names = getattr(contact_sensor.data, "body_names", None)
+
+    force_matrix_w = getattr(contact_sensor.data, "force_matrix_w", None)
+    if force_matrix_w is not None:
+        # (N, B, F, 3) -> (N, B): max filtered-contact magnitude per sensor body
+        force_magnitudes = torch.norm(force_matrix_w, dim=-1).max(dim=-1)[0]
+    else:
+        # Fallback: unfiltered net forces (may include table/self contacts).
+        force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
+
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+        sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
+
+    return force_magnitudes, sensor_body_names
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -509,14 +539,7 @@ def _left_finger_contact_flags(
 ) -> torch.Tensor:
     """Estimate per-finger contact flags from contact sensor forces."""
     del object_cfg  # kept for backward signature compatibility
-    contact_sensor = env.scene[sensor_cfg.name]
-    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
-    sensor_body_names = getattr(contact_sensor, "body_names", None)
-    if sensor_body_names is None:
-        sensor_body_names = getattr(contact_sensor.data, "body_names", None)
-    if sensor_cfg.body_ids is not None:
-        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-        sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
+    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
     return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
 
 
@@ -528,6 +551,7 @@ def contact_finger_coverage_reward(
     contact_threshold: float = 0.02,
     min_fingers_bonus: int = 4,
     bonus_scale: float = 1.0,
+    require_thumb_contact: bool = False,
 ) -> torch.Tensor:
     """Reward broader multi-finger coverage to avoid 2-3-finger local optima."""
     contact_flags = _left_finger_contact_flags(
@@ -544,7 +568,11 @@ def contact_finger_coverage_reward(
     bonus = torch.clamp((num_fingers - float(min_fingers_bonus - 1)) / bonus_span, 0.0, 1.0)
 
     grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * (coverage + float(bonus_scale) * bonus)
+    reward = grasp_gate * (coverage + float(bonus_scale) * bonus)
+    if require_thumb_contact:
+        thumb_contact = contact_flags[:, 0].float()
+        reward = reward * thumb_contact
+    return reward
 
 
 def strict_grasp_lift_success(
@@ -556,6 +584,7 @@ def strict_grasp_lift_success(
     required_fingers: int = 4,
     minimal_height: float = 0.04,
     hold_steps: int = 8,
+    require_thumb_contact: bool = False,
 ) -> torch.Tensor:
     """Binary success metric: multi-finger grasp maintained while object is lifted."""
     obj: RigidObject = env.scene[object_cfg.name]
@@ -569,8 +598,10 @@ def strict_grasp_lift_success(
     required_fingers = max(1, min(5, int(required_fingers)))
     hold_steps = max(1, int(hold_steps))
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (reached_gate > 0.2)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (grasp_gate > 0.2)
+    if require_thumb_contact:
+        success_now = success_now & contact_flags[:, 0]
 
     if not hasattr(env, "_strict_grasp_success_counter"):
         env._strict_grasp_success_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
@@ -932,22 +963,19 @@ def contact_persistence_reward(
     contact_threshold: float = 0.05,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    require_thumb_contact: bool = False,
 ) -> torch.Tensor:
     """Reward maintaining sufficient finger-level contacts."""
-    contact_sensor = env.scene[sensor_cfg.name]
-    contact_forces = contact_sensor.data.net_forces_w
-    force_magnitudes = torch.norm(contact_forces, dim=-1)
-    sensor_body_names = getattr(contact_sensor, "body_names", None)
-    if sensor_body_names is None:
-        sensor_body_names = getattr(contact_sensor.data, "body_names", None)
-    if sensor_cfg.body_ids is not None:
-        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-        sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
+    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
     finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
     num_contacts = finger_flags.sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
     grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * reward
+    reward = grasp_gate * reward
+    if require_thumb_contact:
+        thumb_contact = finger_flags[:, 0].float()
+        reward = reward * thumb_contact
+    return reward
 
 
 def synergy_reaching_pose_reward(

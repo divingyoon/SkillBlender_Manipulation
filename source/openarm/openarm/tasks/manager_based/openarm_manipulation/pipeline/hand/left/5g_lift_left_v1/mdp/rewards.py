@@ -160,9 +160,9 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    # After reaching complete, fix reward at 1.0 to allow EE to descend further for grasping
+    # After reaching complete, deactivate (0.0) - grasp phase rewards take over
     reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    reach_reward = torch.where(reached_gate > 0.5, torch.ones_like(reach_reward), reach_reward)
+    reach_reward = torch.where(reached_gate > 0.5, torch.zeros_like(reach_reward), reach_reward)
 
     return reach_reward
 
@@ -190,9 +190,9 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    # After reaching complete, fix reward at 1.0 to allow EE to descend further for grasping
+    # After reaching complete, deactivate (0.0) - grasp phase rewards take over
     reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    reach_reward = torch.where(reached_gate > 0.5, torch.ones_like(reach_reward), reach_reward)
+    reach_reward = torch.where(reached_gate > 0.5, torch.zeros_like(reach_reward), reach_reward)
 
     return reach_reward
 
@@ -201,6 +201,7 @@ def ee_descent_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.04,
     target_z_offset: float = 0.04,
+    xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
@@ -208,7 +209,7 @@ def ee_descent_reward(
 
     After reaching is complete (EE at z=0.08), guide EE to descend further
     to target_z_offset (default 0.04) for proper grasping.
-    Only active after reaching is complete.
+    Only active after reaching is complete AND EE is close to cup in XY.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -222,9 +223,14 @@ def ee_descent_reward(
     z_error = torch.abs(ee_z - target_z)
     descent_reward = 1.0 - torch.tanh(z_error / std)
 
+    # XY proximity: reward decays if EE is far from cup in XY
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
+
     # Only active after reaching is complete
     reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * descent_reward
+    return reached_gate * descent_reward * xy_proximity
 
 
 def _maybe_visualize_approach_target_all(
@@ -366,15 +372,42 @@ def _is_reaching_stably_complete(
         env._reach_hold_counter_left_last_step = -2
     if env._reach_hold_counter_left_last_step != step_count:
         # Reset counter and latched state at episode boundary.
-        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
-        counter[reset_mask] = 0
-        latched[reset_mask] = False
+        # Use episode_length_buf == 1 to detect first step of new episode
+        ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+        reset_mask = (ep_len <= 1)
+
+        # Also reset in first few global steps to ensure clean start
+        if step_count < 10:
+            counter[:] = 0
+            latched[:] = False
+        else:
+            counter[reset_mask] = 0
+            latched[reset_mask] = False
+
+        # Debug: print EE distance at episode start for env 0
+        if ep_len[0].item() == 1:
+            obj_dbg = env.scene[object_cfg.name]
+            eef_idx_dbg = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_dbg = env.scene["robot"].data.body_pos_w[:, eef_idx_dbg]
+            target_dbg = _compute_grasp_target_pos_w(env, obj_dbg, ee_pos_dbg, use_dynamic_z=False)
+            dist_dbg = torch.norm(target_dbg - ee_pos_dbg, dim=1)
+            print(f"[Step {step_count}] EPISODE START: dist={dist_dbg[0].item():.4f}m (threshold={reach_threshold:.3f}m)")
 
         counter = torch.where(reached_now_i64 > 0, counter + 1, torch.zeros_like(counter))
         env._reach_hold_counter_left = counter
 
         # Once counter reaches hold_steps, latch it (stays True until episode reset)
         newly_latched = (counter >= hold_steps) & (~latched)
+
+        # Debug: print when latched becomes True for env 0
+        if newly_latched[0].item():
+            obj = env.scene[object_cfg.name]
+            eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+            target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+            dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+            print(f"[Step {step_count}] *** LATCHED! *** dist={dist[0].item():.4f}m, EpLen={ep_len[0].item():.0f}")
+
         latched = latched | newly_latched
         env._reach_latched_left = latched
 
@@ -393,7 +426,8 @@ def _is_reaching_stably_complete(
                   f"Threshold: {reach_threshold:.3f}m | "
                   f"Reached: {reached_now[0].item():.0f} | "
                   f"Counter: {counter[0].item()}/{hold_steps} | "
-                  f"Reach Active: {latched[0].item():.0f}")
+                  f"Reach Active: {latched[0].item():.0f} | "
+                  f"EpLen: {ep_len[0].item():.0f}")
 
     # Return latched state (once complete, stays complete until episode reset)
     result = latched.to(dtype=reached_now.dtype)
@@ -547,9 +581,16 @@ def _is_lifting_sustained(
         env._lift_hold_counter_left_last_step = -2
     if env._lift_hold_counter_left_last_step != step_count:
         # Reset at episode boundary
-        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
-        counter[reset_mask] = 0
-        latched[reset_mask] = False
+        ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+        reset_mask = (ep_len <= 1)
+
+        # Also reset in first few global steps to ensure clean start
+        if step_count < 10:
+            counter[:] = 0
+            latched[:] = False
+        else:
+            counter[reset_mask] = 0
+            latched[reset_mask] = False
 
         counter = torch.where(is_lifted_now > 0, counter + 1, torch.zeros_like(counter))
         env._lift_hold_counter_left = counter
@@ -666,7 +707,7 @@ def thumb_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    grasp_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return (1.0 - grasp_gate) * reward
 
 
@@ -696,7 +737,7 @@ def pinky_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    grasp_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return (1.0 - grasp_gate) * reward
 
 
@@ -746,7 +787,7 @@ def finger_contact_reward(
     contact_ratio = num_contacts / max_contacts
 
     # Only reward after reaching is complete (0.05m threshold)
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_gate * contact_ratio
 
 
@@ -802,7 +843,7 @@ def thumb_grasp_reward(
     # Combine: velocity (0.3) + position (0.7)
     reward = 0.3 * velocity_reward + 0.7 * position_reward
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_gate * reward
 
 
@@ -856,7 +897,7 @@ def pinky_grasp_reward(
     # Combine: velocity (0.3) + position (0.7)
     reward = 0.3 * velocity_reward + 0.7 * position_reward
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_gate * reward
 
 
@@ -880,7 +921,7 @@ def synergy_grip_reward(
     action_term = env.action_manager.get_term(action_name)
     grip_strength = action_term.raw_actions[:, 0]  # shape: (num_envs,)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
 
     # Before reaching: small reward for open (0.02 scale - weak guidance to keep fingers open)
     open_reward = torch.clamp((1.0 - grip_strength) / 2.0, min=0.0, max=1.0) * 0.02
@@ -968,7 +1009,7 @@ def finger_tip_to_cup_reward(
         total_reward = total_reward / num_tips  # Average over tips
 
     # Only active after reaching is complete
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
 
     # Visualize fingertip positions
     _maybe_visualize_fingertips(env, robot, _TIP_INFO, obj)
@@ -1057,7 +1098,7 @@ def finger_wrap_cylinder_reward(
     opposition_weight = float(max(0.0, min(1.0, opposition_weight)))
     reward = (1.0 - opposition_weight) * radial_reward_mean + opposition_weight * opposition_reward
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     _maybe_visualize_fingertips(env, robot, [(x[1], x[2], x[3]) for x in tip_info], obj)
     return reached_gate * reward
 
@@ -1119,7 +1160,7 @@ def finger_wrap_coverage_reward(
             pair_count += 1
 
     coverage_reward = pair_scores / float(max(1, pair_count))
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
     return reached_gate * coverage_reward
 
 
@@ -1208,7 +1249,7 @@ def finger_tip_orientation_reward(
         total_reward = total_reward / num_tips  # Average over tips
 
     # Only active after reaching is complete
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
 
     return reached_gate * total_reward
 
@@ -1310,17 +1351,19 @@ def thumb_tip_z_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.06,
     cup_height: float = 0.08,
+    xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
     """Reward thumb tip Z position approaching cup top height.
 
     Guides the thumb fingertip to descend to the cup's top (grasp) height.
-    Only active after reaching is complete.
+    Only active after reaching is complete AND EE is close to cup in XY.
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
     cup_top_z = obj.data.root_pos_w[:, 2] + cup_height  # target: cup top
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
 
     # Thumb tip: body + local offset
     body_name = "tesollo_left_ll_dg_1_4"
@@ -1341,14 +1384,21 @@ def thumb_tip_z_reward(
     z_error = torch.abs(tip_z - cup_top_z)
     z_reward = 1.0 - torch.tanh(z_error / std)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * z_reward
+    # XY proximity: reward decays if EE is far from cup in XY
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
+
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return reached_gate * z_reward * xy_proximity
 
 
 def synergy_tip_z_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.06,
     cup_height: float = 0.08,
+    xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
@@ -1356,11 +1406,12 @@ def synergy_tip_z_reward(
 
     Uses finger 2 as representative for synergy fingers (2,3,4).
     Guides the fingertip to descend to the cup's top (grasp) height.
-    Only active after reaching is complete.
+    Only active after reaching is complete AND EE is close to cup in XY.
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
     cup_top_z = obj.data.root_pos_w[:, 2] + cup_height  # target: cup top
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
 
     # Index finger (2) tip: body + local offset
     body_name = "tesollo_left_ll_dg_2_4"
@@ -1381,5 +1432,11 @@ def synergy_tip_z_reward(
     z_error = torch.abs(tip_z - cup_top_z)
     z_reward = 1.0 - torch.tanh(z_error / std)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * z_reward
+    # XY proximity: reward decays if EE is far from cup in XY
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
+
+    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    return reached_gate * z_reward * xy_proximity

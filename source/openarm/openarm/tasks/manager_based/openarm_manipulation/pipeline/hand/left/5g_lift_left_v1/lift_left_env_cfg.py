@@ -326,7 +326,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_left"
     curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
+    grasp2g_target_offset: tuple[float, float, float] = (0.01, -0.06, 0.08)
     reach_dynamic_z_high: float = 0.25
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
@@ -345,7 +345,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     grasp_soft_gate_near: float = 0.012
     grasp_soft_gate_far: float = 0.05
     # Debug visualization
-    debug_approach_target_vis: bool = False  # ll_dg_ee approach target 마커 끔
+    debug_approach_target_vis: bool = True  # ll_dg_ee approach target 마커 끔
     debug_fingertip_vis: bool = True  # 손가락 tip 위치 시각화
     debug_fingertip_vis_interval: int = 5  # 시각화 업데이트 간격
 

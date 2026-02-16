@@ -126,7 +126,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.15, 0.1, 0.0], rot=[1.0, 0.0, 0.0, 0.0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(0.8, 0.8, 1.0),
+                scale=(1.0, 1.0, 1.2),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
@@ -144,7 +144,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.15, -0.1, 0.0], rot=[1.0, 0.0, 0.0, 0.0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(0.8, 0.8, 1.0),
+                scale=(1.0, 1.0, 1.2),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,

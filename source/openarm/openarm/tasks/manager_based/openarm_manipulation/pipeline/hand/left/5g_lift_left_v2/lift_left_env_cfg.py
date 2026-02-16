@@ -205,31 +205,51 @@ class RewardsCfg:
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
         params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=1.0,
+        weight=4.0,
     )
 
-    finger_wrap_cylinder = RewTerm(
-        func=mdp.finger_wrap_cylinder_reward,
+    # v1의 grasp 계열을 contact-sensor 기반으로 대체.
+    grasp_contact_persistence = RewTerm(
+        func=mdp.contact_persistence_reward,
         params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
+            "min_contacts": 3,
+            "contact_threshold": 0.02,
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
-            "target_radius": 0.04,
-            "radial_std": 0.015,
-            "opposition_weight": 0.3,
         },
-        weight=10.0,
+        weight=12.0,
     )
-
-    finger_wrap_coverage = RewTerm(
-        func=mdp.finger_wrap_coverage_reward,
-        params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,
+    grasp_contact_coverage = RewTerm(
+        func=mdp.contact_finger_coverage_reward,
+        params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "contact_threshold": 0.02,
+            "min_fingers_bonus": 4,
+            "bonus_scale": 1.0,
+        },
+        weight=30.0,
+    )
+    grasp_strict_success = RewTerm(
+        func=mdp.strict_grasp_lift_success,
+        params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "contact_threshold": 0.02,
+            "required_fingers": 4,
+            "minimal_height": 0.04,
+            "hold_steps": 6,
+        },
+        weight=20.0,
     )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup")},
-        weight=20.0,
+        weight=10.0,
     )
 
     object_goal_tracking = RewTerm(
@@ -247,7 +267,7 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-0.2,
+        weight=-1.5,
     )
 
     finger_normal_range = RewTerm(
@@ -268,82 +288,6 @@ class RewardsCfg:
         weight=0.5,
     )
 
-    contact_persistence = RewTerm(
-        func=mdp.contact_persistence_reward,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "min_contacts": 3,
-            "contact_threshold": 0.02,
-        },
-        weight=3.5,
-    )
-    finger_contact_coverage = RewTerm(
-        func=mdp.contact_finger_coverage_reward,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "object_cfg": SceneEntityCfg("cup"),
-            "eef_link_name": "ll_dg_ee",
-            "contact_threshold": 0.02,
-            "min_fingers_bonus": 4,
-            "bonus_scale": 1.0,
-        },
-        weight=10.0,
-    )
-    strict_grasp_success = RewTerm(
-        func=mdp.strict_grasp_lift_success,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "object_cfg": SceneEntityCfg("cup"),
-            "eef_link_name": "ll_dg_ee",
-            "contact_threshold": 0.02,
-            "required_fingers": 4,
-            "minimal_height": 0.04,
-            "hold_steps": 6,
-        },
-        weight=4.0,
-    )
-
-    slip_penalty = RewTerm(
-        func=mdp.slip_magnitude_penalty,
-        params={
-            "robot_cfg": SceneEntityCfg("robot", body_names=LEFT_CONTACT_LINKS),
-            "object_cfg": SceneEntityCfg("cup"),
-            "max_slip": 0.15,
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "contact_threshold": 0.05,
-        },
-        weight=-0.4,
-    )
-
-    normal_force_stability = RewTerm(
-        func=mdp.normal_force_stability_reward,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "contact_threshold": 0.05,
-        },
-        weight=1.0,
-    )
-
-    force_spike = RewTerm(
-        func=mdp.force_spike_penalty,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "spike_threshold": 10.0,
-            "contact_threshold": 0.05,
-        },
-        weight=-0.05,
-    )
-
-    overgrip = RewTerm(
-        func=mdp.overgrip_penalty,
-        params={
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-            "target_force_range": (1.0, 12.0),
-            "contact_threshold": 0.05,
-        },
-        weight=-0.2,
-    )
-
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
@@ -357,7 +301,7 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
-    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 120.0})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
 
 
 @configclass
@@ -379,23 +323,22 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    # Step milestones for staged reward curriculum.
-    # stage0: approach, stage1: grasp, stage2: lift, stage3: goal tracking
-    reward_stage_1_step: int = 0
-    reward_stage_2_step: int = 50_000
-    reward_stage_3_step: int = 90_000
     reach_switch_threshold: float = 0.05
     reach_switch_hold_steps: int = 2
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
     reach_soft_gate_near: float = 0.02
-    reach_soft_gate_far: float = 0.18
-    # Separate grasp activation gate: require closer EE-target distance for finger closing terms.
+    reach_soft_gate_far: float = 0.10
+    # Separate grasp activation gate: require closer EE-target distance before finger closing.
     grasp_switch_threshold: float = 0.025
-    grasp_switch_hold_steps: int = 2
+    grasp_switch_hold_steps: int = 4
     grasp_soft_gate_near: float = 0.012
-    grasp_soft_gate_far: float = 0.08
+    grasp_soft_gate_far: float = 0.05
+    # Debug visualization
+    debug_approach_target_vis: bool = False
+    debug_fingertip_vis: bool = True
+    debug_fingertip_vis_interval: int = 5
 
-    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -409,17 +352,16 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 10.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
-        self.commands.object_pose.debug_vis = True
+        self.commands.object_pose.debug_vis = False
 
         self.observations.policy.concatenate_terms = True
 
         self.sim.physx.bounce_threshold_velocity = 0.01
-        # Original values were tuned for ~2048 envs. Scale with env count to reduce memory pressure.
-        env_scale = max(float(self.scene.num_envs) / 2048.0, 0.0)
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = max(8 * 1024 * 1024, int((64 * 1024 * 1024) * env_scale))
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = max(4 * 1024 * 1024, int((16 * 1024 * 1024) * env_scale))
-        self.sim.physx.gpu_max_rigid_patch_count = max(2**23, int((2**25) * env_scale))
-        self.sim.physx.gpu_max_rigid_contact_count = max(2**23, int((2**25) * env_scale))
-        self.sim.physx.gpu_collision_stack_size = max(2**23, int((2**25) * env_scale))
+        # 256 환경용 (v1와 동일)
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 8 * 1024 * 1024
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2 * 1024 * 1024
+        self.sim.physx.gpu_max_rigid_patch_count = 2**22
+        self.sim.physx.gpu_max_rigid_contact_count = 2**22
+        self.sim.physx.gpu_collision_stack_size = 2**22
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

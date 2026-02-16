@@ -1197,3 +1197,80 @@ def _maybe_visualize_fingertips(
 
     if starts:
         env._debug_draw.draw_lines(starts, ends, line_colors, sizes)
+
+
+def thumb_tip_z_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.03,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward thumb tip Z position approaching cup Z height.
+
+    Guides the thumb fingertip to descend to the cup's grasp height.
+    Only active after reaching is complete.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_z = obj.data.root_pos_w[:, 2]  # (num_envs,)
+
+    # Thumb tip: body + local offset
+    body_name = "tesollo_left_ll_dg_1_4"
+    offset_axis, offset_val = "y", -0.0363
+
+    if body_name not in robot.data.body_names:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    body_idx = robot.data.body_names.index(body_name)
+    link_pos = robot.data.body_pos_w[:, body_idx]
+    link_quat = robot.data.body_quat_w[:, body_idx]
+
+    local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+    tip_pos = link_pos + world_offset
+    tip_z = tip_pos[:, 2]
+
+    z_error = torch.abs(tip_z - cup_z)
+    z_reward = 1.0 - torch.tanh(z_error / std)
+
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * z_reward
+
+
+def synergy_tip_z_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.03,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward index finger (finger 2) tip Z position approaching cup Z height.
+
+    Uses finger 2 as representative for synergy fingers (2,3,4).
+    Guides the fingertip to descend to the cup's grasp height.
+    Only active after reaching is complete.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_z = obj.data.root_pos_w[:, 2]  # (num_envs,)
+
+    # Index finger (2) tip: body + local offset
+    body_name = "tesollo_left_ll_dg_2_4"
+    offset_axis, offset_val = "z", 0.0255
+
+    if body_name not in robot.data.body_names:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    body_idx = robot.data.body_names.index(body_name)
+    link_pos = robot.data.body_pos_w[:, body_idx]
+    link_quat = robot.data.body_quat_w[:, body_idx]
+
+    local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+    tip_pos = link_pos + world_offset
+    tip_z = tip_pos[:, 2]
+
+    z_error = torch.abs(tip_z - cup_z)
+    z_reward = 1.0 - torch.tanh(z_error / std)
+
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * z_reward

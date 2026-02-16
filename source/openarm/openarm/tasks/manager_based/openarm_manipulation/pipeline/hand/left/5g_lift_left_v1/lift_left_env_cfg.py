@@ -276,6 +276,20 @@ class RewardsCfg:
         weight=0.5,  # 새끼는 덜 중요
     )
 
+    # 엄지 tip Z를 컵 Z 높이로 유도
+    thumb_tip_z = RewTerm(
+        func=mdp.thumb_tip_z_reward,
+        params={"std": 0.03, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=10.0,
+    )
+
+    # 시너지 손가락(2번 tip 기준) Z를 컵 Z 높이로 유도
+    synergy_tip_z = RewTerm(
+        func=mdp.synergy_tip_z_reward,
+        params={"std": 0.03, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=10.0,
+    )
+
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(

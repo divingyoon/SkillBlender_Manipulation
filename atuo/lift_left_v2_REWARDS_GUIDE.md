@@ -1,128 +1,125 @@
-# 5G Lift Left v2 - 보상함수 가이드
+# 5G Lift Left v2 - Rewards Guide (for Orchestrator + Ollama)
 
-TensorBoard에서 `5g_lift_left-v2` 리워드/종료 지표를 해석하기 위한 문서입니다.
+이 문서는 `5g_lift_left-v2` 보상/게이트 구조를 빠르게 점검하고,
+`atuo/orchestrator.py`가 override를 자동 생성할 때 참고하도록 만든 가이드입니다.
 
----
+## 1) 실행/재개 체크
 
-## 1) Phase / Gate 전환
+아래 명령은 현재 코드 기준으로 유효합니다.
 
-### reaching_progress_gate
-- 기준: EE-Target 거리 기반
-- 의미: reaching 단계 진행도 (0~1)
-- 용도: orientation, 일부 reaching 관련 shaping 활성/비활성
+```bash
+python3 /home/user/rl_ws/SkillBlender_Manipulation/atuo/orchestrator.py \
+  --config /home/user/rl_ws/SkillBlender_Manipulation/atuo/config/experiment.json \
+  --agent rl_games_cfg_entry_point \
+  --task 5g_lift_left-v2 \
+  --resume_from test1 \
+  --resume_checkpoint pipeline_left_5g_lift_left_v1.pth \
+  --num_envs=256 \
+  --gui
+```
 
-### grasp_progress_gate
-- 기준: 더 엄격한 EE-Target 거리 + hold steps
-- 의미: grasp/lift 단계 진입 신호 (0~1)
-- 용도: `grasp_contact_*`, `lifting_object`, `object_goal_tracking` 활성 조건
+핵심 동작:
+- `agent`가 `rl_games_`로 시작하면 train script/log root를 자동으로 `rl_games` 경로로 전환.
+- `resume_from`는 run name(`testN`) 또는 절대경로 모두 허용.
+- `resume_checkpoint`는 `log_root` 하위에서 파일명을 검색해 task/prefix 우선으로 선택.
 
-핵심 해석:
-- `grasp_progress_gate`가 늦게 오르면 grasp/lift 보상이 거의 0으로 유지됨
-- gate 전에 contact 보상이 높으면 컵을 밀어 접촉만 만드는 local optimum 가능
+## 2) Phase 게이트 (중요)
 
----
+v2 게이트는 `reaching -> grasp` 순서로 동작합니다.
 
-## 2) Reaching / Pre-grasp 리워드
+- `reaching_progress_gate`
+- `grasp_progress_gate`
 
-### `reaching_object` (w=8.0)
-- EE가 동적 Z target으로 접근하면 증가
-- 컵 XY displacement가 커지면 내부 suppress가 걸려 감소
+이번 패치에서 `grasp_progress_gate`에 아래 안전장치를 추가했습니다.
+- orientation gate: EE-컵 정렬 품질이 낮으면 grasp gate 억제
+- displacement safety gate: 컵 XY 밀림이 크면 grasp gate 억제
+- soft gate 완화폭 축소: 거리만으로 조기 grasp 활성화되는 문제 완화
 
-### `reaching_object_fine` (w=6.0)
-- 고정 Z target 기준 정밀 접근
-- 근접 제어 안정성 지표
+## 3) 현재 주요 보상 항목 (v2)
 
-### `end_effector_orientation` (w=4.0)
-- reaching 구간에서 EE-Z와 컵-Z 수직 정렬 유도
-- reaching 완료 후 영향 감소
+### Reaching/Pre-grasp
+- `reaching_object` (w=8.0)
+- `reaching_object_fine` (w=6.0)
+- `end_effector_orientation` (w=16.0, 증가)
+- `thumb_reaching_pose` (w=1.0)
+- `pinky_reaching_pose` (w=0.5)
+- `synergy_reaching_pose` (w=2.0)
+- `pregrasp_contact_penalty` (w=-6.0, 신규)
 
-### `thumb_reaching_pose` (w=1.0)
-### `pinky_reaching_pose` (w=0.5)
-### `synergy_reaching_pose` (w=2.0)
-- grasp 전 손가락(엄지/새끼/2~4번)을 열린 기본 자세로 유지
-- pre-grasp에서 손가락 꼬임/조기 클로징 방지
+### Grasp/Lift
+- `grasp_contact_persistence` (w=6.0)
+- `grasp_contact_coverage` (w=8.0)
+- `grasp_strict_success` (w=18.0)
+- `lifting_object` (w=10.0)
 
-좋은 패턴:
-- reaching 계열이 먼저 안정적으로 올라감
-- pre-grasp pose 계열이 중후반까지 완만히 유지
+### Goal/Regularization
+- `object_goal_tracking` (w=20.0)
+- `object_goal_tracking_fine_grained` (w=10.0)
+- `object_displacement` (w=-5.0)
+- `finger_normal_range` (w=-1.0)
+- `action_rate` (w=-1e-4, v1과 동일)
+- `joint_vel` (w=-1e-4, v1과 동일)
 
----
+## 4) 컨택 센서 해석 (테이블 혼동 방지)
 
-## 3) Grasp/Lift 리워드
+v2는 `left_contact_sensor`에 다음 필터를 사용합니다.
+- `filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"]`
 
-### `grasp_contact_persistence` (w=8.0)
-- 최소 손가락 접촉 수 유지 보상
-- `grasp_progress_gate` 이후에 의미있게 증가해야 정상
+즉, 정상 상태에서는 컵 이외(테이블/자기충돌) 접촉이 grasp contact reward로 들어오지 않습니다.
+또한 이번 패치로 `force_matrix_w`(필터된 접촉행렬)가 없으면 contact reward를 0 처리할 수 있도록 했습니다.
 
-### `grasp_contact_coverage` (w=12.0)
-- 접촉 손가락 coverage 보상
-- 높더라도 `grasp_strict_success`/`lifting_object`가 0이면 실패 패턴
+## 5) Termination
 
-### `grasp_strict_success` (w=20.0)
-- 조건: 요구 손가락 수 + 최소 리프트 높이 + hold
-- 실제 grasp-lift 성공 여부를 가장 잘 반영
+- `cup_tipping`: `max_tilt_deg=35.0` (강화)
+- `cup_dropping`: 높이 하한 미만이면 종료
 
-### `lifting_object` (w=10.0)
-- 컵이 최소 높이 이상 들리면 증가
+목표: 컵이 쓰러지는 정책은 즉시 episode 재시작.
 
-### `object_goal_tracking` (w=20.0)
-### `object_goal_tracking_fine_grained` (w=10.0)
-- lift 이후 목표 위치 추적 품질
+## 6) Ollama가 조정할 우선 파라미터
 
-좋은 패턴:
-- `grasp_contact_*` 상승 이후 `grasp_strict_success`와 `lifting_object`가 따라 올라감
-- 이후 `object_goal_tracking*`이 증가
+### 1순위: 게이트
+- `env.grasp_soft_prefactor`
+- `env.grasp_orientation_gate_min_reward`
+- `env.grasp_orientation_gate_full_reward`
+- `env.grasp_displacement_free_threshold`
+- `env.grasp_displacement_suppress_scale`
+- `env.grasp_switch_threshold`
+- `env.grasp_switch_hold_steps`
 
----
+### 2순위: 정렬/접근
+- `env.rewards.end_effector_orientation.weight`
+- `env.reach_soft_gate_near`
+- `env.reach_soft_gate_far`
+- `env.reach_switch_threshold`
+- `env.reach_switch_hold_steps`
 
-## 4) Penalty / Termination
+### 3순위: grasp 보상 균형
+- `env.rewards.grasp_contact_persistence.weight`
+- `env.rewards.grasp_contact_coverage.weight`
+- `env.rewards.grasp_strict_success.weight`
+- `env.rewards.pregrasp_contact_penalty.weight`
 
-### `object_displacement` (w=-5.0, threshold=0.005)
-- 컵 밀림 패널티
-- 절대값이 큰데 strict/lift가 낮으면 “밀면서 접촉만 생성” 패턴
+### 4순위: 안전/종료
+- `env.terminations.cup_tipping.params.max_tilt_deg`
 
-### `finger_normal_range` (w=-1.0)
-- 비정상 관절 범위 이탈 패널티
+## 7) 권장 override 예시
 
-### `action_rate` / `joint_vel` (각 w=-1e-4)
-- 액션 스무딩/진동 억제(현재 v1과 동일 강도)
+```json
+[
+  "env.grasp_soft_prefactor=0.15",
+  "env.grasp_orientation_gate_min_reward=0.30",
+  "env.grasp_orientation_gate_full_reward=0.80",
+  "env.grasp_displacement_free_threshold=0.008",
+  "env.rewards.end_effector_orientation.weight=20.0",
+  "env.rewards.pregrasp_contact_penalty.weight=-8.0"
+]
+```
 
-### 종료 조건
-- `time_out`
-- `cup_dropping`
-- `cup_tipping` (max_tilt_deg=45)
-  - 컵이 크게 기울면 즉시 에피소드 재시작
+## 8) 관찰 포인트 (정성평가 대응)
 
----
-
-## 5) 실패 패턴과 권장 조정
-
-### 패턴 A: pre-grasp에서 손가락 꼬임/조기 닫힘
-- 징후: `thumb/pinky/synergy_reaching_pose`가 초반부터 낮음
-- 조정 예시:
-  - `env.rewards.synergy_reaching_pose.weight=2.5`
-  - `env.rewards.thumb_reaching_pose.weight=1.5`
-
-### 패턴 B: 컵을 밀기만 하고 lift 실패
-- 징후: `grasp_contact_*` 높음 + `grasp_strict_success`/`lifting_object` 낮음 + `object_displacement` 음수 큼
-- 조정 예시:
-  - `env.rewards.object_displacement.weight=-6.0`
-  - `env.rewards.grasp_contact_coverage.weight=10.0`
-  - `env.grasp_soft_gate_far=0.03`
-
-### 패턴 C: lift는 되는데 goal tracking 약함
-- 징후: `lifting_object` 상승, `object_goal_tracking*` 낮음
-- 조정 예시:
-  - `env.rewards.object_goal_tracking.weight=24.0`
-  - `env.rewards.object_goal_tracking_fine_grained.weight=12.0`
-
----
-
-## 6) 권장 KPI 우선순위
-
-1. `Episode/Episode_Reward/grasp_strict_success`
-2. `Episode/Episode_Reward/lifting_object`
-3. `Episode/Episode_Reward/object_displacement`
-4. `Episode/Episode_Termination/time_out`, `cup_tipping`
-
-`grasp_contact_*`는 보조 지표입니다. 이 값만 높고 strict/lift가 낮으면 성공으로 판단하지 않습니다.
+- 엄지 제외 다른 손가락이 테이블 근처에 머물며 보상 획득하는지
+  - `grasp_contact_*` 상승 vs `pregrasp_contact_penalty` 동시 상승 여부 확인
+- 컵을 밀며 잡는지
+  - `object_displacement` 악화와 `grasp_progress_gate` 상승 타이밍 동시 발생 여부 확인
+- 정렬 후 접근하는지
+  - `end_effector_orientation`이 먼저 상승하고 이후 contact 계열이 따라오는지 확인

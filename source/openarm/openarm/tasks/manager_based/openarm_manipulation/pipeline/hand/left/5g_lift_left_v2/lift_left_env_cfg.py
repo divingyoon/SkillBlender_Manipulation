@@ -205,7 +205,7 @@ class RewardsCfg:
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
         params={"std": 0.2, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=10.0,
+        weight=16.0,
     )
 
     # v1의 grasp 계열을 contact-sensor 기반으로 대체.
@@ -219,7 +219,7 @@ class RewardsCfg:
             "eef_link_name": "ll_dg_ee",
             "require_thumb_contact": True,
         },
-        weight=8.0,
+        weight=6.0,
     )
     grasp_contact_coverage = RewTerm(
         func=mdp.contact_finger_coverage_reward,
@@ -232,7 +232,7 @@ class RewardsCfg:
             "bonus_scale": 1.0,
             "require_thumb_contact": True,
         },
-        weight=12.0,
+        weight=8.0,
     )
     grasp_strict_success = RewTerm(
         func=mdp.strict_grasp_lift_success,
@@ -246,7 +246,19 @@ class RewardsCfg:
             "hold_steps": 6,
             "require_thumb_contact": True,
         },
-        weight=20.0,
+        weight=18.0,
+    )
+
+    pregrasp_contact_penalty = RewTerm(
+        func=mdp.pregrasp_contact_penalty,
+        params={
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "contact_threshold": 0.02,
+            "max_allowed_contacts": 1,
+        },
+        weight=-6.0,
     )
 
     lifting_object = RewTerm(
@@ -309,7 +321,7 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
-    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 35.0})
 
 
 @configclass
@@ -341,6 +353,14 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     grasp_switch_hold_steps: int = 4
     grasp_soft_gate_near: float = 0.012
     grasp_soft_gate_far: float = 0.05
+    # Grasp gate safety: enable finger-closing reward only after orientation + low-push pre-grasp.
+    grasp_soft_prefactor: float = 0.2
+    grasp_orientation_std: float = 0.2
+    grasp_orientation_gate_min_reward: float = 0.25
+    grasp_orientation_gate_full_reward: float = 0.75
+    grasp_displacement_free_threshold: float = 0.01
+    grasp_displacement_suppress_scale: float = 0.015
+    require_filtered_contact_matrix: bool = True
     # Debug visualization
     debug_approach_target_vis: bool = False
     debug_fingertip_vis: bool = True

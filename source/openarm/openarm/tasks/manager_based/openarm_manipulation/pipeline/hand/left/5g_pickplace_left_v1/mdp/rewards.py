@@ -229,6 +229,52 @@ def _compute_grasp_target_pos_w(
     return obj_pos_w + offset_w
 
 
+def _stage_lambda(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """DexPour λ trigger: approach complete."""
+    cfg = getattr(env, "cfg", None)
+    threshold = float(getattr(cfg, "dexpour_approach_threshold", 0.05))
+    return _is_reaching_complete(env, object_cfg, eef_link_name, reach_threshold=threshold)
+
+
+def _stage_mu(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("left_contact_sensor"),
+) -> torch.Tensor:
+    """DexPour μ trigger: secure grasp complete after approach."""
+    cfg = getattr(env, "cfg", None)
+    min_contacts = int(getattr(cfg, "dexpour_grasp_min_contacts", 4))
+    min_contacts = max(1, min(5, min_contacts))
+    contact_threshold = float(getattr(cfg, "dexpour_contact_threshold", 0.02))
+    require_thumb = bool(getattr(cfg, "dexpour_require_thumb_contact", True))
+
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
+    finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
+    num_contacts = finger_flags.sum(dim=-1)
+    contact_ok = (num_contacts >= min_contacts).float()
+    if require_thumb:
+        contact_ok = contact_ok * finger_flags[:, 0].float()
+    return lambda_trigger * contact_ok
+
+
+def _stage_nu(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    sensor_cfg: SceneEntityCfg = SceneEntityCfg("left_contact_sensor"),
+) -> torch.Tensor:
+    """DexPour ν trigger: cup lift complete after secure grasp."""
+    mu_trigger = _stage_mu(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    stable_lift = _is_transport_stably_complete(env, object_cfg)
+    return mu_trigger * stable_lift
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -268,9 +314,9 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    # Keep reaching reward even after reaching complete (v1 behavior).
-    # This prevents policy from stalling on the transition boundary.
-    return reach_reward
+    # Stage-1 reward: active while λ == 0.
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reach_reward
 
 
 def object_ee_distance_fine(
@@ -295,8 +341,9 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    # Keep fine reaching reward active post-transition for continuous gradient.
-    return reach_reward
+    # Stage-1 reward: active while λ == 0.
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reach_reward
 
 
 def _maybe_visualize_approach_target_all(
@@ -382,8 +429,8 @@ def eef_z_perpendicular_object_z(
     cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
     error = torch.abs(cos_theta)
     orientation_reward = 1 - torch.tanh(error / std)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * orientation_reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * orientation_reward
 
 
 def _is_reaching_complete(
@@ -590,6 +637,67 @@ def _grasp_progress_gate(
     return base_gate * orientation_gate * displacement_gate
 
 
+def _transport_soft_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Continuous [0,1] gate for transfer stage based on cup height."""
+    cfg = getattr(env, "cfg", None)
+    h_lo = float(getattr(cfg, "transfer_soft_height_lo", 0.05))
+    h_hi = float(getattr(cfg, "transfer_soft_height_hi", 0.10))
+    h_hi = max(h_hi, h_lo + 1e-6)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    z = obj.data.root_pos_w[:, 2]
+    return torch.clamp((z - h_lo) / (h_hi - h_lo), 0.0, 1.0)
+
+
+def _is_transport_stably_complete(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Binary transfer trigger once cup lift is stably maintained."""
+    cfg = getattr(env, "cfg", None)
+    h_switch = float(getattr(cfg, "transfer_switch_height", 0.10))
+    hold_steps = int(getattr(cfg, "transfer_switch_hold_steps", 4))
+    hold_steps = max(1, hold_steps)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    lifted_now = (obj.data.root_pos_w[:, 2] > h_switch).to(dtype=torch.int64)
+
+    if not hasattr(env, "_transfer_hold_counter_left"):
+        env._transfer_hold_counter_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+    counter = env._transfer_hold_counter_left
+
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if not hasattr(env, "_transfer_hold_counter_left_last_step"):
+        env._transfer_hold_counter_left_last_step = -2
+    if env._transfer_hold_counter_left_last_step != step_count:
+        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
+        counter[reset_mask] = 0
+        counter = torch.where(lifted_now > 0, counter + 1, torch.zeros_like(counter))
+        env._transfer_hold_counter_left = counter
+        env._transfer_hold_counter_left_last_step = step_count
+
+    return (counter >= hold_steps).to(dtype=obj.data.root_pos_w.dtype)
+
+
+def _transport_progress_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """DexPour ν gate for transport stage activation."""
+    cfg = getattr(env, "cfg", None)
+    use_soft_nu = bool(getattr(cfg, "dexpour_use_soft_nu_gate", False))
+    nu = _stage_nu(env, object_cfg, eef_link_name)
+    if not use_soft_nu:
+        return nu
+    mu = _stage_mu(env, object_cfg, eef_link_name)
+    soft = _transport_soft_gate(env, object_cfg)
+    return torch.maximum(nu, mu * soft)
+
+
 def _left_finger_contact_flags(
     env: ManagerBasedRLEnv,
     sensor_cfg: SceneEntityCfg,
@@ -626,8 +734,9 @@ def contact_finger_coverage_reward(
     bonus_span = float(max(1, 6 - min_fingers_bonus))
     bonus = torch.clamp((num_fingers - float(min_fingers_bonus - 1)) / bonus_span, 0.0, 1.0)
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reward = grasp_gate * (coverage + float(bonus_scale) * bonus)
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    transfer_gate = _transport_progress_gate(env, object_cfg, eef_link_name)
+    reward = lambda_trigger * (1.0 - transfer_gate) * (coverage + float(bonus_scale) * bonus)
     if require_thumb_contact:
         thumb_contact = contact_flags[:, 0].float()
         reward = reward * thumb_contact
@@ -657,8 +766,8 @@ def strict_grasp_lift_success(
     required_fingers = max(1, min(5, int(required_fingers)))
     hold_steps = max(1, int(hold_steps))
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (grasp_gate > 0.2)
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (lambda_trigger > 0.5)
     if require_thumb_contact:
         success_now = success_now & contact_flags[:, 0]
 
@@ -677,7 +786,8 @@ def strict_grasp_lift_success(
         env._strict_grasp_success_counter = counter
         env._strict_grasp_success_last_step = step_count
 
-    return (counter >= hold_steps).to(dtype=obj.data.root_pos_w.dtype)
+    transfer_gate = _transport_progress_gate(env, object_cfg, eef_link_name)
+    return (1.0 - transfer_gate) * (counter >= hold_steps).to(dtype=obj.data.root_pos_w.dtype)
 
 
 def object_is_lifted(
@@ -691,8 +801,14 @@ def object_is_lifted(
     Only activates when EE has reached the grasp position first.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    cfg = getattr(env, "cfg", None)
+    transfer_height = float(getattr(cfg, "transfer_switch_height", max(minimal_height + 1e-3, 0.10)))
+    transfer_height = max(transfer_height, minimal_height + 1e-6)
+    mu_trigger = _stage_mu(env, object_cfg, eef_link_name)
+    nu_trigger = _transport_progress_gate(env, object_cfg, eef_link_name)
+    lift_progress = torch.clamp((obj.data.root_pos_w[:, 2] - minimal_height) / (transfer_height - minimal_height), 0.0, 1.0)
+    # Stage-2 transport-preparation reward: active when μ=1 and ν=0.
+    return mu_trigger * (1.0 - nu_trigger) * lift_progress
 
 
 def object_goal_distance(
@@ -714,8 +830,8 @@ def object_goal_distance(
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+    nu_trigger = _transport_progress_gate(env, object_cfg, eef_link_name)
+    return nu_trigger * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
 def object_displacement_penalty(
@@ -797,8 +913,8 @@ def finger_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def thumb_reaching_pose_reward(
@@ -822,8 +938,8 @@ def thumb_reaching_pose_reward(
         total_sq_error += (pos - target) ** 2
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def pinky_reaching_pose_reward(
@@ -846,8 +962,8 @@ def pinky_reaching_pose_reward(
         total_sq_error += (pos - target) ** 2
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def finger_grasp_reward(
@@ -1029,8 +1145,9 @@ def contact_persistence_reward(
     finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
     num_contacts = finger_flags.sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reward = grasp_gate * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    transfer_gate = _transport_progress_gate(env, object_cfg, eef_link_name)
+    reward = lambda_trigger * (1.0 - transfer_gate) * reward
     if require_thumb_contact:
         thumb_contact = finger_flags[:, 0].float()
         reward = reward * thumb_contact
@@ -1054,9 +1171,9 @@ def pregrasp_contact_penalty(
     excess = torch.clamp(num_contacts - float(max_allowed_contacts), min=0.0)
     excess = excess / float(max(1, 5 - max_allowed_contacts))
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reach_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    pregrasp_band = torch.clamp(reach_gate - grasp_gate, 0.0, 1.0)
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    mu_trigger = _stage_mu(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    pregrasp_band = torch.clamp(lambda_trigger - mu_trigger, 0.0, 1.0)
     return pregrasp_band * excess
 
 
@@ -1081,8 +1198,8 @@ def synergy_reaching_pose_reward(
         total_sq_error += (pos - target) ** 2
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def slip_magnitude_penalty(

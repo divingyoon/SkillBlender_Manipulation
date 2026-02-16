@@ -120,6 +120,202 @@ def _compute_grasp_target_pos_w(
     return obj_pos_w + offset_w
 
 
+# =============================================================================
+# DexPour-style Binary Triggers (λ, μ, ν, ρ)
+# =============================================================================
+
+def _get_fingertip_positions(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Get all 5 fingertip positions in world frame.
+
+    Returns: (num_envs, 5, 3) tensor of fingertip positions
+    """
+    robot = env.scene["robot"]
+
+    # Fingertip info: (body_name, offset_axis, offset_value)
+    tip_info = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),  # thumb
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),   # index
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),   # middle
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),   # ring
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),   # pinky
+    ]
+
+    tip_positions = []
+    for body_name, offset_axis, offset_val in tip_info:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]
+            link_quat = robot.data.body_quat_w[:, body_idx]
+
+            if offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_positions.append(tip_pos)
+
+    return torch.stack(tip_positions, dim=1)  # (num_envs, 5, 3)
+
+
+def _count_finger_contacts(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    cup_radius: float = 0.05,
+    contact_threshold: float = 0.02,
+) -> torch.Tensor:
+    """Count number of fingertips in contact with cup surface.
+
+    Contact = fingertip-to-cup-surface distance < contact_threshold
+
+    Returns: (num_envs,) tensor of contact counts (0-5)
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos = obj.data.root_pos_w[:, :3]  # (num_envs, 3)
+
+    tip_positions = _get_fingertip_positions(env)  # (num_envs, 5, 3)
+
+    # Distance from each tip to cup center (XY plane for cylindrical cup)
+    tip_xy = tip_positions[:, :, :2]  # (num_envs, 5, 2)
+    cup_xy = cup_pos[:, :2].unsqueeze(1)  # (num_envs, 1, 2)
+
+    dist_to_center_xy = torch.norm(tip_xy - cup_xy, dim=2)  # (num_envs, 5)
+    dist_to_surface = dist_to_center_xy - cup_radius  # distance to cup surface
+
+    # Also check Z height is within cup (roughly)
+    tip_z = tip_positions[:, :, 2]  # (num_envs, 5)
+    cup_z = cup_pos[:, 2].unsqueeze(1)  # (num_envs, 1)
+    cup_height = 0.10  # approximate cup height
+    z_valid = (tip_z >= cup_z) & (tip_z <= cup_z + cup_height)
+
+    # Contact: surface distance < threshold AND valid Z
+    contacts = (dist_to_surface < contact_threshold) & z_valid
+    num_contacts = contacts.float().sum(dim=1)  # (num_envs,)
+
+    return num_contacts
+
+
+def _approach_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    d_approach: float = 0.08,
+) -> torch.Tensor:
+    """λ: Approach trigger - EE is close to grasp target.
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    return (dist < d_approach).float()
+
+
+def _grasp_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    min_contacts: int = 4,
+    cup_radius: float = 0.05,
+    contact_threshold: float = 0.02,
+) -> torch.Tensor:
+    """μ: Grasp trigger - enough fingers in contact AND approach complete.
+
+    μ = λ × (num_contacts >= min_contacts)
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    num_contacts = _count_finger_contacts(env, object_cfg, cup_radius, contact_threshold)
+
+    contact_satisfied = (num_contacts >= min_contacts).float()
+
+    return lambda_trigger * contact_satisfied
+
+
+def _lift_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    h_lift: float = 0.04,
+) -> torch.Tensor:
+    """ν: Lift trigger - cup lifted above threshold AND grasp complete.
+
+    ν = μ × (cup_height >= h_lift)
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_height = obj.data.root_pos_w[:, 2]
+
+    lift_satisfied = (cup_height >= h_lift).float()
+
+    return mu_trigger * lift_satisfied
+
+
+def _track_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    command_name: str = "object_pose",
+    d_track: float = 0.15,
+) -> torch.Tensor:
+    """ρ: Track trigger - cup close to target AND lift complete.
+
+    ρ = ν × (dist_to_goal < d_track)
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    nu_trigger = _lift_trigger(env, object_cfg, eef_link_name)
+
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
+
+    dist_to_goal = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
+    track_satisfied = (dist_to_goal < d_track).float()
+
+    return nu_trigger * track_satisfied
+
+
+# Debug function for binary triggers
+def _debug_triggers(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+) -> None:
+    """Print trigger states for debugging (env 0 only, every 50 steps)."""
+    cfg = getattr(env, "cfg", None)
+    debug_enabled = getattr(cfg, "debug_triggers", True)
+    step_count = int(getattr(env, "common_step_counter", -1))
+
+    if not debug_enabled or step_count % 50 != 0:
+        return
+
+    lambda_t = _approach_trigger(env, object_cfg, eef_link_name)
+    num_contacts = _count_finger_contacts(env, object_cfg)
+    mu_t = _grasp_trigger(env, object_cfg, eef_link_name)
+    nu_t = _lift_trigger(env, object_cfg, eef_link_name)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_z = obj.data.root_pos_w[0, 2].item()
+
+    print(f"[Step {step_count}] λ={lambda_t[0].item():.0f} | "
+          f"Contacts={num_contacts[0].item():.0f}/4 | "
+          f"μ={mu_t[0].item():.0f} | "
+          f"CupZ={cup_z:.3f}m | "
+          f"ν={nu_t[0].item():.0f}")
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -130,7 +326,7 @@ def object_ee_distance(
 
     Uses dynamic z offset: starts high (0.15) to approach from above,
     then lowers to grasp position (0.08) as xy alignment improves.
-    After reaching is complete, reward is fixed at 1.0 to allow EE to descend further.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     # Get EE position first for dynamic offset calculation
@@ -160,9 +356,12 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    # After reaching complete, deactivate (0.0) - grasp phase rewards take over
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    reach_reward = torch.where(reached_gate > 0.5, torch.zeros_like(reach_reward), reach_reward)
+    # DexPour: Deactivate when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    reach_reward = (1.0 - lambda_trigger) * reach_reward
+
+    # Debug triggers
+    _debug_triggers(env, object_cfg, eef_link_name)
 
     return reach_reward
 
@@ -177,7 +376,7 @@ def object_ee_distance_fine(
 
     Provides gradient to guide the EE from the dynamic target position
     all the way down to the actual grasp position (Z=offset[2]).
-    After reaching is complete, reward is fixed at 1.0 to allow EE to descend further.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -190,9 +389,9 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    # After reaching complete, deactivate (0.0) - grasp phase rewards take over
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    reach_reward = torch.where(reached_gate > 0.5, torch.zeros_like(reach_reward), reach_reward)
+    # DexPour: Deactivate when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    reach_reward = (1.0 - lambda_trigger) * reach_reward
 
     return reach_reward
 
@@ -205,11 +404,11 @@ def ee_descent_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward EE descending to grasp height after reaching is complete.
+    """Reward EE descending to grasp height after approach is complete.
 
-    After reaching is complete (EE at z=0.08), guide EE to descend further
+    After approach is complete (λ=1), guide EE to descend further
     to target_z_offset (default 0.04) for proper grasping.
-    Only active after reaching is complete AND EE is close to cup in XY.
+    DexPour: Active when λ=1 (approach complete).
     """
     obj: RigidObject = env.scene[object_cfg.name]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -228,9 +427,9 @@ def ee_descent_reward(
     xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
     xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
-    # Only active after reaching is complete
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * descent_reward * xy_proximity
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * descent_reward * xy_proximity
 
 
 def _maybe_visualize_approach_target_all(
@@ -303,7 +502,10 @@ def eef_z_perpendicular_object_z(
     eef_link_name: str = "ll_dg_ee",
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
 ) -> torch.Tensor:
-    """Reward 90-degree alignment between EE +Z axis and object +Z axis."""
+    """Reward 90-degree alignment between EE +Z axis and object +Z axis.
+
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
+    """
     object_quat = env.scene[object_cfg.name].data.root_quat_w
     body_quat_w = env.scene["robot"].data.body_quat_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -316,8 +518,10 @@ def eef_z_perpendicular_object_z(
     cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
     error = torch.abs(cos_theta)
     orientation_reward = 1 - torch.tanh(error / std)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * orientation_reward
+
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * orientation_reward
 
 
 def _is_reaching_complete(
@@ -540,11 +744,12 @@ def object_is_lifted(
 ) -> torch.Tensor:
     """Binary reward if object is lifted above minimal height.
 
-    Activates when reaching is complete (same as grasp phase).
+    DexPour: Active when μ=1 (grasp complete with contacts).
+    Returns 1.0 when cup height > minimal_height AND grasp is complete.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name)
+    return mu_trigger * (obj.data.root_pos_w[:, 2] > minimal_height).float()
 
 
 def _is_lifting_sustained(
@@ -617,7 +822,7 @@ def object_goal_distance(
 ) -> torch.Tensor:
     """Reward tracking the goal pose using tanh-kernel.
 
-    Only activates after object has been lifted for hold_seconds (default 2.0s).
+    DexPour: Active when ν=1 (lift complete - cup height >= threshold AND grasp complete).
     """
     robot: RigidObject = env.scene[robot_cfg.name]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -626,9 +831,9 @@ def object_goal_distance(
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
 
-    # Only activate after lifting is sustained for hold_seconds
-    lift_gate = _is_lifting_sustained(env, minimal_height, hold_seconds, object_cfg)
-    return lift_gate * (1 - torch.tanh(distance / std))
+    # DexPour: Active when ν=1 (lift complete)
+    nu_trigger = _lift_trigger(env, object_cfg, eef_link_name, h_lift=minimal_height)
+    return nu_trigger * (1 - torch.tanh(distance / std))
 
 
 def object_displacement_penalty(
@@ -688,7 +893,7 @@ def thumb_reaching_pose_reward(
 ) -> torch.Tensor:
     """Reward thumb (finger 1) staying near initial open pose during reaching.
 
-    Deactivates once reaching is stably complete to allow free grasping.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     robot = env.scene["robot"]
 
@@ -707,8 +912,9 @@ def thumb_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def pinky_reaching_pose_reward(
@@ -719,7 +925,7 @@ def pinky_reaching_pose_reward(
 ) -> torch.Tensor:
     """Reward pinky (finger 5) staying near initial open pose during reaching.
 
-    Deactivates once reaching is stably complete to allow free grasping.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     robot = env.scene["robot"]
 
@@ -737,8 +943,9 @@ def pinky_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def finger_contact_reward(
@@ -749,8 +956,8 @@ def finger_contact_reward(
 ) -> torch.Tensor:
     """Reward for fingers making contact with the object.
 
-    Uses contact force sensor to detect physical contact between
-    finger links and the cup. Only active after reaching is complete.
+    Uses distance-based contact detection between finger links and cup.
+    DexPour: Active when λ=1 (approach complete) - encourages contact formation.
     """
     # Finger body indices to check for contact
     _FINGER_BODIES = [
@@ -786,9 +993,9 @@ def finger_contact_reward(
     max_contacts = float(len(finger_pos_list))
     contact_ratio = num_contacts / max_contacts
 
-    # Only reward after reaching is complete (0.05m threshold)
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * contact_ratio
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * contact_ratio
 
 
 def thumb_grasp_reward(
@@ -803,7 +1010,7 @@ def thumb_grasp_reward(
     - Velocity reward: moving in closing direction
     - Position reward: being in closed position (even if not moving)
 
-    Only active after reaching is complete (0.05m threshold).
+    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
     """
     robot = env.scene["robot"]
 
@@ -843,8 +1050,9 @@ def thumb_grasp_reward(
     # Combine: velocity (0.3) + position (0.7)
     reward = 0.3 * velocity_reward + 0.7 * position_reward
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * reward
 
 
 def pinky_grasp_reward(
@@ -859,7 +1067,7 @@ def pinky_grasp_reward(
     - Velocity reward: moving in closing direction
     - Position reward: being in closed position (even if not moving)
 
-    Only active after reaching is complete (0.05m threshold).
+    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
     """
     robot = env.scene["robot"]
 
@@ -897,8 +1105,9 @@ def pinky_grasp_reward(
     # Combine: velocity (0.3) + position (0.7)
     reward = 0.3 * velocity_reward + 0.7 * position_reward
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * reward
 
 
 def synergy_grip_reward(
@@ -907,11 +1116,10 @@ def synergy_grip_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward synergy fingers (2,3,4) based on reaching phase.
+    """Reward synergy fingers (2,3,4) for closing.
 
-    - Before reaching complete: small reward for OPEN (grip_strength < 0)
-    - After reaching complete (0.05m): full reward for CLOSED (grip_strength > 0)
-      Plus position-based reward for actual joint positions being closed.
+    DexPour style: Only active when λ=1 (approach complete).
+    λ=0: returns 0 (use synergy_reaching_pose_reward instead)
 
     grip_strength in [-1, 1]: -1 = open, +1 = closed
     """
@@ -921,12 +1129,7 @@ def synergy_grip_reward(
     action_term = env.action_manager.get_term(action_name)
     grip_strength = action_term.raw_actions[:, 0]  # shape: (num_envs,)
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-
-    # Before reaching: small reward for open (0.02 scale - weak guidance to keep fingers open)
-    open_reward = torch.clamp((1.0 - grip_strength) / 2.0, min=0.0, max=1.0) * 0.02
-
-    # After reaching: reward based on action command + actual joint positions
+    # After approach (λ=1): reward based on action command + actual joint positions
     action_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
 
     # Position-based reward for synergy fingers (2,3,4)
@@ -947,10 +1150,41 @@ def synergy_grip_reward(
     # Balance action command and joint pose for stronger closing gradient.
     close_reward = 0.5 * action_reward + 0.5 * position_reward
 
-    # Combine based on reaching state
-    reward = (1.0 - reached_gate) * open_reward + reached_gate * close_reward
+    # DexPour: Only active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * close_reward
 
-    return reward
+
+def synergy_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward synergy fingers (2,3,4) staying near initial open pose during reaching.
+
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
+    """
+    robot = env.scene["robot"]
+
+    # Synergy fingers target = open pose (all joints near 0)
+    _TARGETS = {
+        "lj_dg_2_2": 0.0, "lj_dg_2_3": 0.0, "lj_dg_2_4": 0.0,
+        "lj_dg_3_2": 0.0, "lj_dg_3_3": 0.0, "lj_dg_3_4": 0.0,
+        "lj_dg_4_2": 0.0, "lj_dg_4_3": 0.0, "lj_dg_4_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
 def finger_tip_to_cup_reward(
@@ -962,7 +1196,8 @@ def finger_tip_to_cup_reward(
     """Reward fingertips approaching cup center (XY plane).
 
     Encourages fingers to wrap around the cup by rewarding tips that
-    get closer to the cup's XY position. Only active after reaching complete.
+    get closer to the cup's XY position.
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1008,13 +1243,13 @@ def finger_tip_to_cup_reward(
     if num_tips > 0:
         total_reward = total_reward / num_tips  # Average over tips
 
-    # Only active after reaching is complete
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
 
     # Visualize fingertip positions
     _maybe_visualize_fingertips(env, robot, _TIP_INFO, obj)
 
-    return reached_gate * total_reward
+    return lambda_trigger * total_reward
 
 
 def finger_wrap_cylinder_reward(
@@ -1030,6 +1265,8 @@ def finger_wrap_cylinder_reward(
     Components:
     - Radial ring reward: fingertips should lie near the cup radius in XY.
     - Opposition reward: thumb should oppose the mean direction of other fingers.
+
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1098,9 +1335,10 @@ def finger_wrap_cylinder_reward(
     opposition_weight = float(max(0.0, min(1.0, opposition_weight)))
     reward = (1.0 - opposition_weight) * radial_reward_mean + opposition_weight * opposition_reward
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
     _maybe_visualize_fingertips(env, robot, [(x[1], x[2], x[3]) for x in tip_info], obj)
-    return reached_gate * reward
+    return lambda_trigger * reward
 
 
 def finger_wrap_coverage_reward(
@@ -1112,6 +1350,7 @@ def finger_wrap_coverage_reward(
 
     Uses pairwise angular separation among available fingertips.
     Higher reward when fingers are not collapsed into a narrow sector.
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1160,8 +1399,10 @@ def finger_wrap_coverage_reward(
             pair_count += 1
 
     coverage_reward = pair_scores / float(max(1, pair_count))
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * coverage_reward
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * coverage_reward
 
 
 def finger_tip_orientation_reward(
@@ -1176,7 +1417,7 @@ def finger_tip_orientation_reward(
     - Fingers 2-5: local X axis is the normal direction
 
     Rewards alignment between finger normal and direction to cup center.
-    Only active after reaching is complete.
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1248,10 +1489,10 @@ def finger_tip_orientation_reward(
     if num_tips > 0:
         total_reward = total_reward / num_tips  # Average over tips
 
-    # Only active after reaching is complete
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
 
-    return reached_gate * total_reward
+    return lambda_trigger * total_reward
 
 
 def _maybe_visualize_fingertips(
@@ -1358,7 +1599,7 @@ def thumb_tip_z_reward(
     """Reward thumb tip Z position approaching cup top height.
 
     Guides the thumb fingertip to descend to the cup's top (grasp) height.
-    Only active after reaching is complete AND EE is close to cup in XY.
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1390,8 +1631,9 @@ def thumb_tip_z_reward(
     xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
     xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * z_reward * xy_proximity
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * z_reward * xy_proximity
 
 
 def synergy_tip_z_reward(
@@ -1406,7 +1648,7 @@ def synergy_tip_z_reward(
 
     Uses finger 2 as representative for synergy fingers (2,3,4).
     Guides the fingertip to descend to the cup's top (grasp) height.
-    Only active after reaching is complete AND EE is close to cup in XY.
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -1438,5 +1680,6 @@ def synergy_tip_z_reward(
     xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
     xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
-    reached_gate = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return reached_gate * z_reward * xy_proximity
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * z_reward * xy_proximity

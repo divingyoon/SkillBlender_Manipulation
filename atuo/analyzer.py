@@ -8,15 +8,15 @@ from typing import Any
 from llm import call_openai_chat, call_ollama_chat
 
 _ANALYZER_DIR = Path(__file__).resolve().parent
-_LIFT_LEFT_GUIDE_CANDIDATES = [
-    # Preferred: guide alongside atuo files
-    _ANALYZER_DIR / "lift_left_v1_REWARDS_GUIDE.md",
-    # Requested relative lookup form
-    (_ANALYZER_DIR / ".." / "SkillBlender_Manipulation" / "atuo" / "lift_left_v1_REWARDS_GUIDE.md").resolve(),
-    # Tolerate common capitalization typo in path segment
-    (_ANALYZER_DIR / ".." / "SkillBLender_Manipulation" / "atuo" / "lift_left_v1_REWARDS_GUIDE.md").resolve(),
-]
 _GUIDE_MAX_CHARS = 12000
+
+
+def _guide_candidates(file_name: str) -> list[Path]:
+    return [
+        _ANALYZER_DIR / file_name,
+        (_ANALYZER_DIR / ".." / "SkillBlender_Manipulation" / "atuo" / file_name).resolve(),
+        (_ANALYZER_DIR / ".." / "SkillBLender_Manipulation" / "atuo" / file_name).resolve(),
+    ]
 
 
 @dataclass
@@ -321,7 +321,7 @@ def _format_prompt(
 ) -> str:
     scalars = payload.get("train", {}).get("scalars", {})
     task_name = str(payload.get("task", "unknown"))
-    task_guide = _load_task_guide(task_name)
+    task_guide, guide_source = _load_task_guide(task_name)
 
     # ── Reward Terms Table ──
     reward_rows = []
@@ -455,19 +455,18 @@ def _format_prompt(
         )
         reward_reference = (
             "- reaching_object / reaching_object_fine: EE approach shaping\n"
-            "- thumb_grasp / pinky_grasp / synergy_grip: finger closing behavior\n"
-            "- finger_wrap_cylinder_reward (mapped from finger_tip_to_cup): cylindrical radial wrap + opposition\n"
-            "- finger_wrap_coverage_reward: angular spread around cup\n"
+            "- thumb_reaching_pose / pinky_reaching_pose / synergy_reaching_pose: pre-grasp open pose 유지\n"
+            "- grasp_contact_persistence / grasp_contact_coverage: contact-based grasp shaping\n"
+            "- grasp_strict_success: 4-finger + lift 유지 성공 지표\n"
             "- object_displacement: penalize pushing cup while approaching\n"
             "- lifting_object / object_goal_tracking: post-grasp lift objectives"
         )
         override_examples = (
-            "- env.rewards.synergy_grip.weight=30.0\n"
-            "- env.rewards.finger_tip_to_cup.params.target_radius=0.04\n"
-            "- env.rewards.finger_tip_to_cup.params.radial_std=0.015\n"
-            "- env.rewards.finger_tip_to_cup.params.opposition_weight=0.3\n"
-            "- env.rewards.finger_wrap_coverage.weight=4.0\n"
-            "- env.reach_soft_gate_far=0.10"
+            "- env.rewards.grasp_contact_coverage.weight=10.0\n"
+            "- env.rewards.grasp_contact_persistence.weight=6.0\n"
+            "- env.rewards.object_displacement.weight=-5.0\n"
+            "- env.rewards.synergy_reaching_pose.weight=2.0\n"
+            "- env.grasp_soft_gate_far=0.03"
         )
         symmetry_instruction = "Do not add right-hand overrides unless the task clearly uses both hands."
     else:
@@ -502,7 +501,7 @@ def _format_prompt(
         "## Task Description\n"
         f"{task_description}\n\n"
         + (
-            "## Task-Specific Rewards Guide (source: atuo/lift_left_v1_REWARDS_GUIDE.md)\n"
+            f"## Task-Specific Rewards Guide (source: {guide_source})\n"
             "Use this guide as the primary reference for reward semantics, gate logic, and expected trend interpretation.\n\n"
             f"{task_guide}\n\n"
             if task_guide
@@ -611,24 +610,33 @@ def _normalize_override_types(overrides: list[str]) -> list[str]:
     return normalized
 
 
-def _load_task_guide(task_name: str) -> str:
+def _load_task_guide(task_name: str) -> tuple[str, str]:
     """Load task-specific markdown guide text for prompt grounding."""
-    if "5g_lift_left-v1" not in task_name.lower():
-        return ""
+    task_lower = task_name.lower()
+    guide_file = ""
+    if "5g_lift_left-v2" in task_lower:
+        guide_file = "lift_left_v2_REWARDS_GUIDE.md"
+    elif "5g_lift_left-v1" in task_lower:
+        guide_file = "lift_left_v1_REWARDS_GUIDE.md"
+    else:
+        return "", ""
+
     text = ""
-    for candidate in _LIFT_LEFT_GUIDE_CANDIDATES:
+    source = f"atuo/{guide_file}"
+    for candidate in _guide_candidates(guide_file):
         try:
             if candidate.is_file():
                 text = candidate.read_text(encoding="utf-8").strip()
                 if text:
+                    source = str(candidate)
                     break
         except Exception:
             continue
     if not text:
-        return ""
+        return "", source
     if len(text) > _GUIDE_MAX_CHARS:
-        return text[:_GUIDE_MAX_CHARS] + "\n\n...(truncated)"
-    return text
+        return text[:_GUIDE_MAX_CHARS] + "\n\n...(truncated)", source
+    return text, source
 
 
 def analyze(

@@ -543,8 +543,8 @@ def contact_finger_coverage_reward(
     bonus_span = float(max(1, 6 - min_fingers_bonus))
     bonus = torch.clamp((num_fingers - float(min_fingers_bonus - 1)) / bonus_span, 0.0, 1.0)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * (coverage + float(bonus_scale) * bonus)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return grasp_gate * (coverage + float(bonus_scale) * bonus)
 
 
 def strict_grasp_lift_success(
@@ -946,8 +946,33 @@ def contact_persistence_reward(
     finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
     num_contacts = finger_flags.sum(dim=-1).float()
     reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return grasp_gate * reward
+
+
+def synergy_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward fingers 2-4 staying near open pose during reaching."""
+    robot = env.scene["robot"]
+    target_joints = {
+        "lj_dg_2_2": 0.0, "lj_dg_2_3": 0.0, "lj_dg_2_4": 0.0,
+        "lj_dg_3_2": 0.0, "lj_dg_3_3": 0.0, "lj_dg_3_4": 0.0,
+        "lj_dg_4_2": 0.0, "lj_dg_4_3": 0.0, "lj_dg_4_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in target_joints.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return (1.0 - grasp_gate) * reward
 
 
 def slip_magnitude_penalty(

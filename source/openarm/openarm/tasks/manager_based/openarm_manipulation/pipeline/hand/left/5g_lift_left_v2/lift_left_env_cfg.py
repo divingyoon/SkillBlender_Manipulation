@@ -218,7 +218,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
         },
-        weight=12.0,
+        weight=8.0,
     )
     grasp_contact_coverage = RewTerm(
         func=mdp.contact_finger_coverage_reward,
@@ -230,7 +230,7 @@ class RewardsCfg:
             "min_fingers_bonus": 4,
             "bonus_scale": 1.0,
         },
-        weight=30.0,
+        weight=12.0,
     )
     grasp_strict_success = RewTerm(
         func=mdp.strict_grasp_lift_success,
@@ -266,8 +266,8 @@ class RewardsCfg:
 
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
-        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-1.5,
+        params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.005},
+        weight=-5.0,
     )
 
     finger_normal_range = RewTerm(
@@ -287,6 +287,11 @@ class RewardsCfg:
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=0.5,
     )
+    synergy_reaching_pose = RewTerm(
+        func=mdp.synergy_reaching_pose_reward,
+        params={"std": 1.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=2.0,
+    )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
@@ -301,7 +306,7 @@ class RewardsCfg:
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
-    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 45.0})
 
 
 @configclass

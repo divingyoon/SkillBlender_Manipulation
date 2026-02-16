@@ -120,7 +120,9 @@ def _next_test_run_id(log_root: str, task: str, agent: str = "") -> str:
     return f"test{next_num}"
 
 
-def _resolve_resume_log_dir(log_root: str, task: str, resume_from: str, agent: str) -> Path | None:
+def _resolve_resume_log_dir(
+    log_root: str, task: str, resume_from: str, agent: str, resume_checkpoint: str | None = None
+) -> Path | None:
     p = Path(resume_from)
     if p.is_absolute() and p.is_dir():
         return p
@@ -134,6 +136,19 @@ def _resolve_resume_log_dir(log_root: str, task: str, resume_from: str, agent: s
             use = filtered if filtered else matches
             use.sort(key=lambda x: x.stat().st_mtime, reverse=True)
             return use[0]
+        if resume_checkpoint:
+            ckpt_matches = [p for p in root.rglob(resume_checkpoint) if p.is_file()]
+            if ckpt_matches:
+                task_dir_name = task.replace("-", "_")
+                ckpt_matches.sort(
+                    key=lambda p: (
+                        task_dir_name in str(p),
+                        _task_prefix(task) in str(p),
+                        p.stat().st_mtime,
+                    ),
+                    reverse=True,
+                )
+                return ckpt_matches[0].parent.parent if ckpt_matches[0].parent.name == "nn" else ckpt_matches[0].parent
         return None
 
     candidate = root / _task_prefix(task) / resume_from
@@ -444,7 +459,13 @@ def main() -> int:
     # ── Pre-analysis: resume 시 기존 로그를 먼저 분석하여 override 적용 ──
     initial_resume_from = train.get("resume_from", None)
     if initial_resume_from:
-        resume_log_dir = _resolve_resume_log_dir(project["log_root"], train["task"], initial_resume_from, train["agent"])
+        resume_log_dir = _resolve_resume_log_dir(
+            project["log_root"],
+            train["task"],
+            initial_resume_from,
+            train["agent"],
+            train.get("resume_checkpoint", None),
+        )
         if resume_log_dir is None:
             resume_log_dir = Path("__not_found__")
         if resume_log_dir.is_dir():
@@ -532,7 +553,13 @@ def main() -> int:
             if last_log_dir:
                 env_yaml_path = Path(last_log_dir) / "params" / "env.yaml"
             elif resume_from:
-                resume_log_dir = _resolve_resume_log_dir(project["log_root"], train["task"], resume_from, train["agent"])
+                resume_log_dir = _resolve_resume_log_dir(
+                    project["log_root"],
+                    train["task"],
+                    resume_from,
+                    train["agent"],
+                    resume_checkpoint,
+                )
                 if resume_log_dir is not None:
                     env_yaml_path = resume_log_dir / "params" / "env.yaml"
 

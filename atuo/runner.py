@@ -30,6 +30,68 @@ def _task_prefix(task: str) -> str:
     return task.split("-")[0]
 
 
+def _resolve_rl_games_resume_dir(log_root: Path, resume_from: str, task: str) -> Path | None:
+    resume_from_path = Path(resume_from)
+    if resume_from_path.is_absolute() and resume_from_path.is_dir():
+        return resume_from_path
+
+    matches = [p for p in log_root.rglob(resume_from) if p.is_dir()]
+    if not matches:
+        return None
+
+    task_dir_name = task.replace("-", "_")
+    prefix = _task_prefix(task)
+    exact_task = [p for p in matches if task_dir_name in str(p)]
+    if exact_task:
+        exact_task.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return exact_task[0]
+
+    same_prefix = [p for p in matches if prefix in str(p)]
+    if same_prefix:
+        same_prefix.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return same_prefix[0]
+
+    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+    return matches[0]
+
+
+def _resolve_rl_games_checkpoint(
+    log_root: Path, task: str, resume_from: str | None, resume_checkpoint: str | None
+) -> Path | None:
+    if not resume_checkpoint:
+        return None
+
+    cp = Path(resume_checkpoint)
+    if cp.is_absolute() and cp.is_file():
+        return cp
+
+    if resume_from:
+        resume_dir = _resolve_rl_games_resume_dir(log_root, resume_from, task)
+        if resume_dir is not None:
+            nn_candidate = resume_dir / "nn" / resume_checkpoint
+            if nn_candidate.is_file():
+                return nn_candidate
+            direct_candidate = resume_dir / resume_checkpoint
+            if direct_candidate.is_file():
+                return direct_candidate
+
+    # Fallback: search by checkpoint filename under log root and prefer task-related path.
+    candidates = [p for p in log_root.rglob(resume_checkpoint) if p.is_file()]
+    if not candidates:
+        return None
+    task_dir_name = task.replace("-", "_")
+    prefix = _task_prefix(task)
+    candidates.sort(
+        key=lambda p: (
+            task_dir_name in str(p),
+            prefix in str(p),
+            p.stat().st_mtime,
+        ),
+        reverse=True,
+    )
+    return candidates[0]
+
+
 def _find_latest_log_dir(log_root: Path, task: str, agent: str) -> str | None:
     is_rl_games = str(agent).startswith("rl_games_")
     if is_rl_games:
@@ -117,27 +179,12 @@ def run_train(
             cmd += ["--checkpoint", str(resume_checkpoint)]
     elif is_rl_games:
         # rl_games: --checkpoint <full_path_to_checkpoint_or_file>
-        ckpt_path = None
-        if resume_checkpoint and Path(resume_checkpoint).is_absolute():
-            ckpt_path = Path(resume_checkpoint)
-        elif resume_from and resume_checkpoint:
-            resume_dir = None
-            resume_from_path = Path(resume_from)
-            if resume_from_path.is_absolute() and resume_from_path.is_dir():
-                resume_dir = resume_from_path
-            else:
-                matches = [p for p in log_root_path.rglob(resume_from) if p.is_dir()]
-                if matches:
-                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
-                    resume_dir = matches[0]
-            if resume_dir is not None:
-                nn_candidate = resume_dir / "nn" / resume_checkpoint
-                if nn_candidate.is_file():
-                    ckpt_path = nn_candidate
-                else:
-                    direct_candidate = resume_dir / resume_checkpoint
-                    if direct_candidate.is_file():
-                        ckpt_path = direct_candidate
+        ckpt_path = _resolve_rl_games_checkpoint(
+            log_root=log_root_path,
+            task=task,
+            resume_from=resume_from,
+            resume_checkpoint=resume_checkpoint,
+        )
         if ckpt_path is not None:
             cmd += ["--checkpoint", str(ckpt_path)]
     else:

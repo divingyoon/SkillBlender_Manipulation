@@ -238,15 +238,33 @@ def _grasp_trigger(
     return lambda_trigger * contact_satisfied
 
 
+def _get_episode_initial_object_z(
+    env: ManagerBasedRLEnv,
+    obj: RigidObject,
+    cache_attr: str,
+) -> torch.Tensor:
+    """Track per-episode initial object Z in world frame."""
+    current_z = obj.data.root_pos_w[:, 2]
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, current_z.clone())
+    initial_z = getattr(env, cache_attr)
+
+    ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+    reset_mask = (ep_len <= 1)
+    initial_z[reset_mask] = current_z[reset_mask]
+    setattr(env, cache_attr, initial_z)
+    return initial_z
+
+
 def _lift_trigger(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     eef_link_name: str = "ll_dg_ee",
     h_lift: float = 0.04,
 ) -> torch.Tensor:
-    """ν: Lift trigger - cup lifted above threshold AND grasp complete.
+    """ν: Lift trigger - cup lifted above initial height + threshold AND grasp complete.
 
-    ν = μ × (cup_height >= h_lift)
+    ν = μ × (cup_height >= initial_cup_z + h_lift)
 
     Returns: (num_envs,) binary tensor (0 or 1)
     """
@@ -254,8 +272,9 @@ def _lift_trigger(
 
     obj: RigidObject = env.scene[object_cfg.name]
     cup_height = obj.data.root_pos_w[:, 2]
+    initial_z = _get_episode_initial_object_z(env, obj, "_cup_initial_z_w_left")
 
-    lift_satisfied = (cup_height >= h_lift).float()
+    lift_satisfied = (cup_height >= initial_z + h_lift).float()
 
     return mu_trigger * lift_satisfied
 
@@ -742,14 +761,17 @@ def object_is_lifted(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Binary reward if object is lifted above minimal height.
+    """Binary reward if object is lifted above initial height + minimal_height.
 
     DexPour: Active when μ=1 (grasp complete with contacts).
-    Returns 1.0 when cup height > minimal_height AND grasp is complete.
+    Returns 1.0 when cup lifted by minimal_height from initial position AND grasp is complete.
     """
     obj: RigidObject = env.scene[object_cfg.name]
+    cup_height = obj.data.root_pos_w[:, 2]
+    initial_z = _get_episode_initial_object_z(env, obj, "_cup_initial_z_w_left")
+
     mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name)
-    return mu_trigger * (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    return mu_trigger * (cup_height > initial_z + minimal_height).float()
 
 
 def _is_lifting_sustained(

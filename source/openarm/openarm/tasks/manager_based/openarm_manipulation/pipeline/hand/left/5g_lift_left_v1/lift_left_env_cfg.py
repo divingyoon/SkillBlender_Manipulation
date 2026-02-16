@@ -174,8 +174,8 @@ class RewardsCfg:
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=6.0,  # std 0.15→0.05, weight 4→6: threshold 근처 gradient 강화
+        params={"std": 0.065, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=10.0,  # std 0.15→0.05, weight 4→6: threshold 근처 gradient 강화
     )
 
     end_effector_orientation = RewTerm(

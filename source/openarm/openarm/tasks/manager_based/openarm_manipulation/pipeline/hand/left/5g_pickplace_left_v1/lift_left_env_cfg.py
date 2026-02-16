@@ -198,8 +198,8 @@ class RewardsCfg:
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=6.0,
+        params={"std": 0.065, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=10.0,
     )
 
     end_effector_orientation = RewTerm(
@@ -375,7 +375,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     transfer_switch_hold_steps: int = 4
     require_filtered_contact_matrix: bool = True
     # Debug visualization
-    debug_approach_target_vis: bool = False
+    debug_approach_target_vis: bool = True
     debug_fingertip_vis: bool = True
     debug_fingertip_vis_interval: int = 5
 

@@ -30,7 +30,29 @@ def _task_prefix(task: str) -> str:
     return task.split("-")[0]
 
 
-def _find_latest_log_dir(log_root: Path, task: str) -> str | None:
+def _find_latest_log_dir(log_root: Path, task: str, agent: str) -> str | None:
+    is_rl_games = str(agent).startswith("rl_games_")
+    if is_rl_games:
+        task_dir_name = task.replace("-", "_")
+        candidates: list[Path] = []
+        for entry in log_root.rglob("test*"):
+            if not entry.is_dir() or not entry.name.startswith("test"):
+                continue
+            if not (entry / "params" / "env.yaml").is_file():
+                continue
+            # Prefer task-matching paths, but keep fallback to any test* under log_root.
+            path_str = str(entry)
+            if task_dir_name in path_str or _task_prefix(task) in path_str:
+                candidates.append(entry)
+        if not candidates:
+            for entry in log_root.rglob("test*"):
+                if entry.is_dir() and entry.name.startswith("test") and (entry / "params" / "env.yaml").is_file():
+                    candidates.append(entry)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+        return str(candidates[0])
+
     task_root = log_root / _task_prefix(task)
     if not task_root.is_dir():
         return None
@@ -74,6 +96,7 @@ def run_train(
     output_dir_path.mkdir(parents=True, exist_ok=True)
 
     is_skrl = str(agent).startswith("skrl_")
+    is_rl_games = str(agent).startswith("rl_games_")
 
     cmd = ["./isaaclab.sh", "-p", train_script, "--task", task, "--agent", agent]
     if num_envs is not None:
@@ -92,6 +115,31 @@ def run_train(
             cmd += ["--checkpoint", str(ckpt_path)]
         elif resume_checkpoint and Path(resume_checkpoint).is_absolute():
             cmd += ["--checkpoint", str(resume_checkpoint)]
+    elif is_rl_games:
+        # rl_games: --checkpoint <full_path_to_checkpoint_or_file>
+        ckpt_path = None
+        if resume_checkpoint and Path(resume_checkpoint).is_absolute():
+            ckpt_path = Path(resume_checkpoint)
+        elif resume_from and resume_checkpoint:
+            resume_dir = None
+            resume_from_path = Path(resume_from)
+            if resume_from_path.is_absolute() and resume_from_path.is_dir():
+                resume_dir = resume_from_path
+            else:
+                matches = [p for p in log_root_path.rglob(resume_from) if p.is_dir()]
+                if matches:
+                    matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                    resume_dir = matches[0]
+            if resume_dir is not None:
+                nn_candidate = resume_dir / "nn" / resume_checkpoint
+                if nn_candidate.is_file():
+                    ckpt_path = nn_candidate
+                else:
+                    direct_candidate = resume_dir / resume_checkpoint
+                    if direct_candidate.is_file():
+                        ckpt_path = direct_candidate
+        if ckpt_path is not None:
+            cmd += ["--checkpoint", str(ckpt_path)]
     else:
         # rsl_rl: --resume --load_run <run_name> --checkpoint <filename>
         if resume_from:
@@ -199,7 +247,7 @@ def run_train(
                 cmd, cwd=isaaclab_root, stdout=stdout_fh, stderr=stderr_fh, check=False, env=env
             ).returncode
 
-    log_dir = _find_latest_log_dir(log_root_path, task)
+    log_dir = _find_latest_log_dir(log_root_path, task, agent)
 
     meta = {
         "cmd": cmd,

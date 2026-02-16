@@ -66,6 +66,16 @@ def _find_checkpoint(log_dir: Path) -> Path | None:
                 models.append(entry)
 
     if not models:
+        # rl_games: nn/*.pth
+        nn_dir = log_dir / "nn"
+        if nn_dir.is_dir():
+            pths = [p for p in nn_dir.glob("*.pth") if p.is_file()]
+            if pths:
+                # Prefer non-"last_" checkpoint if available, otherwise newest file.
+                preferred = [p for p in pths if not p.name.startswith("last_")]
+                target = preferred if preferred else pths
+                target.sort(key=lambda p: p.stat().st_mtime, reverse=True)
+                return target[0]
         return None
 
     def _step(p: Path) -> int:
@@ -81,7 +91,22 @@ def _find_checkpoint(log_dir: Path) -> Path | None:
     return models[0]
 
 
-def _next_test_run_id(log_root: str, task: str) -> str:
+def _next_test_run_id(log_root: str, task: str, agent: str = "") -> str:
+    if str(agent).startswith("rl_games_"):
+        task_dir_name = task.replace("-", "_")
+        root = Path(log_root)
+        nums = []
+        for entry in root.rglob("test*"):
+            if not entry.is_dir() or not entry.name.startswith("test"):
+                continue
+            if task_dir_name not in str(entry) and _task_prefix(task) not in str(entry):
+                continue
+            suffix = entry.name[4:]
+            if suffix.isdigit():
+                nums.append(int(suffix))
+        next_num = (max(nums) + 1) if nums else 1
+        return f"test{next_num}"
+
     task_root = Path(log_root) / _task_prefix(task)
     if not task_root.is_dir():
         return "test1"
@@ -93,6 +118,28 @@ def _next_test_run_id(log_root: str, task: str) -> str:
                 nums.append(int(suffix))
     next_num = (max(nums) + 1) if nums else 1
     return f"test{next_num}"
+
+
+def _resolve_resume_log_dir(log_root: str, task: str, resume_from: str, agent: str) -> Path | None:
+    p = Path(resume_from)
+    if p.is_absolute() and p.is_dir():
+        return p
+
+    root = Path(log_root)
+    if str(agent).startswith("rl_games_"):
+        matches = [m for m in root.rglob(resume_from) if m.is_dir()]
+        if matches:
+            task_dir_name = task.replace("-", "_")
+            filtered = [m for m in matches if task_dir_name in str(m) or _task_prefix(task) in str(m)]
+            use = filtered if filtered else matches
+            use.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+            return use[0]
+        return None
+
+    candidate = root / _task_prefix(task) / resume_from
+    if candidate.is_dir():
+        return candidate
+    return None
 
 
 def _mean_pair(a: float, b: float) -> float:
@@ -326,9 +373,13 @@ def main() -> int:
     if args.agent is not None:
         train["agent"] = args.agent
     is_skrl = str(train.get("agent", "")).startswith("skrl_")
+    is_rl_games = str(train.get("agent", "")).startswith("rl_games_")
     if is_skrl:
         train["train_script"] = resolve_path("../../scripts/reinforcement_learning/skrl/train.py", config_dir)
         project["log_root"] = resolve_path("../../log/skrl", config_dir)
+    elif is_rl_games:
+        train["train_script"] = resolve_path("../../scripts/reinforcement_learning/rl_games/train.py", config_dir)
+        project["log_root"] = resolve_path("../../log/rl_games", config_dir)
     if args.max_iterations is not None:
         train["max_iterations"] = int(args.max_iterations)
     if args.resume_from is not None:
@@ -393,8 +444,9 @@ def main() -> int:
     # ── Pre-analysis: resume 시 기존 로그를 먼저 분석하여 override 적용 ──
     initial_resume_from = train.get("resume_from", None)
     if initial_resume_from:
-        task_prefix = train["task"].split("-")[0]
-        resume_log_dir = Path(project["log_root"]) / task_prefix / initial_resume_from
+        resume_log_dir = _resolve_resume_log_dir(project["log_root"], train["task"], initial_resume_from, train["agent"])
+        if resume_log_dir is None:
+            resume_log_dir = Path("__not_found__")
         if resume_log_dir.is_dir():
             print(f"[orchestrator] Pre-analysis: analyzing {resume_log_dir} before first run...")
             pre_metrics = summarize_train_metrics(str(resume_log_dir))
@@ -445,11 +497,16 @@ def main() -> int:
             print(f"[orchestrator] Pre-analysis: log dir {resume_log_dir} not found, skipping.")
 
     for run_idx in range(max_runs):
-        agent_prefix = "skrl" if is_skrl else "rsl"
+        if is_skrl:
+            agent_prefix = "skrl"
+        elif is_rl_games:
+            agent_prefix = "rlg"
+        else:
+            agent_prefix = "rsl"
         runs_root = Path(__file__).resolve().parent / "runs"
         runs_root.mkdir(parents=True, exist_ok=True)
         # Match IsaacLab log run name: testN
-        log_test_id = _next_test_run_id(project["log_root"], train["task"])
+        log_test_id = _next_test_run_id(project["log_root"], train["task"], train["agent"])
         run_id = f"{agent_prefix}_{log_test_id}"
         run_dir = runs_root / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
@@ -475,8 +532,9 @@ def main() -> int:
             if last_log_dir:
                 env_yaml_path = Path(last_log_dir) / "params" / "env.yaml"
             elif resume_from:
-                task_prefix = train["task"].split("-")[0]
-                env_yaml_path = Path(project["log_root"]) / task_prefix / resume_from / "params" / "env.yaml"
+                resume_log_dir = _resolve_resume_log_dir(project["log_root"], train["task"], resume_from, train["agent"])
+                if resume_log_dir is not None:
+                    env_yaml_path = resume_log_dir / "params" / "env.yaml"
 
             hydra_overrides = _normalize_hydra_overrides(pending_overrides, env_yaml_path)
             if hydra_overrides:
@@ -558,7 +616,7 @@ def main() -> int:
             continue
 
         metrics_path = str(log_dir / "metrics.json")
-        skip_eval = bool(eval_cfg.get("skip_eval", False)) or is_skrl
+        skip_eval = bool(eval_cfg.get("skip_eval", False)) or is_skrl or is_rl_games
         if skip_eval:
             eval_result = EvalResult(0, metrics_path, "", "")
             eval_metrics = {}

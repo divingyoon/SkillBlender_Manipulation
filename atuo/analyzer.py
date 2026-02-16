@@ -7,6 +7,17 @@ from typing import Any
 
 from llm import call_openai_chat, call_ollama_chat
 
+_ANALYZER_DIR = Path(__file__).resolve().parent
+_LIFT_LEFT_GUIDE_CANDIDATES = [
+    # Preferred: guide alongside atuo files
+    _ANALYZER_DIR / "lift_left_v1_REWARDS_GUIDE.md",
+    # Requested relative lookup form
+    (_ANALYZER_DIR / ".." / "SkillBlender_Manipulation" / "atuo" / "lift_left_v1_REWARDS_GUIDE.md").resolve(),
+    # Tolerate common capitalization typo in path segment
+    (_ANALYZER_DIR / ".." / "SkillBLender_Manipulation" / "atuo" / "lift_left_v1_REWARDS_GUIDE.md").resolve(),
+]
+_GUIDE_MAX_CHARS = 12000
+
 
 @dataclass
 class AnalysisResult:
@@ -309,6 +320,8 @@ def _format_prompt(
     allowed_overrides: list[str],
 ) -> str:
     scalars = payload.get("train", {}).get("scalars", {})
+    task_name = str(payload.get("task", "unknown"))
+    task_guide = _load_task_guide(task_name)
 
     # ── Reward Terms Table ──
     reward_rows = []
@@ -431,58 +444,94 @@ def _format_prompt(
    - Fix: Relax phase_stability_*_steps, widen reach_distance threshold
 """
 
+    is_grasp2g = "grasp2g" in task_name.lower()
+    is_left_only = ("left" in task_name.lower()) and ("both" not in task_name.lower()) and not is_grasp2g
+    if is_left_only:
+        task_description = (
+            "Single-arm left-hand lift task.\n"
+            "Focus on left-side reaching -> pre-grasp shaping -> wrap grasp -> lift.\n"
+            "Do NOT enforce left/right symmetric overrides for this task.\n"
+            "Prefer tuning left-hand reward weights and reward params (especially wrap/cylinder-related params)."
+        )
+        reward_reference = (
+            "- reaching_object / reaching_object_fine: EE approach shaping\n"
+            "- thumb_grasp / pinky_grasp / synergy_grip: finger closing behavior\n"
+            "- finger_wrap_cylinder_reward (mapped from finger_tip_to_cup): cylindrical radial wrap + opposition\n"
+            "- finger_wrap_coverage_reward: angular spread around cup\n"
+            "- object_displacement: penalize pushing cup while approaching\n"
+            "- lifting_object / object_goal_tracking: post-grasp lift objectives"
+        )
+        override_examples = (
+            "- env.rewards.synergy_grip.weight=30.0\n"
+            "- env.rewards.finger_tip_to_cup.params.target_radius=0.04\n"
+            "- env.rewards.finger_tip_to_cup.params.radial_std=0.015\n"
+            "- env.rewards.finger_tip_to_cup.params.opposition_weight=0.3\n"
+            "- env.rewards.finger_wrap_coverage.weight=4.0\n"
+            "- env.reach_soft_gate_far=0.10"
+        )
+        symmetry_instruction = "Do not add right-hand overrides unless the task clearly uses both hands."
+    else:
+        task_description = (
+            "Bimanual grasp-style task.\n"
+            "Focus on reach -> grasp -> lift/hold progression and left/right coordination.\n"
+            "Prefer symmetric left/right reward tuning unless metrics are clearly asymmetric."
+        )
+        reward_reference = (
+            "- reaching_object / reaching_object_fine: approach shaping\n"
+            "- object_displacement_penalty: suppress object pushing\n"
+            "- grasping_object: closure band reward\n"
+            "- lifting_object: lift objective\n"
+            "- bimanual_* terms: synchronization and joint success"
+        )
+        override_examples = (
+            "- env.rewards.left_reaching_object.weight=-2.0\n"
+            "- env.rewards.right_reaching_object.weight=-2.0\n"
+            "- env.rewards.left_grasping_object.params.close_min=0.2\n"
+            "- env.rewards.right_grasping_object.params.close_min=0.2\n"
+            "- env.phase_stability_reach_steps=5"
+        )
+        symmetry_instruction = "Apply symmetric left/right overrides when both sides are present."
+
     return (
-        "You are analyzing a grasp2g-v1 bimanual RL training run.\n"
+        f"You are analyzing an RL training run for task `{task_name}`.\n"
         "Output JSON with keys: analysis, overrides, new_rule (optional).\n"
         "The 'analysis' field should contain your step-by-step reasoning as a string.\n"
         "The 'overrides' field should be a list of 'key=value' strings.\n"
         "The 'new_rule' field (optional) should be an object with 'issue_name' and 'overrides' if you discover a new failure pattern.\n\n"
         f"{metric_guide}\n\n"
         "## Task Description\n"
-        "The robot has two arms (left/right) that must reach, grasp, lift, and track cups.\n"
-        "Phase gating controls reward activation: Phase 0=reach, 1=grasp, 2=lift, 3=hold/goal.\n"
-        "Each reward term has phase_weights=[w0,w1,w2,w3] controlling per-phase activation.\n\n"
+        f"{task_description}\n\n"
+        + (
+            "## Task-Specific Rewards Guide (source: atuo/lift_left_v1_REWARDS_GUIDE.md)\n"
+            "Use this guide as the primary reference for reward semantics, gate logic, and expected trend interpretation.\n\n"
+            f"{task_guide}\n\n"
+            if task_guide
+            else ""
+        )
+        +
+        (
         "## Reward Structure Reference\n"
-        "- reaching_object (weight<0): L2 distance error, phase_weights=[1,0,0,0]\n"
-        "- reaching_object_fine (weight>0): tanh(XY/Z), phase_weights=[1,1,0,0]\n"
-        "- object_displacement_penalty (weight<0): penalizes cup movement, phase_weights=[?,1,0,0]\n"
-        "- grasping_object: closure band reward, phase_weights=[0,1,0,0]\n"
-        "- lifting_object: lift delta, phase_weights=[0,0,5,0]\n"
-        "- bimanual_reach_min: min(reach_L, reach_R)\n"
-        "- bimanual_phase_lag: |phase_L - phase_R| penalty\n"
-        "- bimanual_grasp_and: both hands grasp simultaneously\n\n"
-        "## Phase Transition Parameters (can be tuned)\n"
-        "- env.phase_stability_reach_steps: N steps to stay within reach_distance to advance (default: 10)\n"
-        "- env.phase_stability_grasp_steps: N steps for grasp condition (default: 5)\n"
-        "- env.phase_stability_lift_steps: N steps above lift_height (default: 3)\n"
-        "- env.episode_length_s: Episode duration in seconds (default: 8.0)\n\n"
+        f"{reward_reference}\n\n"
         "## Analysis Steps (follow these in order)\n\n"
         "Step 1: Metric Interpretation\n"
-        "- Look at hand_closure values: if > 0.5 while phase < 0.1, gripper is closing prematurely\n"
-        "- Look at eef_dist_delta: if ≈ 0 while eef_dist > 0.1, arm is stalled\n"
-        "- Look at phase values: if always < 0.5, stuck in early phase\n\n"
+        "- Check whether approach metrics improve (distance and/or distance delta)\n"
+        "- Check finger closure/wrap terms vs approach terms for phase mismatch\n"
+        "- Check whether lift-related terms activate at all\n\n"
         "Step 2: Reward Balance Analysis\n"
-        "- List the top 5 positive and negative reward terms by magnitude\n"
-        "- For each negative reward, check if it cancels a positive reward > 50%\n"
-        "- If cancellation exists, identify which phase_weights cause the conflict\n\n"
+        "- List top positive and negative reward terms by magnitude\n"
+        "- Identify if any penalty strongly cancels progress (>50% scale)\n"
+        "- Identify if shaping terms dominate objective terms (e.g., orientation dominates lift)\n\n"
         "Step 3: Root Cause Identification\n"
-        "- Based on metrics and rewards, identify the PRIMARY failure cause\n"
-        "- Common causes: gripper_premature_close, arm_stalled, phase_transition_too_strict\n\n"
+        "- Pick the PRIMARY bottleneck from data (not generic advice)\n"
+        "- Explain why that bottleneck blocks progression to lift/goal\n\n"
         "Step 4: Propose Overrides\n"
-        "- For each identified issue, propose specific parameter changes\n"
-        "- Calculate appropriate values based on the magnitude of conflicts in the data\n"
-        "- Format: 'env.rewards.{side}_{name}.weight=VALUE' or 'env.rewards.{side}_{name}.params.KEY=VALUE'\n"
-        "- For phase parameters: 'env.phase_stability_reach_steps=VALUE'\n"
-        "- Always apply symmetric changes to both left and right sides\n\n"
+        "- Propose only keys that match allowed prefixes\n"
+        "- Prefer reward weight and reward params tuning over unrelated config noise\n"
+        f"- {symmetry_instruction}\n\n"
         "Step 5: New Rule Proposal (if applicable)\n"
-        "- If you identify a failure pattern NOT in the detected issues, propose a new rule\n"
-        "- Format: {\"issue_name\": \"descriptive_name\", \"overrides\": [\"key=value\", ...]}\n\n"
+        "- If this failure pattern is new, propose a `new_rule` with issue_name and overrides\n\n"
         "## Override Format Examples\n"
-        "- env.rewards.left_reaching_object.weight=-2.0\n"
-        "- env.rewards.left_grasping_object.params.close_min=0.2\n"
-        "- env.rewards.left_grasping_object.params.close_max=0.6\n"
-        "- env.phase_stability_reach_steps=5\n"
-        "- env.episode_length_s=12.0\n\n"
+        f"{override_examples}\n\n"
         "---\n\n"
         "## Raw Training Data\n\n"
         f"### Reward Terms (Episode Reward, mean_last_100)\n{reward_table}\n\n"
@@ -492,11 +541,10 @@ def _format_prompt(
         f"## Detected Issues (rule-based)\n{json.dumps(issues, indent=2)}\n\n"
         f"## Observations (rule-based)\n{observations_block}\n\n"
         f"## Allowed override keys (prefix match):\n{json.dumps(allowed_overrides)}\n\n"
-        "Now analyze the raw training data step-by-step following the 5 steps above. "
-        "PAY SPECIAL ATTENTION to the Metric Interpretation Guide above. "
-        "Do NOT simply copy the example values—derive values from this run's data. "
-        "Output JSON with keys: analysis (string), overrides (list of 'key=value' strings), "
-        "new_rule (optional object with issue_name and overrides if you discover a new pattern)."
+        "Now analyze the raw training data step-by-step. "
+        "Use only evidence from this run. "
+        "Output strict JSON with keys: analysis, overrides, new_rule(optional)."
+        )
     )
 
 
@@ -561,6 +609,26 @@ def _normalize_override_types(overrides: list[str]) -> list[str]:
         else:
             normalized.append(item)
     return normalized
+
+
+def _load_task_guide(task_name: str) -> str:
+    """Load task-specific markdown guide text for prompt grounding."""
+    if "5g_lift_left-v1" not in task_name.lower():
+        return ""
+    text = ""
+    for candidate in _LIFT_LEFT_GUIDE_CANDIDATES:
+        try:
+            if candidate.is_file():
+                text = candidate.read_text(encoding="utf-8").strip()
+                if text:
+                    break
+        except Exception:
+            continue
+    if not text:
+        return ""
+    if len(text) > _GUIDE_MAX_CHARS:
+        return text[:_GUIDE_MAX_CHARS] + "\n\n...(truncated)"
+    return text
 
 
 def analyze(

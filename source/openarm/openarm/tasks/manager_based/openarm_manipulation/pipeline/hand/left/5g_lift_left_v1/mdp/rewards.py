@@ -796,8 +796,8 @@ def synergy_grip_reward(
 
     position_reward = 1.0 - torch.tanh(total_sq_error / 5.0)  # std=5.0 for 9 joints
 
-    # Favor actual joint pose over action command to stabilize real closing behavior.
-    close_reward = 0.1 * action_reward + 0.9 * position_reward
+    # Balance action command and joint pose for stronger closing gradient.
+    close_reward = 0.5 * action_reward + 0.5 * position_reward
 
     # Combine based on reaching state
     reward = (1.0 - reached_gate) * open_reward + reached_gate * close_reward

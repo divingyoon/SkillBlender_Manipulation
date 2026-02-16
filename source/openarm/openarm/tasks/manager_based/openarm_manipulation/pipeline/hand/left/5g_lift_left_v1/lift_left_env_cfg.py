@@ -170,12 +170,12 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,  # 원래대로
+        weight=8.0,  # 먼 거리 gradient (초기 0.15m → 접근 유도)
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,  # 원래대로
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=6.0,  # std 0.15→0.05, weight 4→6: threshold 근처 gradient 강화
     )
 
     end_effector_orientation = RewTerm(
@@ -255,11 +255,11 @@ class RewardsCfg:
         weight=0.5,  # 새끼는 덜 중요
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-3)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-1e-3,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 
@@ -296,7 +296,12 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_switch_hold_steps: int = 2  # 2스텝 유지
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
     reach_soft_gate_near: float = 0.02
-    reach_soft_gate_far: float = 0.16
+    reach_soft_gate_far: float = 0.18  # 0.16→0.18: 더 일찍 grasp gradient 시작
+    # Separate grasp activation gate: require closer EE-target distance before finger closing.
+    grasp_switch_threshold: float = 0.025
+    grasp_switch_hold_steps: int = 2
+    grasp_soft_gate_near: float = 0.012
+    grasp_soft_gate_far: float = 0.08  # 0.03→0.08: finger closing gradient 범위 확대
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)  # 소규모 학습용
     observations: ObservationsCfg = ObservationsCfg()

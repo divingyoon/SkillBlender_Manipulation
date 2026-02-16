@@ -233,8 +233,9 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * reach_reward
+    # Keep reaching reward even after reaching complete (v1 behavior).
+    # This prevents policy from stalling on the transition boundary.
+    return reach_reward
 
 
 def object_ee_distance_fine(
@@ -259,8 +260,8 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * reach_reward
+    # Keep fine reaching reward active post-transition for continuous gradient.
+    return reach_reward
 
 
 def _maybe_visualize_approach_target_all(
@@ -436,6 +437,70 @@ def _reaching_progress_gate(
     return torch.maximum(stable, soft_relaxed)
 
 
+def _is_grasp_stably_complete(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Gate finger-closing progression after very-close reaching is maintained."""
+    cfg = getattr(env, "cfg", None)
+    grasp_threshold = float(getattr(cfg, "grasp_switch_threshold", 0.025))
+    hold_steps = int(getattr(cfg, "grasp_switch_hold_steps", 2))
+    hold_steps = max(1, hold_steps)
+
+    reached_now = _is_reaching_complete(env, object_cfg, eef_link_name, reach_threshold=grasp_threshold)
+    reached_now_i64 = reached_now.to(dtype=torch.int64)
+
+    if not hasattr(env, "_grasp_hold_counter_left"):
+        env._grasp_hold_counter_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+    counter = env._grasp_hold_counter_left
+
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if not hasattr(env, "_grasp_hold_counter_left_last_step"):
+        env._grasp_hold_counter_left_last_step = -2
+    if env._grasp_hold_counter_left_last_step != step_count:
+        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
+        counter[reset_mask] = 0
+        counter = torch.where(reached_now_i64 > 0, counter + 1, torch.zeros_like(counter))
+        env._grasp_hold_counter_left = counter
+        env._grasp_hold_counter_left_last_step = step_count
+
+    return (counter >= hold_steps).to(dtype=reached_now.dtype)
+
+
+def _grasp_soft_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Continuous [0, 1] gate for grasp activation (closer band than reaching gate)."""
+    cfg = getattr(env, "cfg", None)
+    near = float(getattr(cfg, "grasp_soft_gate_near", 0.012))
+    far = float(getattr(cfg, "grasp_soft_gate_far", 0.03))
+    far = max(far, near + 1e-6)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    gate = torch.clamp((far - dist) / (far - near), 0.0, 1.0)
+    return gate
+
+
+def _grasp_progress_gate(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Combine soft and stable gates for robust finger-closing transition."""
+    stable = _is_grasp_stably_complete(env, object_cfg, eef_link_name)
+    soft = _grasp_soft_gate(env, object_cfg, eef_link_name)
+    soft_relaxed = torch.clamp(soft * 1.2, 0.0, 1.0)
+    return torch.maximum(stable, soft_relaxed)
+
+
 def _left_finger_contact_flags(
     env: ManagerBasedRLEnv,
     sensor_cfg: SceneEntityCfg,
@@ -536,8 +601,8 @@ def object_is_lifted(
     Only activates when EE has reached the grasp position first.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    reached = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached * (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height).float()
 
 
 def object_goal_distance(
@@ -559,8 +624,8 @@ def object_goal_distance(
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
-    reached = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
 
 
 def object_displacement_penalty(
@@ -642,8 +707,57 @@ def finger_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * reward
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return (1.0 - grasp_gate) * reward
+
+
+def thumb_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward thumb (finger 1) staying near initial open pose during reaching."""
+    robot = env.scene["robot"]
+    target_joints = {
+        "lj_dg_1_2": 1.571,
+        "lj_dg_1_3": 0.0,
+        "lj_dg_1_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in target_joints.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return (1.0 - grasp_gate) * reward
+
+
+def pinky_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward pinky (finger 5) staying near initial open pose during reaching."""
+    robot = env.scene["robot"]
+    target_joints = {
+        "lj_dg_5_3": 0.0,
+        "lj_dg_5_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in target_joints.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    return (1.0 - grasp_gate) * reward
 
 
 def finger_grasp_reward(

@@ -194,12 +194,12 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=2.0,
+        weight=8.0,
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=1.0,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=6.0,
     )
 
     end_effector_orientation = RewTerm(
@@ -244,10 +244,16 @@ class RewardsCfg:
         weight=-1.0,
     )
 
-    finger_reaching_pose = RewTerm(
-        func=mdp.finger_reaching_pose_reward,
+    thumb_reaching_pose = RewTerm(
+        func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=0.2,
+        weight=1.0,
+    )
+
+    pinky_reaching_pose = RewTerm(
+        func=mdp.pinky_reaching_pose_reward,
+        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=0.5,
     )
 
     contact_persistence = RewTerm(
@@ -367,10 +373,15 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reward_stage_2_step: int = 50_000
     reward_stage_3_step: int = 90_000
     reach_switch_threshold: float = 0.05
-    reach_switch_hold_steps: int = 1
+    reach_switch_hold_steps: int = 2
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
     reach_soft_gate_near: float = 0.02
-    reach_soft_gate_far: float = 0.16
+    reach_soft_gate_far: float = 0.18
+    # Separate grasp activation gate: require closer EE-target distance for finger closing terms.
+    grasp_switch_threshold: float = 0.025
+    grasp_switch_hold_steps: int = 2
+    grasp_soft_gate_near: float = 0.012
+    grasp_soft_gate_far: float = 0.08
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=128, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

@@ -16,26 +16,29 @@ import gymnasium as gym
 
 from . import agents
 
-gym.register(
-    id="5g_pickplace_left-v1",
-    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_pickplace_left_v1.lift_left_hold_env:Lift5gHoldEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg",
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmPickPlaceLeftV1PPORunnerCfg",
-        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
-    },
+ENTRY_POINT = (
+    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left."
+    "5g_pickplace_left_v1.lift_left_hold_env:Lift5gHoldEnv"
 )
 
-gym.register(
-    id="5g_pickplace_left-play-v1",
-    entry_point="openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_pickplace_left_v1.lift_left_hold_env:Lift5gHoldEnv",
-    disable_env_checker=True,
-    kwargs={
-        "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg_PLAY",
-        "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
-        "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmPickPlaceLeftV1PPORunnerCfg",
-        "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
-    },
-)
+TRAIN_KWARGS = {
+    "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg",
+    "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmPickPlaceLeftV1PPORunnerCfg",
+    "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+}
+
+PLAY_KWARGS = {
+    "env_cfg_entry_point": f"{__name__}.joint_pos_env_cfg:OpenArmLift5gLeftEnvCfg_PLAY",
+    "rl_games_cfg_entry_point": f"{agents.__name__}:rl_games_ppo_cfg.yaml",
+    "rsl_rl_cfg_entry_point": f"{agents.__name__}.rsl_rl_ppo_cfg:OpenArmPickPlaceLeftV1PPORunnerCfg",
+    "skrl_cfg_entry_point": f"{agents.__name__}:skrl_ppo_cfg.yaml",
+}
+
+# Canonical IDs
+gym.register(id="5g_pickplace_left-v1", entry_point=ENTRY_POINT, disable_env_checker=True, kwargs=TRAIN_KWARGS)
+gym.register(id="5g_pickplace_left-play-v1", entry_point=ENTRY_POINT, disable_env_checker=True, kwargs=PLAY_KWARGS)
+
+# Backward-compatible aliases (underscore naming)
+gym.register(id="5g_pickplace_left_v1", entry_point=ENTRY_POINT, disable_env_checker=True, kwargs=TRAIN_KWARGS)
+gym.register(id="5g_pickplace_left_play_v1", entry_point=ENTRY_POINT, disable_env_checker=True, kwargs=PLAY_KWARGS)

@@ -361,7 +361,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     debug_grasp_quality: bool = True
     debug_grasp_quality_interval: int = 50
 
-    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)  # 소규모 학습용
+    scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -380,11 +380,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.observations.policy.concatenate_terms = True
 
         self.sim.physx.bounce_threshold_velocity = 0.01
-        # 256 환경용 (2048 대비 1/8 축소)
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 8 * 1024 * 1024
-        self.sim.physx.gpu_total_aggregate_pairs_capacity = 2 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**22
-        self.sim.physx.gpu_max_rigid_contact_count = 2**22
-        self.sim.physx.gpu_collision_stack_size = 2**22
+        # 2048 환경용
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
+        self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
+        self.sim.physx.gpu_max_rigid_patch_count = 2**23
+        self.sim.physx.gpu_max_rigid_contact_count = 2**23
+        self.sim.physx.gpu_collision_stack_size = 2**23
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

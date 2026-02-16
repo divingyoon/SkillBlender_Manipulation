@@ -198,24 +198,24 @@ class RewardsCfg:
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.065, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=10.0,
     )
 
     end_effector_orientation = RewTerm(
         func=mdp.eef_z_perpendicular_object_z,
-        params={"std": 0.2, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
-        weight=16.0,
+        params={"std": 0.3, "eef_link_name": "ll_dg_ee", "object_cfg": SceneEntityCfg("cup")},
+        weight=4.0,
     )
     finger_closing_pregrasp = RewTerm(
         func=mdp.finger_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,
+        weight=4.0,
     )
     fingertip_cup_facing_pregrasp = RewTerm(
         func=mdp.finger_tip_orientation_reward,
         params={"std": 0.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=6.0,
+        weight=4.0,
     )
 
     # v1의 grasp 계열을 contact-sensor 기반으로 대체.
@@ -229,7 +229,7 @@ class RewardsCfg:
             "eef_link_name": "ll_dg_ee",
             "require_thumb_contact": True,
         },
-        weight=6.0,
+        weight=5.0,
     )
     grasp_contact_coverage = RewTerm(
         func=mdp.contact_finger_coverage_reward,
@@ -242,7 +242,7 @@ class RewardsCfg:
             "bonus_scale": 1.0,
             "require_thumb_contact": True,
         },
-        weight=8.0,
+        weight=5.0,
     )
     grasp_strict_success = RewTerm(
         func=mdp.strict_grasp_lift_success,
@@ -256,7 +256,7 @@ class RewardsCfg:
             "hold_steps": 6,
             "require_thumb_contact": True,
         },
-        weight=18.0,
+        weight=10.0,
     )
 
     pregrasp_contact_penalty = RewTerm(
@@ -274,37 +274,31 @@ class RewardsCfg:
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup")},
-        weight=14.0,
+        weight=15.0,
     )
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
-        weight=24.0,
+        weight=10.0,
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
-        weight=12.0,
+        weight=10.0,
     )
 
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.005},
-        weight=-2.0,
-    )
-
-    finger_normal_range = RewTerm(
-        func=mdp.finger_normal_range_penalty,
-        params={},
-        weight=-1.0,
+        weight=-5.0,
     )
 
     thumb_reaching_pose = RewTerm(
         func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=1.0,
+        weight=0.5,
     )
 
     pinky_reaching_pose = RewTerm(
@@ -315,7 +309,7 @@ class RewardsCfg:
     synergy_reaching_pose = RewTerm(
         func=mdp.synergy_reaching_pose_reward,
         params={"std": 1.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=2.0,
+        weight=0.5,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -413,8 +407,8 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         # 256 환경용 (v1와 동일)
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 8 * 1024 * 1024
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 2 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**22
-        self.sim.physx.gpu_max_rigid_contact_count = 2**22
-        self.sim.physx.gpu_collision_stack_size = 2**22
+        self.sim.physx.gpu_max_rigid_patch_count = 2**24
+        self.sim.physx.gpu_max_rigid_contact_count = 2**24
+        self.sim.physx.gpu_collision_stack_size = 2**24
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

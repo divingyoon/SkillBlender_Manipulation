@@ -198,7 +198,7 @@ class RewardsCfg:
     )
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.065, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=10.0,
     )
 
@@ -292,7 +292,7 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.005},
-        weight=-5.0,
+        weight=-2.0,
     )
 
     finger_normal_range = RewTerm(
@@ -350,11 +350,11 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
     reach_dynamic_xy_gate: float = 0.03
-    reach_dynamic_z_descent_rate: float = 0.001
+    reach_dynamic_z_descent_rate: float = 0.005
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
     # DexPour stage trigger (lambda): approach complete threshold.
-    dexpour_approach_threshold: float = 0.06
+    dexpour_approach_threshold: float = 0.08
     # DexPour stage trigger (mu): secure grasp contact condition.
     dexpour_grasp_min_contacts: int = 4
     dexpour_contact_threshold: float = 0.02

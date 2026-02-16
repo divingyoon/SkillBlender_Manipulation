@@ -280,16 +280,21 @@ def _maybe_log_grasp_quality(
     displacement = torch.norm(current_xy - initial_xy, dim=1)
     contacts = _count_finger_contacts(env, object_cfg)
 
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
     print(
         f"[Step {step_count}] grasp_quality | "
         f"env0: λ={lambda_trigger[0].item():.2f}, g={grasp_gate[0].item():.2f}, "
         f"contacts={contacts[0].item():.1f}, thumb_c={thumb_contact[0].item():.2f}, "
         f"pinky_c={pinky_contact[0].item():.2f}, opp={thumb_opposition[0].item():.2f}, "
-        f"disp={displacement[0].item():.4f} | "
+        f"disp={displacement[0].item():.4f}, ee_dist={ee_dist[0].item():.4f} | "
         f"mean: λ={lambda_trigger.mean().item():.2f}, g={grasp_gate.mean().item():.2f}, "
         f"contacts={contacts.mean().item():.2f}, thumb_c={thumb_contact.mean().item():.2f}, "
         f"pinky_c={pinky_contact.mean().item():.2f}, opp={thumb_opposition.mean().item():.2f}, "
-        f"disp={displacement.mean().item():.4f}"
+        f"disp={displacement.mean().item():.4f}, ee_dist={ee_dist.mean().item():.4f}"
     )
 
 
@@ -334,7 +339,7 @@ def _approach_trigger(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     eef_link_name: str = "ll_dg_ee",
-    d_approach: float = 0.08,
+    d_approach: float = 0.05,
 ) -> torch.Tensor:
     """λ: Approach trigger - EE is close to grasp target.
 
@@ -462,11 +467,17 @@ def _debug_triggers(
     obj: RigidObject = env.scene[object_cfg.name]
     cup_z = obj.data.root_pos_w[0, 2].item()
 
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
     print(f"[Step {step_count}] λ={lambda_t[0].item():.0f} | "
           f"Contacts={num_contacts[0].item():.0f}/4 | "
           f"μ={mu_t[0].item():.0f} | "
           f"CupZ={cup_z:.3f}m | "
-          f"ν={nu_t[0].item():.0f}")
+          f"ν={nu_t[0].item():.0f} | "
+          f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f})")
 
 
 def object_ee_distance(

@@ -188,27 +188,48 @@ class RewardsCfg:
     thumb_grasp = RewTerm(
         func=mdp.thumb_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=20.0,  # 15.0 → 20.0: grasp 동기 강화
+        weight=12.0,
     )
 
     # 새끼(5번) 그립 리워드 - 독립 제어
     pinky_grasp = RewTerm(
         func=mdp.pinky_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=10.0,  # 8.0 → 10.0
+        weight=8.0,
     )
 
     # 시너지(2,3,4번) 그립 리워드 - reaching 전: 열어두기(낮은 보상), reaching 후: 닫기(높은 보상)
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
         params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=20.0,  # reaching 후 닫기 보상 높임 (열어두기는 함수 내부에서 낮게 처리)
+        weight=30.0,
     )
 
-    finger_contact = RewTerm(
-        func=mdp.finger_contact_reward,
+    # 원통 표면 반경으로 손가락 tip 랩핑 유도
+    finger_tip_to_cup = RewTerm(
+        func=mdp.finger_wrap_cylinder_reward,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "target_radius": 0.04,
+            "radial_std": 0.015,
+            "opposition_weight": 0.3,
+        },
+        weight=12.0,
+    )
+
+    # 손가락이 컵 둘레를 고르게 감싸도록 각도 커버리지 유도
+    finger_wrap_coverage = RewTerm(
+        func=mdp.finger_wrap_coverage_reward,
         params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,  # 컵과 손가락 접촉 시 추가 보상
+        weight=4.0,
+    )
+
+    # 손가락 tip 법선이 컵 중심을 향하도록 유도
+    finger_tip_orientation = RewTerm(
+        func=mdp.finger_tip_orientation_reward,
+        params={"std": 0.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=5.0,
     )
 
     lifting_object = RewTerm(
@@ -255,11 +276,11 @@ class RewardsCfg:
         weight=0.5,  # 새끼는 덜 중요
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-3)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-3,
+        weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 
@@ -293,15 +314,19 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
     reach_switch_threshold: float = 0.05
-    reach_switch_hold_steps: int = 2  # 2스텝 유지
+    reach_switch_hold_steps: int = 2
     # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
     reach_soft_gate_near: float = 0.02
-    reach_soft_gate_far: float = 0.18  # 0.16→0.18: 더 일찍 grasp gradient 시작
+    reach_soft_gate_far: float = 0.10
     # Separate grasp activation gate: require closer EE-target distance before finger closing.
     grasp_switch_threshold: float = 0.025
-    grasp_switch_hold_steps: int = 2
+    grasp_switch_hold_steps: int = 4
     grasp_soft_gate_near: float = 0.012
-    grasp_soft_gate_far: float = 0.08  # 0.03→0.08: finger closing gradient 범위 확대
+    grasp_soft_gate_far: float = 0.05
+    # Debug visualization
+    debug_approach_target_vis: bool = False  # ll_dg_ee approach target 마커 끔
+    debug_fingertip_vis: bool = True  # 손가락 tip 위치 시각화
+    debug_fingertip_vis_interval: int = 5  # 시각화 업데이트 간격
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=256, env_spacing=2.5)  # 소규모 학습용
     observations: ObservationsCfg = ObservationsCfg()
@@ -317,7 +342,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 10.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
-        self.commands.object_pose.debug_vis = True
+        self.commands.object_pose.debug_vis = False  # object_tracking 마커 끔
 
         self.observations.policy.concatenate_terms = True
 

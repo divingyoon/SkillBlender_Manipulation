@@ -798,6 +798,133 @@ def finger_grasp_reward(
     return reached_gate * reward
 
 
+def finger_wrap_cylinder_reward(
+    env: ManagerBasedRLEnv,
+    target_radius: float = 0.04,
+    radial_std: float = 0.015,
+    opposition_weight: float = 0.3,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward cylindrical wrap around the cup in XY.
+
+    - Radial term: fingertip ring around cup radius.
+    - Opposition term: thumb opposing mean direction of other fingers.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+
+    tip_info = [
+        ("thumb", "tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("index", "tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("middle", "tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("ring", "tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("pinky", "tesollo_left_ll_dg_5_4", "z", 0.0363),
+    ]
+
+    tip_xy_by_name: dict[str, torch.Tensor] = {}
+    radial_reward_sum = torch.zeros(env.num_envs, device=env.device)
+    tip_count = 0
+
+    for finger_name, body_name, offset_axis, offset_val in tip_info:
+        if body_name not in robot.data.body_names:
+            continue
+        body_idx = robot.data.body_names.index(body_name)
+        link_pos = robot.data.body_pos_w[:, body_idx]
+        link_quat = robot.data.body_quat_w[:, body_idx]
+
+        if offset_axis == "x":
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device, dtype=link_pos.dtype)
+        elif offset_axis == "y":
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device, dtype=link_pos.dtype)
+        else:
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device, dtype=link_pos.dtype)
+
+        world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+        tip_xy = (link_pos + world_offset)[:, :2]
+        tip_xy_by_name[finger_name] = tip_xy
+
+        radial_dist = torch.norm(tip_xy - cup_pos_xy, dim=1)
+        radial_error = torch.abs(radial_dist - target_radius)
+        radial_reward_sum += 1.0 - torch.tanh(radial_error / max(radial_std, 1e-6))
+        tip_count += 1
+
+    if tip_count == 0:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    radial_reward_mean = radial_reward_sum / float(tip_count)
+    opposition_reward = torch.zeros(env.num_envs, device=env.device)
+
+    if "thumb" in tip_xy_by_name:
+        other_vectors = [tip_xy_by_name[k] - cup_pos_xy for k in ("index", "middle", "ring", "pinky") if k in tip_xy_by_name]
+        if other_vectors:
+            thumb_vec = tip_xy_by_name["thumb"] - cup_pos_xy
+            others_mean_vec = torch.stack(other_vectors, dim=0).mean(dim=0)
+            thumb_unit = thumb_vec / (torch.norm(thumb_vec, dim=1, keepdim=True) + 1e-6)
+            others_unit = others_mean_vec / (torch.norm(others_mean_vec, dim=1, keepdim=True) + 1e-6)
+            opposition_reward = torch.clamp(-torch.sum(thumb_unit * others_unit, dim=1), min=0.0, max=1.0)
+
+    opposition_weight = float(max(0.0, min(1.0, opposition_weight)))
+    reward = (1.0 - opposition_weight) * radial_reward_mean + opposition_weight * opposition_reward
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * reward
+
+
+def finger_wrap_coverage_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward angular spread of fingertips around cup center in XY."""
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+
+    tip_info = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),
+    ]
+
+    unit_vecs = []
+    for body_name, offset_axis, offset_val in tip_info:
+        if body_name not in robot.data.body_names:
+            continue
+        body_idx = robot.data.body_names.index(body_name)
+        link_pos = robot.data.body_pos_w[:, body_idx]
+        link_quat = robot.data.body_quat_w[:, body_idx]
+
+        if offset_axis == "x":
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device, dtype=link_pos.dtype)
+        elif offset_axis == "y":
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device, dtype=link_pos.dtype)
+        else:
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device, dtype=link_pos.dtype)
+
+        world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+        tip_xy = (link_pos + world_offset)[:, :2]
+        vec = tip_xy - cup_pos_xy
+        unit_vecs.append(vec / (torch.norm(vec, dim=1, keepdim=True) + 1e-6))
+
+    if len(unit_vecs) < 2:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    pair_scores = torch.zeros(env.num_envs, device=env.device)
+    pair_count = 0
+    for i in range(len(unit_vecs)):
+        for j in range(i + 1, len(unit_vecs)):
+            cos_ij = torch.sum(unit_vecs[i] * unit_vecs[j], dim=1).clamp(-1.0, 1.0)
+            pair_scores += (1.0 - cos_ij) * 0.5
+            pair_count += 1
+
+    coverage_reward = pair_scores / float(max(1, pair_count))
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * coverage_reward
+
+
 def contact_persistence_reward(
     env: ManagerBasedRLEnv,
     sensor_cfg: SceneEntityCfg,

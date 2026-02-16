@@ -327,22 +327,23 @@ def _is_reaching_stably_complete(
         env._reach_hold_counter_left = counter
         env._reach_hold_counter_left_last_step = step_count
 
+        # Debug output (every 50 steps, env 0 only) - inside step check to print once per step
+        debug_enabled = getattr(cfg, "debug_reaching", True)
+        if debug_enabled and step_count % 50 == 0:
+            obj = env.scene[object_cfg.name]
+            eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+            target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+            dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+            result_temp = (counter >= hold_steps).to(dtype=reached_now.dtype)
+
+            print(f"[Step {step_count}] EE-Target dist: {dist[0].item():.4f}m | "
+                  f"Threshold: {reach_threshold:.3f}m | "
+                  f"Reached: {reached_now[0].item():.0f} | "
+                  f"Counter: {counter[0].item()}/{hold_steps} | "
+                  f"Reach Active: {result_temp[0].item():.0f}")
+
     result = (counter >= hold_steps).to(dtype=reached_now.dtype)
-
-    # Debug output (every 50 steps, env 0 only)
-    debug_enabled = getattr(cfg, "debug_reaching", True)
-    if debug_enabled and step_count % 50 == 0:
-        obj = env.scene[object_cfg.name]
-        eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
-        ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
-        target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
-        dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
-
-        print(f"[Step {step_count}] EE-Target dist: {dist[0].item():.4f}m | "
-              f"Threshold: {reach_threshold:.3f}m | "
-              f"Reached: {reached_now[0].item():.0f} | "
-              f"Counter: {counter[0].item()}/{hold_steps} | "
-              f"Reach Active: {result[0].item():.0f}")
 
     return result
 
@@ -605,8 +606,8 @@ def finger_contact_reward(
     """
     # Finger body indices to check for contact
     _FINGER_BODIES = [
-        "ll_dg_1_4", "ll_dg_2_4", "ll_dg_3_4", "ll_dg_4_4", "ll_dg_5_4",  # fingertips
-        "ll_dg_1_3", "ll_dg_2_3", "ll_dg_3_3", "ll_dg_4_3", "ll_dg_5_3",  # middle phalanges
+        "tesollo_left_ll_dg_1_4", "tesollo_left_ll_dg_2_4", "tesollo_left_ll_dg_3_4", "tesollo_left_ll_dg_4_4", "tesollo_left_ll_dg_5_4",  # fingertips
+        "tesollo_left_ll_dg_1_3", "tesollo_left_ll_dg_2_3", "tesollo_left_ll_dg_3_3", "tesollo_left_ll_dg_4_3", "tesollo_left_ll_dg_5_3",  # middle phalanges
     ]
 
     robot = env.scene["robot"]
@@ -774,8 +775,8 @@ def synergy_grip_reward(
 
     reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
 
-    # Before reaching: small reward for open (0.2 scale to reduce incentive to stay open)
-    open_reward = torch.clamp((1.0 - grip_strength) / 2.0, min=0.0, max=1.0) * 0.2
+    # Before reaching: small reward for open (0.02 scale - weak guidance to keep fingers open)
+    open_reward = torch.clamp((1.0 - grip_strength) / 2.0, min=0.0, max=1.0) * 0.02
 
     # After reaching: reward based on action command + actual joint positions
     action_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
@@ -795,10 +796,404 @@ def synergy_grip_reward(
 
     position_reward = 1.0 - torch.tanh(total_sq_error / 5.0)  # std=5.0 for 9 joints
 
-    # Combine action (0.3) + position (0.7) for close reward
-    close_reward = 0.3 * action_reward + 0.7 * position_reward
+    # Favor actual joint pose over action command to stabilize real closing behavior.
+    close_reward = 0.1 * action_reward + 0.9 * position_reward
 
     # Combine based on reaching state
     reward = (1.0 - reached_gate) * open_reward + reached_gate * close_reward
 
     return reward
+
+
+def finger_tip_to_cup_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward fingertips approaching cup center (XY plane).
+
+    Encourages fingers to wrap around the cup by rewarding tips that
+    get closer to the cup's XY position. Only active after reaching complete.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]  # (num_envs, 2)
+
+    # Fingertip info: (body_name, local_offset_axis, offset_value)
+    # Offset is applied in the link's local frame to get actual tip position
+    _TIP_INFO = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),  # thumb: Y offset
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),   # index: Z offset
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),   # middle: Z offset
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),   # ring: Z offset
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),   # pinky: Z offset
+    ]
+
+    total_reward = torch.zeros(env.num_envs, device=env.device)
+    num_tips = 0
+
+    for body_name, offset_axis, offset_val in _TIP_INFO:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]  # (num_envs, 3)
+            link_quat = robot.data.body_quat_w[:, body_idx]  # (num_envs, 4)
+
+            # Create local offset vector
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Transform offset to world frame and add to link position
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_pos_xy = tip_pos[:, :2]  # (num_envs, 2)
+
+            dist_xy = torch.norm(tip_pos_xy - cup_pos_xy, dim=1)
+            tip_reward = 1.0 - torch.tanh(dist_xy / std)
+            total_reward += tip_reward
+            num_tips += 1
+
+    if num_tips > 0:
+        total_reward = total_reward / num_tips  # Average over tips
+
+    # Only active after reaching is complete
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+
+    # Visualize fingertip positions
+    _maybe_visualize_fingertips(env, robot, _TIP_INFO, obj)
+
+    return reached_gate * total_reward
+
+
+def finger_wrap_cylinder_reward(
+    env: ManagerBasedRLEnv,
+    target_radius: float = 0.04,
+    radial_std: float = 0.015,
+    opposition_weight: float = 0.3,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward cylindrical wrap grasp around the cup.
+
+    Components:
+    - Radial ring reward: fingertips should lie near the cup radius in XY.
+    - Opposition reward: thumb should oppose the mean direction of other fingers.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+
+    # Fingertip info: (finger_name, body_name, local_offset_axis, offset_value)
+    tip_info = [
+        ("thumb", "tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("index", "tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("middle", "tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("ring", "tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("pinky", "tesollo_left_ll_dg_5_4", "z", 0.0363),
+    ]
+
+    tip_xy_by_name: dict[str, torch.Tensor] = {}
+    radial_reward_sum = torch.zeros(env.num_envs, device=env.device)
+    tip_count = 0
+
+    for finger_name, body_name, offset_axis, offset_val in tip_info:
+        if body_name not in robot.data.body_names:
+            continue
+
+        body_idx = robot.data.body_names.index(body_name)
+        link_pos = robot.data.body_pos_w[:, body_idx]
+        link_quat = robot.data.body_quat_w[:, body_idx]
+
+        if offset_axis == "x":
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+        elif offset_axis == "y":
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+        else:
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+        world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+        tip_pos = link_pos + world_offset
+        tip_xy = tip_pos[:, :2]
+        tip_xy_by_name[finger_name] = tip_xy
+
+        radial_dist = torch.norm(tip_xy - cup_pos_xy, dim=1)
+        radial_error = torch.abs(radial_dist - target_radius)
+        radial_reward = 1.0 - torch.tanh(radial_error / radial_std)
+        radial_reward_sum += radial_reward
+        tip_count += 1
+
+    if tip_count == 0:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    radial_reward_mean = radial_reward_sum / float(tip_count)
+
+    opposition_reward = torch.zeros(env.num_envs, device=env.device)
+    if "thumb" in tip_xy_by_name:
+        other_vectors = []
+        for key in ("index", "middle", "ring", "pinky"):
+            if key in tip_xy_by_name:
+                other_vectors.append(tip_xy_by_name[key] - cup_pos_xy)
+
+        if other_vectors:
+            thumb_vec = tip_xy_by_name["thumb"] - cup_pos_xy
+            others_mean_vec = torch.stack(other_vectors, dim=0).mean(dim=0)
+
+            thumb_unit = thumb_vec / (torch.norm(thumb_vec, dim=1, keepdim=True) + 1e-6)
+            others_unit = others_mean_vec / (torch.norm(others_mean_vec, dim=1, keepdim=True) + 1e-6)
+            dot = torch.sum(thumb_unit * others_unit, dim=1)
+            opposition_reward = torch.clamp(-dot, min=0.0, max=1.0)
+
+    opposition_weight = float(max(0.0, min(1.0, opposition_weight)))
+    reward = (1.0 - opposition_weight) * radial_reward_mean + opposition_weight * opposition_reward
+
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    _maybe_visualize_fingertips(env, robot, [(x[1], x[2], x[3]) for x in tip_info], obj)
+    return reached_gate * reward
+
+
+def finger_wrap_coverage_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward angular coverage of fingertips around cup center in XY.
+
+    Uses pairwise angular separation among available fingertips.
+    Higher reward when fingers are not collapsed into a narrow sector.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+
+    # (finger_name, body_name, local_offset_axis, offset_value)
+    tip_info = [
+        ("thumb", "tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("index", "tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("middle", "tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("ring", "tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("pinky", "tesollo_left_ll_dg_5_4", "z", 0.0363),
+    ]
+
+    unit_vecs = []
+    for _, body_name, offset_axis, offset_val in tip_info:
+        if body_name not in robot.data.body_names:
+            continue
+        body_idx = robot.data.body_names.index(body_name)
+        link_pos = robot.data.body_pos_w[:, body_idx]
+        link_quat = robot.data.body_quat_w[:, body_idx]
+
+        if offset_axis == "x":
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+        elif offset_axis == "y":
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+        else:
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+        world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+        tip_xy = (link_pos + world_offset)[:, :2]
+        vec = tip_xy - cup_pos_xy
+        unit = vec / (torch.norm(vec, dim=1, keepdim=True) + 1e-6)
+        unit_vecs.append(unit)
+
+    if len(unit_vecs) < 2:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    # Average pairwise angular-distance surrogate: (1 - cos(theta))/2 in [0,1]
+    pair_scores = torch.zeros(env.num_envs, device=env.device)
+    pair_count = 0
+    for i in range(len(unit_vecs)):
+        for j in range(i + 1, len(unit_vecs)):
+            cos_ij = torch.sum(unit_vecs[i] * unit_vecs[j], dim=1).clamp(-1.0, 1.0)
+            pair_scores += (1.0 - cos_ij) * 0.5
+            pair_count += 1
+
+    coverage_reward = pair_scores / float(max(1, pair_count))
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+    return reached_gate * coverage_reward
+
+
+def finger_tip_orientation_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward fingertip normals pointing toward cup center (XY plane).
+
+    - Thumb (finger 1): local Y axis is the normal direction
+    - Fingers 2-5: local X axis is the normal direction
+
+    Rewards alignment between finger normal and direction to cup center.
+    Only active after reaching is complete.
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]  # (num_envs, 2)
+
+    # Fingertip info: (body_name, offset_axis, offset_val, normal_axis)
+    # offset: to get actual tip position
+    # normal_axis: the local axis that points outward from fingertip
+    _TIP_INFO = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363, "y"),  # thumb: Y offset, Y normal
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255, "x"),   # index: Z offset, X normal
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255, "x"),   # middle: Z offset, X normal
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255, "x"),   # ring: Z offset, X normal
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363, "x"),   # pinky: Z offset, X normal
+    ]
+
+    total_reward = torch.zeros(env.num_envs, device=env.device)
+    num_tips = 0
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=env.device)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device)
+
+    for body_name, offset_axis, offset_val, normal_axis in _TIP_INFO:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]  # (num_envs, 3)
+            link_quat = robot.data.body_quat_w[:, body_idx]  # (num_envs, 4)
+
+            # Create local offset vector for tip position
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Calculate actual tip position
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_pos_xy = tip_pos[:, :2]  # (num_envs, 2)
+
+            # Get the normal direction in world frame
+            if normal_axis == "x":
+                local_normal = x_axis.unsqueeze(0).repeat(env.num_envs, 1)
+            elif normal_axis == "y":
+                local_normal = y_axis.unsqueeze(0).repeat(env.num_envs, 1)
+            else:  # "z"
+                local_normal = z_axis.unsqueeze(0).repeat(env.num_envs, 1)
+
+            # Transform local normal to world frame
+            normal_world = quat_apply(link_quat, local_normal)  # (num_envs, 3)
+            normal_xy = normal_world[:, :2]  # (num_envs, 2)
+            normal_xy = normal_xy / (torch.norm(normal_xy, dim=1, keepdim=True) + 1e-6)
+
+            # Direction from tip to cup center (XY)
+            dir_to_cup = cup_pos_xy - tip_pos_xy  # (num_envs, 2)
+            dir_to_cup = dir_to_cup / (torch.norm(dir_to_cup, dim=1, keepdim=True) + 1e-6)
+
+            # Dot product: 1.0 when aligned, -1.0 when opposite
+            alignment = torch.sum(normal_xy * dir_to_cup, dim=1)  # (num_envs,)
+
+            # Reward when pointing toward cup
+            tip_reward = torch.clamp(alignment, min=0.0)
+
+            total_reward += tip_reward
+            num_tips += 1
+
+    if num_tips > 0:
+        total_reward = total_reward / num_tips  # Average over tips
+
+    # Only active after reaching is complete
+    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
+
+    return reached_gate * total_reward
+
+
+def _maybe_visualize_fingertips(
+    env: ManagerBasedRLEnv,
+    robot,
+    tip_info: list[tuple],
+    obj: RigidObject,
+) -> None:
+    """Visualize lines from fingertips to cup center (XY projection)."""
+    cfg = getattr(env, "cfg", None)
+    if cfg is None or not getattr(cfg, "debug_fingertip_vis", False):
+        return
+
+    step_count = int(getattr(env, "common_step_counter", 0))
+    interval = int(getattr(cfg, "debug_fingertip_vis_interval", 10))
+    if interval > 1 and (step_count % interval) != 0:
+        return
+
+    # Initialize debug draw and carb types
+    if not hasattr(env, "_debug_draw"):
+        try:
+            from isaacsim.util.debug_draw import _debug_draw
+            import carb
+            env._debug_draw = _debug_draw.acquire_debug_draw_interface()
+            env._carb = carb
+            print("[DEBUG] debug_draw interface acquired successfully")
+        except ImportError:
+            try:
+                from omni.isaac.debug_draw import _debug_draw
+                import carb
+                env._debug_draw = _debug_draw.acquire_debug_draw_interface()
+                env._carb = carb
+                print("[DEBUG] debug_draw interface acquired (omni.isaac)")
+            except Exception as e:
+                print(f"[DEBUG] Failed to acquire debug_draw: {e}")
+                env._debug_draw = None
+                return
+
+    if env._debug_draw is None:
+        return
+
+    carb = env._carb
+
+    # Clear previous drawings
+    env._debug_draw.clear_lines()
+
+    # Get cup center position (env 0) - use tip Z height for XY plane visualization
+    cup_pos = obj.data.root_pos_w[0].cpu().numpy()  # (3,)
+
+    # Colors for each finger (RGBA)
+    colors = [
+        carb.ColorRgba(1.0, 0.0, 0.0, 1.0),  # thumb - red
+        carb.ColorRgba(0.0, 1.0, 0.0, 1.0),  # index - green
+        carb.ColorRgba(0.0, 0.0, 1.0, 1.0),  # middle - blue
+        carb.ColorRgba(1.0, 1.0, 0.0, 1.0),  # ring - yellow
+        carb.ColorRgba(1.0, 0.0, 1.0, 1.0),  # pinky - magenta
+    ]
+
+    # Collect all points for batch drawing
+    starts = []
+    ends = []
+    line_colors = []
+    sizes = []
+
+    # Draw lines from each fingertip to cup center (XY plane - same Z as tip)
+    for i, tip_data in enumerate(tip_info):
+        body_name, offset_axis, offset_val = tip_data[0], tip_data[1], tip_data[2]
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[0, body_idx]  # (3,)
+            link_quat = robot.data.body_quat_w[0, body_idx]  # (4,)
+
+            # Create local offset vector
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Transform offset to world frame and get actual tip position
+            world_offset = quat_apply(link_quat.unsqueeze(0), local_offset.unsqueeze(0)).squeeze(0)
+            tip_pos = (link_pos + world_offset).cpu().numpy()
+
+            # Use tip's Z for both start and end to show XY plane distance
+            tip_z = float(tip_pos[2])
+            starts.append(carb.Float3(float(tip_pos[0]), float(tip_pos[1]), tip_z))
+            ends.append(carb.Float3(float(cup_pos[0]), float(cup_pos[1]), tip_z))
+            line_colors.append(colors[i % len(colors)])
+            sizes.append(5.0)
+
+    if starts:
+        env._debug_draw.draw_lines(starts, ends, line_colors, sizes)

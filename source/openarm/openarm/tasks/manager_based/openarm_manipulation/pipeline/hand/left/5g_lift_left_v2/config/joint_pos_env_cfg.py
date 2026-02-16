@@ -161,11 +161,13 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         # Contact sensors are available in t3 robot USD (sensor_link bodies).
         self.scene.left_contact_sensor = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_.*_sensor_link",
+            filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
             history_length=3,
             track_air_time=False,
         )
         self.scene.right_contact_sensor = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/tesollo_right_.*_sensor_link",
+            filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup2"],
             history_length=3,
             track_air_time=False,
         )

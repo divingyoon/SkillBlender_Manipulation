@@ -208,10 +208,22 @@ class RewardsCfg:
         weight=1.0,
     )
 
-    finger_grasp = RewTerm(
-        func=mdp.finger_grasp_reward,
-        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=14.0,
+    finger_wrap_cylinder = RewTerm(
+        func=mdp.finger_wrap_cylinder_reward,
+        params={
+            "object_cfg": SceneEntityCfg("cup"),
+            "eef_link_name": "ll_dg_ee",
+            "target_radius": 0.04,
+            "radial_std": 0.015,
+            "opposition_weight": 0.3,
+        },
+        weight=10.0,
+    )
+
+    finger_wrap_coverage = RewTerm(
+        func=mdp.finger_wrap_coverage_reward,
+        params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=4.0,
     )
 
     lifting_object = RewTerm(
@@ -263,7 +275,7 @@ class RewardsCfg:
             "min_contacts": 3,
             "contact_threshold": 0.02,
         },
-        weight=2.5,
+        weight=3.5,
     )
     finger_contact_coverage = RewTerm(
         func=mdp.contact_finger_coverage_reward,
@@ -275,7 +287,7 @@ class RewardsCfg:
             "min_fingers_bonus": 4,
             "bonus_scale": 1.0,
         },
-        weight=8.0,
+        weight=10.0,
     )
     strict_grasp_success = RewTerm(
         func=mdp.strict_grasp_lift_success,

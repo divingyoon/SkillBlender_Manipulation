@@ -301,10 +301,11 @@ def _debug_stage_triggers(
     nu_t = _stage_nu(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
     finger_flags = _left_finger_contact_flags(env, sensor_cfg=sensor_cfg, object_cfg=object_cfg, contact_threshold=0.02)
     contacts = finger_flags.sum(dim=1).float()
+    lambda_threshold = float(getattr(cfg, "dexpour_approach_threshold", 0.05))
 
     print(
         f"[Step {step_count}] "
-        f"dist={dist[0].item():.4f}m | "
+        f"dist={dist[0].item():.4f}m(th={lambda_threshold:.3f}) | "
         f"contacts={contacts[0].item():.0f}/5 | "
         f"lambda={lambda_t[0].item():.0f} mu={mu_t[0].item():.0f} nu={nu_t[0].item():.0f} | "
         f"cup_z={obj.data.root_pos_w[0, 2].item():.3f}"
@@ -1039,7 +1040,7 @@ def finger_grasp_reward(
 
     lambda_trigger = _stage_lambda(env, object_cfg, eef_link_name)
     mu_trigger = _stage_mu(env, object_cfg, eef_link_name)
-    # Pre-contact closing incentive: active after reaching (lambda=1) before secure grasp (mu=1).
+    # Pre-contact closing incentive: active after approach complete, before secure grasp.
     return lambda_trigger * (1.0 - mu_trigger) * reward
 
 

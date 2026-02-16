@@ -354,7 +354,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
     # DexPour stage trigger (lambda): approach complete threshold.
-    dexpour_approach_threshold: float = 0.05
+    dexpour_approach_threshold: float = 0.06
     # DexPour stage trigger (mu): secure grasp contact condition.
     dexpour_grasp_min_contacts: int = 4
     dexpour_contact_threshold: float = 0.02

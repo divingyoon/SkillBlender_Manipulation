@@ -198,10 +198,10 @@ class RewardsCfg:
         weight=5.0,
     )
 
-    # 시너지(2,3,4번) 그립 리워드 - 작업 공간: 평균 tip → cup center XY 접근
+    # 시너지(2,3,4번) 그립 리워드 - 단순 그리퍼: grip_strength → +1 (완전 닫기)
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
-        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=20.0,
     )
 
@@ -222,7 +222,7 @@ class RewardsCfg:
     finger_wrap_coverage = RewTerm(
         func=mdp.finger_wrap_coverage_reward,
         params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=1.0,
+        weight=0.0,  # 비활성화: 시너지 단일 DOF로 각도 분산 불가, oscillation 유발
     )
 
     # 손가락 tip 법선이 컵 중심을 향하도록 유도

@@ -1123,48 +1123,58 @@ def pinky_reaching_pose_reward(
 
 def finger_contact_reward(
     env: ManagerBasedRLEnv,
+    cup_radius: float = 0.05,
+    contact_threshold: float = 0.02,
+    cup_height: float = 0.10,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
-    sensor_cfg: SceneEntityCfg = SceneEntityCfg("contact_forces"),
 ) -> torch.Tensor:
-    """Reward for fingers making contact with the object.
+    """Reward for fingertips in contact with cup surface.
 
-    Uses distance-based contact detection between finger links and cup.
-    DexPour: Active when λ=1 (approach complete) - encourages contact formation.
+    Uses XY surface distance (cylindrical) + Z range check,
+    consistent with _count_finger_contacts / _grasp_trigger.
+
+    Contact = XY distance to surface < contact_threshold AND tip Z within cup height.
+    Returns: contact_count / 5 gated by λ.
+
+    DexPour: Active when λ=1 (approach complete).
     """
-    # Finger body indices to check for contact
-    _FINGER_BODIES = [
-        "tesollo_left_ll_dg_1_4", "tesollo_left_ll_dg_2_4", "tesollo_left_ll_dg_3_4", "tesollo_left_ll_dg_4_4", "tesollo_left_ll_dg_5_4",  # fingertips
-        "tesollo_left_ll_dg_1_3", "tesollo_left_ll_dg_2_3", "tesollo_left_ll_dg_3_3", "tesollo_left_ll_dg_4_3", "tesollo_left_ll_dg_5_3",  # middle phalanges
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]  # (num_envs, 2)
+    cup_z = obj.data.root_pos_w[:, 2]    # (num_envs,)
+
+    _TIPS = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),
     ]
 
-    robot = env.scene["robot"]
-    obj = env.scene[object_cfg.name]
+    contact_count = torch.zeros(env.num_envs, device=env.device)
+    tip_count = 0
 
-    # Get fingertip positions
-    finger_pos_list = []
-    for body_name in _FINGER_BODIES:
-        if body_name in robot.data.body_names:
-            body_idx = robot.data.body_names.index(body_name)
-            finger_pos_list.append(robot.data.body_pos_w[:, body_idx])
+    for body_name, axis, offset in _TIPS:
+        tip = _get_fingertip_world_position(env, body_name, axis, offset)
+        if tip is None:
+            continue
+        tip_count += 1
 
-    if not finger_pos_list:
+        # XY surface distance (cylindrical)
+        radial_dist = torch.norm(tip[:, :2] - cup_xy, dim=1)
+        surface_dist = radial_dist - cup_radius
+
+        # Z range check
+        z_valid = (tip[:, 2] >= cup_z) & (tip[:, 2] <= cup_z + cup_height)
+
+        # Contact: near surface AND valid Z
+        in_contact = (surface_dist.abs() < contact_threshold) & z_valid
+        contact_count += in_contact.float()
+
+    if tip_count == 0:
         return torch.zeros(env.num_envs, device=env.device)
 
-    finger_positions = torch.stack(finger_pos_list, dim=1)  # (num_envs, num_fingers, 3)
-    obj_pos = obj.data.root_pos_w.unsqueeze(1)  # (num_envs, 1, 3)
-
-    # Distance from each finger to object center
-    distances = torch.norm(finger_positions - obj_pos, dim=2)  # (num_envs, num_fingers)
-
-    # Count fingers within contact threshold (e.g., 5cm from cup center)
-    contact_threshold = 0.06
-    contacts = (distances < contact_threshold).float()
-    num_contacts = contacts.sum(dim=1)  # (num_envs,)
-
-    # Normalize by max possible contacts
-    max_contacts = float(len(finger_pos_list))
-    contact_ratio = num_contacts / max_contacts
+    contact_ratio = contact_count / float(tip_count)
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
@@ -1271,46 +1281,25 @@ def pinky_grasp_reward(
 
 def synergy_grip_reward(
     env: ManagerBasedRLEnv,
-    std: float = 0.05,
+    action_name: str = "left_hand_action",
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
-    action_name: str = "left_hand_action",
 ) -> torch.Tensor:
-    """Reward synergy fingertips (2,3,4) approaching cup center in XY (task-space).
+    """Reward synergy gripper closing fully after approach.
 
-    Uses the average XY distance of the three synergy fingertips to the cup
-    center.  The single-DOF synergy action discovers the right grip_strength
-    via task-space gradient.
+    grip_strength in [-1, +1]: -1 = open, +1 = closed.
+    Simply rewards grip_strength → +1 when λ=1.
 
     DexPour: Active when λ=1 (approach complete).
     """
-    obj: RigidObject = env.scene[object_cfg.name]
-    cup_xy = obj.data.root_pos_w[:, :2]
+    action_term = env.action_manager.get_term(action_name)
+    grip_strength = action_term.raw_actions[:, 0]  # (num_envs,)
 
-    _SYNERGY_TIPS = [
-        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
-        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
-        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
-    ]
-
-    dist_sum = torch.zeros(env.num_envs, device=env.device)
-    count = 0
-    for body_name, axis, offset in _SYNERGY_TIPS:
-        tip = _get_fingertip_world_position(env, body_name, axis, offset)
-        if tip is not None:
-            dist = torch.norm(tip[:, :2] - cup_xy, dim=1)
-            dist_sum += dist
-            count += 1
-
-    if count == 0:
-        return torch.zeros(env.num_envs, device=env.device)
-
-    avg_dist = dist_sum / float(count)
-    approach_reward = 1.0 - torch.tanh(avg_dist / std)
+    close_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
 
     # DexPour: Only active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * approach_reward
+    return lambda_trigger * close_reward
 
 
 def synergy_reaching_pose_reward(

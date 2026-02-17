@@ -266,7 +266,7 @@ class RewardsCfg:
     thumb_reaching_pose = RewTerm(
         func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=1.0,
+        weight=0.5,
     )
 
     # 새끼(5번) reaching 전 열어두기
@@ -280,7 +280,7 @@ class RewardsCfg:
     synergy_reaching_pose = RewTerm(
         func=mdp.synergy_reaching_pose_reward,
         params={"std": 5.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=3.0,  # 9개 관절이므로 충분한 weight
+        weight=0.5,
     )
 
     # 엄지 tip Z를 컵 상단 높이로 유도

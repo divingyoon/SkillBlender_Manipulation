@@ -27,65 +27,9 @@ if TYPE_CHECKING:
     from isaaclab.envs import ManagerBasedRLEnv
 
 
-def _finger_contact_flags_from_sensor(
-    force_magnitudes: torch.Tensor,
-    contact_threshold: float,
-    sensor_body_names: list[str] | tuple[str, ...] | None = None,
-) -> torch.Tensor:
-    """Aggregate link-level contact forces into finger-level boolean flags.
-
-    For the T3 left hand, preferred mapping is by sensor link names:
-    - finger_1: seg3, tip
-    - finger_2/3/4: seg2, seg3, tip
-    - finger_5: seg3, tip
-    plus 3 palm sensors (ignored for finger coverage).
-    """
-    num_links = force_magnitudes.shape[1]
-    link_flags = force_magnitudes > contact_threshold
-
-    # 1) Preferred: explicit mapping by sensor link names when available.
-    if sensor_body_names is not None and len(sensor_body_names) == num_links:
-        finger_flags: list[torch.Tensor] = []
-        for finger_id in (1, 2, 3, 4, 5):
-            idxs = [i for i, name in enumerate(sensor_body_names) if f"finger_{finger_id}_" in str(name)]
-            if idxs:
-                finger_flags.append(link_flags[:, idxs].any(dim=1))
-            else:
-                finger_flags.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
-        return torch.stack(finger_flags, dim=1)
-
-    # 2) Fallback for known T3 ordering without names:
-    # [palm1, palm2, palm3, f1(2), f2(3), f3(3), f4(3), f5(2)] = 16
-    if num_links == 16:
-        groups = [
-            link_flags[:, 3:5],    # finger 1
-            link_flags[:, 5:8],    # finger 2
-            link_flags[:, 8:11],   # finger 3
-            link_flags[:, 11:14],  # finger 4
-            link_flags[:, 14:16],  # finger 5
-        ]
-        return torch.stack([g.any(dim=1) for g in groups], dim=1)
-
-    # 3) Older compact setup: 10 links -> pairwise mapping.
-    if num_links >= 10:
-        trimmed = link_flags[:, :10]
-        finger_flags = trimmed.reshape(trimmed.shape[0], 5, 2).any(dim=2)
-    else:
-        # Last-resort fallback: contiguous chunks into up to 5 groups.
-        group_count = max(1, min(5, num_links))
-        chunk = max(1, num_links // group_count)
-        groups: list[torch.Tensor] = []
-        for i in range(group_count):
-            s = i * chunk
-            e = num_links if i == group_count - 1 else min(num_links, (i + 1) * chunk)
-            if s >= num_links:
-                groups.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
-            else:
-                groups.append(link_flags[:, s:e].any(dim=1))
-        finger_flags = torch.stack(groups, dim=1)
-
-    return finger_flags
-
+# =============================================================================
+# Contact Sensor Helpers (v2 only – T3 hand with built-in sensors)
+# =============================================================================
 
 def _select_sensor_body_names(
     sensor_body_names: list[str] | tuple[str, ...] | None,
@@ -107,9 +51,8 @@ def _sensor_force_magnitudes_filtered(
 ) -> tuple[torch.Tensor, list[str] | tuple[str, ...] | None]:
     """Return per-body contact force magnitudes, preferring filtered object-contact matrix.
 
-    When ``filter_prim_paths_expr`` is provided in ContactSensorCfg, ``force_matrix_w`` contains
-    contacts only against those filtered prims (Cup/Cup2 in this task). Using ``net_forces_w``
-    would include table/self contacts and can contaminate grasp rewards.
+    When ``filter_prim_paths_expr`` is provided in ContactSensorCfg, ``force_matrix_w``
+    contains contacts only against those filtered prims (Cup).
     """
     contact_sensor = env.scene[sensor_cfg.name]
     sensor_body_names = getattr(contact_sensor, "body_names", None)
@@ -118,15 +61,12 @@ def _sensor_force_magnitudes_filtered(
 
     force_matrix_w = getattr(contact_sensor.data, "force_matrix_w", None)
     if force_matrix_w is not None:
-        # (N, B, F, 3) -> (N, B): max filtered-contact magnitude per sensor body
         force_magnitudes = torch.norm(force_matrix_w, dim=-1).max(dim=-1)[0]
     else:
-        # Strict mode: disable contact reward if filtered matrix is unavailable.
         strict_filtered_only = bool(getattr(getattr(env, "cfg", None), "require_filtered_contact_matrix", False))
         if strict_filtered_only:
             force_magnitudes = torch.zeros_like(torch.norm(contact_sensor.data.net_forces_w, dim=-1))
         else:
-            # Fallback: unfiltered net forces (may include table/self contacts).
             force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
 
     if sensor_cfg.body_ids is not None:
@@ -134,6 +74,69 @@ def _sensor_force_magnitudes_filtered(
         sensor_body_names = _select_sensor_body_names(sensor_body_names, sensor_cfg.body_ids)
 
     return force_magnitudes, sensor_body_names
+
+
+def _finger_contact_flags_from_sensor(
+    force_magnitudes: torch.Tensor,
+    contact_threshold: float,
+    sensor_body_names: list[str] | tuple[str, ...] | None = None,
+) -> torch.Tensor:
+    """Aggregate link-level contact forces into per-finger (5) boolean flags.
+
+    Returns: (num_envs, 5) bool tensor – one flag per finger.
+    """
+    num_links = force_magnitudes.shape[1]
+    link_flags = force_magnitudes > contact_threshold
+
+    # Preferred: explicit mapping by sensor link names.
+    if sensor_body_names is not None and len(sensor_body_names) == num_links:
+        finger_flags: list[torch.Tensor] = []
+        for finger_id in (1, 2, 3, 4, 5):
+            idxs = [i for i, name in enumerate(sensor_body_names) if f"finger_{finger_id}_" in str(name)]
+            if idxs:
+                finger_flags.append(link_flags[:, idxs].any(dim=1))
+            else:
+                finger_flags.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
+        return torch.stack(finger_flags, dim=1)
+
+    # Fallback for known T3 ordering (16 links):
+    if num_links == 16:
+        groups = [
+            link_flags[:, 3:5],    # finger 1 (thumb)
+            link_flags[:, 5:8],    # finger 2
+            link_flags[:, 8:11],   # finger 3
+            link_flags[:, 11:14],  # finger 4
+            link_flags[:, 14:16],  # finger 5 (pinky)
+        ]
+        return torch.stack([g.any(dim=1) for g in groups], dim=1)
+
+    # Older compact setup: 10 links -> pairwise mapping.
+    if num_links >= 10:
+        trimmed = link_flags[:, :10]
+        return trimmed.reshape(trimmed.shape[0], 5, 2).any(dim=2)
+
+    # Last-resort: contiguous chunks into up to 5 groups.
+    group_count = max(1, min(5, num_links))
+    chunk = max(1, num_links // group_count)
+    groups_list: list[torch.Tensor] = []
+    for i in range(group_count):
+        s = i * chunk
+        e = num_links if i == group_count - 1 else min(num_links, (i + 1) * chunk)
+        if s >= num_links:
+            groups_list.append(torch.zeros(link_flags.shape[0], device=link_flags.device, dtype=torch.bool))
+        else:
+            groups_list.append(link_flags[:, s:e].any(dim=1))
+    return torch.stack(groups_list, dim=1)
+
+
+def _left_finger_contact_flags(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg,
+    contact_threshold: float = 0.02,
+) -> torch.Tensor:
+    """Return per-finger (5) contact flags from left contact sensor."""
+    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
+    return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
 
 
 def object_position_in_robot_root_frame(
@@ -229,6 +232,386 @@ def _compute_grasp_target_pos_w(
     return obj_pos_w + offset_w
 
 
+# =============================================================================
+# DexPour-style Binary Triggers (λ, μ, ν, ρ)
+# =============================================================================
+
+def _get_fingertip_positions(env: ManagerBasedRLEnv) -> torch.Tensor:
+    """Get all 5 fingertip positions in world frame.
+
+    Returns: (num_envs, 5, 3) tensor of fingertip positions
+    """
+    robot = env.scene["robot"]
+
+    # Fingertip info: (body_name, offset_axis, offset_value)
+    tip_info = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),  # thumb
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),   # index
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),   # middle
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),   # ring
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),   # pinky
+    ]
+
+    tip_positions = []
+    for body_name, offset_axis, offset_val in tip_info:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]
+            link_quat = robot.data.body_quat_w[:, body_idx]
+
+            if offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_positions.append(tip_pos)
+
+    return torch.stack(tip_positions, dim=1)  # (num_envs, 5, 3)
+
+
+def _get_fingertip_world_position(
+    env: ManagerBasedRLEnv,
+    body_name: str,
+    offset_axis: str,
+    offset_val: float,
+) -> torch.Tensor | None:
+    """Return fingertip world position using link pose + local offset."""
+    robot = env.scene["robot"]
+    if body_name not in robot.data.body_names:
+        return None
+
+    body_idx = robot.data.body_names.index(body_name)
+    link_pos = robot.data.body_pos_w[:, body_idx]
+    link_quat = robot.data.body_quat_w[:, body_idx]
+
+    local_offset = torch.zeros(3, device=env.device, dtype=link_pos.dtype)
+    if offset_axis == "x":
+        local_offset[0] = offset_val
+    elif offset_axis == "y":
+        local_offset[1] = offset_val
+    else:
+        local_offset[2] = offset_val
+
+    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+    return link_pos + world_offset
+
+
+def _finger_surface_contact_gate(
+    env: ManagerBasedRLEnv,
+    body_name: str,
+    offset_axis: str,
+    offset_val: float,
+    object_cfg: SceneEntityCfg,
+    cup_radius: float = 0.04,
+    radial_std: float = 0.015,
+    cup_height: float = 0.10,
+    sensor_cfg: SceneEntityCfg | None = None,
+    contact_threshold: float = 0.02,
+) -> torch.Tensor:
+    """Continuous contact gate in [0, 1] based on radial proximity and valid Z range.
+
+    v2: When sensor_cfg is provided, uses contact sensor force data instead of geometry.
+    """
+    if sensor_cfg is not None:
+        # Sensor-based: extract per-finger contact flag from sensor data.
+        finger_flags = _left_finger_contact_flags(env, sensor_cfg, contact_threshold)
+        # Map body_name to finger index: dg_1_ = thumb(0), dg_2_(1), ..., dg_5_ = pinky(4)
+        finger_idx = None
+        for fi in range(1, 6):
+            if f"dg_{fi}_" in body_name:
+                finger_idx = fi - 1
+                break
+        if finger_idx is not None:
+            return finger_flags[:, finger_idx].float()
+        return torch.zeros(env.num_envs, device=env.device)
+
+    # Fallback: geometry-based (v1 style)
+    tip_pos = _get_fingertip_world_position(env, body_name, offset_axis, offset_val)
+    if tip_pos is None:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+    cup_z = obj.data.root_pos_w[:, 2]
+    tip_xy = tip_pos[:, :2]
+    tip_z = tip_pos[:, 2]
+
+    radial_dist = torch.norm(tip_xy - cup_xy, dim=1)
+    radial_error = torch.abs(radial_dist - cup_radius)
+    radial_gate = 1.0 - torch.tanh(radial_error / max(radial_std, 1e-6))
+
+    z_gate = ((tip_z >= cup_z) & (tip_z <= cup_z + cup_height)).float()
+    return radial_gate * z_gate
+
+
+def _thumb_opposition_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Reward thumb opposing the average direction of the other fingers in XY."""
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+
+    thumb_tip = _get_fingertip_world_position(env, "tesollo_left_ll_dg_1_4", "y", -0.0363)
+    if thumb_tip is None:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    others = []
+    for body_name, axis, offset in [
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),
+    ]:
+        tip = _get_fingertip_world_position(env, body_name, axis, offset)
+        if tip is not None:
+            others.append(tip[:, :2] - cup_xy)
+
+    if not others:
+        return torch.zeros(env.num_envs, device=env.device)
+
+    thumb_vec = thumb_tip[:, :2] - cup_xy
+    others_mean = torch.stack(others, dim=0).mean(dim=0)
+    thumb_unit = thumb_vec / (torch.norm(thumb_vec, dim=1, keepdim=True) + 1e-6)
+    others_unit = others_mean / (torch.norm(others_mean, dim=1, keepdim=True) + 1e-6)
+    dot = torch.sum(thumb_unit * others_unit, dim=1)
+    return torch.clamp(-dot, min=0.0, max=1.0)
+
+
+def _maybe_log_grasp_quality(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+    lambda_trigger: torch.Tensor,
+    grasp_gate: torch.Tensor,
+    thumb_contact: torch.Tensor,
+    pinky_contact: torch.Tensor,
+    thumb_opposition: torch.Tensor,
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> None:
+    """Periodic debug log for diagnosing grasp quality behavior."""
+    cfg = getattr(env, "cfg", None)
+    if cfg is None or not getattr(cfg, "debug_grasp_quality", False):
+        return
+
+    step_count = int(getattr(env, "common_step_counter", -1))
+    interval = int(getattr(cfg, "debug_grasp_quality_interval", 50))
+    if step_count < 0 or (interval > 1 and step_count % interval != 0):
+        return
+
+    last_step = int(getattr(env, "_debug_grasp_quality_last_step", -2))
+    if last_step == step_count:
+        return
+    env._debug_grasp_quality_last_step = step_count
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    current_xy = obj.data.root_pos_w[:, :2]
+    initial_xy = _get_episode_initial_object_xy(env, obj, "_cup_initial_xy_w_left")
+    displacement = torch.norm(current_xy - initial_xy, dim=1)
+    contacts = _count_finger_contacts(env, object_cfg, sensor_cfg=sensor_cfg)
+
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    print(
+        f"[Step {step_count}] grasp_quality | "
+        f"env0: λ={lambda_trigger[0].item():.2f}, g={grasp_gate[0].item():.2f}, "
+        f"contacts={contacts[0].item():.1f}, thumb_c={thumb_contact[0].item():.2f}, "
+        f"pinky_c={pinky_contact[0].item():.2f}, opp={thumb_opposition[0].item():.2f}, "
+        f"disp={displacement[0].item():.4f}, ee_dist={ee_dist[0].item():.4f} | "
+        f"mean: λ={lambda_trigger.mean().item():.2f}, g={grasp_gate.mean().item():.2f}, "
+        f"contacts={contacts.mean().item():.2f}, thumb_c={thumb_contact.mean().item():.2f}, "
+        f"pinky_c={pinky_contact.mean().item():.2f}, opp={thumb_opposition.mean().item():.2f}, "
+        f"disp={displacement.mean().item():.4f}, ee_dist={ee_dist.mean().item():.4f}"
+    )
+
+
+def _count_finger_contacts(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    cup_radius: float = 0.05,
+    contact_threshold: float = 0.02,
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """Count number of fingers in contact with cup.
+
+    v2: Uses contact sensor when sensor_cfg is provided (DexPour style).
+    Returns: (num_envs,) tensor of contact counts (0-5)
+    """
+    if sensor_cfg is not None:
+        finger_flags = _left_finger_contact_flags(env, sensor_cfg, contact_threshold)
+        return finger_flags.float().sum(dim=1)
+
+    # Fallback: geometry-based (should not be reached in v2)
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos = obj.data.root_pos_w[:, :3]
+    tip_positions = _get_fingertip_positions(env)
+    tip_xy = tip_positions[:, :, :2]
+    cup_xy = cup_pos[:, :2].unsqueeze(1)
+    dist_to_center_xy = torch.norm(tip_xy - cup_xy, dim=2)
+    dist_to_surface = dist_to_center_xy - cup_radius
+    tip_z = tip_positions[:, :, 2]
+    cup_z = cup_pos[:, 2].unsqueeze(1)
+    cup_height = 0.10
+    z_valid = (tip_z >= cup_z) & (tip_z <= cup_z + cup_height)
+    contacts = (dist_to_surface < contact_threshold) & z_valid
+    return contacts.float().sum(dim=1)
+
+
+def _approach_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    d_approach: float = 0.05,
+) -> torch.Tensor:
+    """λ: Approach trigger - EE is close to grasp target.
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    return (dist < d_approach).float()
+
+
+def _grasp_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    min_contacts: int = 4,
+    cup_radius: float = 0.05,
+    contact_threshold: float = 0.02,
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """μ: Grasp trigger - enough fingers in contact AND approach complete.
+
+    μ = λ × (num_contacts >= min_contacts)
+    v2: Uses contact sensor when sensor_cfg is provided (DexPour style).
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    num_contacts = _count_finger_contacts(env, object_cfg, cup_radius, contact_threshold, sensor_cfg=sensor_cfg)
+
+    contact_satisfied = (num_contacts >= min_contacts).float()
+
+    return lambda_trigger * contact_satisfied
+
+
+def _get_episode_initial_object_z(
+    env: ManagerBasedRLEnv,
+    obj: RigidObject,
+    cache_attr: str,
+) -> torch.Tensor:
+    """Track per-episode initial object Z in world frame."""
+    current_z = obj.data.root_pos_w[:, 2]
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, current_z.clone())
+    initial_z = getattr(env, cache_attr)
+
+    ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+    reset_mask = (ep_len <= 1)
+    initial_z[reset_mask] = current_z[reset_mask]
+    setattr(env, cache_attr, initial_z)
+    return initial_z
+
+
+def _lift_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    h_lift: float = 0.04,
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """ν: Lift trigger - cup lifted above initial height + threshold AND grasp complete.
+
+    ν = μ × (cup_height >= initial_cup_z + h_lift)
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_height = obj.data.root_pos_w[:, 2]
+    initial_z = _get_episode_initial_object_z(env, obj, "_cup_initial_z_w_left")
+
+    lift_satisfied = (cup_height >= initial_z + h_lift).float()
+
+    return mu_trigger * lift_satisfied
+
+
+def _track_trigger(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    command_name: str = "object_pose",
+    d_track: float = 0.15,
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """ρ: Track trigger - cup close to target AND lift complete.
+
+    ρ = ν × (dist_to_goal < d_track)
+
+    Returns: (num_envs,) binary tensor (0 or 1)
+    """
+    nu_trigger = _lift_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
+
+    dist_to_goal = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
+    track_satisfied = (dist_to_goal < d_track).float()
+
+    return nu_trigger * track_satisfied
+
+
+# Debug function for binary triggers
+def _debug_triggers(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> None:
+    """Print trigger states for debugging (env 0 only, every 50 steps)."""
+    cfg = getattr(env, "cfg", None)
+    debug_enabled = getattr(cfg, "debug_triggers", True)
+    step_count = int(getattr(env, "common_step_counter", -1))
+
+    if not debug_enabled or step_count % 50 != 0:
+        return
+
+    lambda_t = _approach_trigger(env, object_cfg, eef_link_name)
+    num_contacts = _count_finger_contacts(env, object_cfg, sensor_cfg=sensor_cfg)
+    mu_t = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    nu_t = _lift_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_z = obj.data.root_pos_w[0, 2].item()
+
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+    ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+    print(f"[Step {step_count}] λ={lambda_t[0].item():.0f} | "
+          f"Contacts={num_contacts[0].item():.0f}/4 | "
+          f"μ={mu_t[0].item():.0f} | "
+          f"CupZ={cup_z:.3f}m | "
+          f"ν={nu_t[0].item():.0f} | "
+          f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f})")
+
+
 def object_ee_distance(
     env: ManagerBasedRLEnv,
     std: float,
@@ -239,6 +622,7 @@ def object_ee_distance(
 
     Uses dynamic z offset: starts high (0.15) to approach from above,
     then lowers to grasp position (0.08) as xy alignment improves.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     # Get EE position first for dynamic offset calculation
@@ -268,8 +652,10 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    # Keep reaching reward even after reaching complete (v1 behavior).
-    # This prevents policy from stalling on the transition boundary.
+    # DexPour: reaching reward stays active at all phases (no (1-λ) gating).
+    # Debug triggers
+    _debug_triggers(env, object_cfg, eef_link_name)
+
     return reach_reward
 
 
@@ -283,6 +669,7 @@ def object_ee_distance_fine(
 
     Provides gradient to guide the EE from the dynamic target position
     all the way down to the actual grasp position (Z=offset[2]).
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -295,8 +682,44 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    # Keep fine reaching reward active post-transition for continuous gradient.
+    # DexPour: reaching reward stays active at all phases (no (1-λ) gating).
     return reach_reward
+
+
+def ee_descent_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.04,
+    target_z_offset: float = 0.04,
+    xy_proximity_std: float = 0.06,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward EE descending to grasp height after approach is complete.
+
+    After approach is complete (λ=1), guide EE to descend further
+    to target_z_offset (default 0.04) for proper grasping.
+    DexPour: Active when λ=1 (approach complete).
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    ee_z = ee_pos_w[:, 2]
+
+    # Target: cup_z + target_z_offset (lower than reaching target of 0.08)
+    cup_z = obj.data.root_pos_w[:, 2]
+    target_z = cup_z + target_z_offset
+
+    z_error = torch.abs(ee_z - target_z)
+    descent_reward = 1.0 - torch.tanh(z_error / std)
+
+    # XY proximity: reward decays if EE is far from cup in XY
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * descent_reward * xy_proximity
 
 
 def _maybe_visualize_approach_target_all(
@@ -369,7 +792,10 @@ def eef_z_perpendicular_object_z(
     eef_link_name: str = "ll_dg_ee",
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
 ) -> torch.Tensor:
-    """Reward 90-degree alignment between EE +Z axis and object +Z axis."""
+    """Reward 90-degree alignment between EE +Z axis and object +Z axis.
+
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
+    """
     object_quat = env.scene[object_cfg.name].data.root_quat_w
     body_quat_w = env.scene["robot"].data.body_quat_w
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -382,8 +808,9 @@ def eef_z_perpendicular_object_z(
     cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
     error = torch.abs(cos_theta)
     orientation_reward = 1 - torch.tanh(error / std)
-    reached_stable = _is_reaching_stably_complete(env, object_cfg, eef_link_name)
-    return (1.0 - reached_stable) * orientation_reward
+
+    # DexPour: orientation reward stays active at all phases (no (1-λ) gating).
+    return orientation_reward
 
 
 def _is_reaching_complete(
@@ -405,6 +832,102 @@ def _is_reaching_complete(
     return (dist < reach_threshold).float()
 
 
+def _is_reaching_stably_complete(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg,
+    eef_link_name: str,
+) -> torch.Tensor:
+    """Gate progression after reaching is maintained for multiple consecutive steps.
+
+    Once reaching is complete (counter >= hold_steps), it stays complete for the rest
+    of the episode. This allows EE to descend further for grasping without losing
+    the reaching completion status.
+    """
+    cfg = getattr(env, "cfg", None)
+    reach_threshold = float(getattr(cfg, "reach_switch_threshold", 0.01))
+    hold_steps = int(getattr(cfg, "reach_switch_hold_steps", 10))
+    hold_steps = max(1, hold_steps)
+
+    reached_now = _is_reaching_complete(env, object_cfg, eef_link_name, reach_threshold=reach_threshold)
+    reached_now_i64 = reached_now.to(dtype=torch.int64)
+
+    if not hasattr(env, "_reach_hold_counter_left"):
+        env._reach_hold_counter_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+    if not hasattr(env, "_reach_latched_left"):
+        env._reach_latched_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
+
+    counter = env._reach_hold_counter_left
+    latched = env._reach_latched_left
+
+    # Update once per sim step even if multiple reward terms query this gate.
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if not hasattr(env, "_reach_hold_counter_left_last_step"):
+        env._reach_hold_counter_left_last_step = -2
+    if env._reach_hold_counter_left_last_step != step_count:
+        # Reset counter and latched state at episode boundary.
+        # Use episode_length_buf == 1 to detect first step of new episode
+        ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+        reset_mask = (ep_len <= 1)
+
+        # Also reset in first few global steps to ensure clean start
+        if step_count < 10:
+            counter[:] = 0
+            latched[:] = False
+        else:
+            counter[reset_mask] = 0
+            latched[reset_mask] = False
+
+        # Debug: print EE distance at episode start for env 0
+        if ep_len[0].item() == 1:
+            obj_dbg = env.scene[object_cfg.name]
+            eef_idx_dbg = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_dbg = env.scene["robot"].data.body_pos_w[:, eef_idx_dbg]
+            target_dbg = _compute_grasp_target_pos_w(env, obj_dbg, ee_pos_dbg, use_dynamic_z=False)
+            dist_dbg = torch.norm(target_dbg - ee_pos_dbg, dim=1)
+            print(f"[Step {step_count}] EPISODE START: dist={dist_dbg[0].item():.4f}m (threshold={reach_threshold:.3f}m)")
+
+        counter = torch.where(reached_now_i64 > 0, counter + 1, torch.zeros_like(counter))
+        env._reach_hold_counter_left = counter
+
+        # Once counter reaches hold_steps, latch it (stays True until episode reset)
+        newly_latched = (counter >= hold_steps) & (~latched)
+
+        # Debug: print when latched becomes True for env 0
+        if newly_latched[0].item():
+            obj = env.scene[object_cfg.name]
+            eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+            target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+            dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+            print(f"[Step {step_count}] *** LATCHED! *** dist={dist[0].item():.4f}m, EpLen={ep_len[0].item():.0f}")
+
+        latched = latched | newly_latched
+        env._reach_latched_left = latched
+
+        env._reach_hold_counter_left_last_step = step_count
+
+        # Debug output (every 50 steps, env 0 only) - inside step check to print once per step
+        debug_enabled = getattr(cfg, "debug_reaching", True)
+        if debug_enabled and step_count % 50 == 0:
+            obj = env.scene[object_cfg.name]
+            eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+            ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+            target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
+            dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+
+            print(f"[Step {step_count}] EE-Target dist: {dist[0].item():.4f}m | "
+                  f"Threshold: {reach_threshold:.3f}m | "
+                  f"Reached: {reached_now[0].item():.0f} | "
+                  f"Counter: {counter[0].item()}/{hold_steps} | "
+                  f"Reach Active: {latched[0].item():.0f} | "
+                  f"EpLen: {ep_len[0].item():.0f}")
+
+    # Return latched state (once complete, stays complete until episode reset)
+    result = latched.to(dtype=reached_now.dtype)
+
+    return result
+
+
 def _reaching_soft_gate(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
@@ -424,40 +947,6 @@ def _reaching_soft_gate(
 
     gate = torch.clamp((far - dist) / (far - near), 0.0, 1.0)
     return gate
-
-
-def _is_reaching_stably_complete(
-    env: ManagerBasedRLEnv,
-    object_cfg: SceneEntityCfg,
-    eef_link_name: str,
-) -> torch.Tensor:
-    """Gate progression after reaching is maintained for multiple consecutive steps."""
-    cfg = getattr(env, "cfg", None)
-    reach_threshold = float(getattr(cfg, "reach_switch_threshold", 0.01))
-    hold_steps = int(getattr(cfg, "reach_switch_hold_steps", 10))
-    hold_steps = max(1, hold_steps)
-
-    reached_now = _is_reaching_complete(env, object_cfg, eef_link_name, reach_threshold=reach_threshold)
-    reached_now_i64 = reached_now.to(dtype=torch.int64)
-
-    if not hasattr(env, "_reach_hold_counter_left"):
-        env._reach_hold_counter_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
-    counter = env._reach_hold_counter_left
-
-    # Update once per sim step even if multiple reward terms query this gate.
-    step_count = int(getattr(env, "common_step_counter", -1))
-    if not hasattr(env, "_reach_hold_counter_left_last_step"):
-        env._reach_hold_counter_left_last_step = -2
-    if env._reach_hold_counter_left_last_step != step_count:
-        # Reset counter at episode boundary.
-        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
-        counter[reset_mask] = 0
-
-        counter = torch.where(reached_now_i64 > 0, counter + 1, torch.zeros_like(counter))
-        env._reach_hold_counter_left = counter
-        env._reach_hold_counter_left_last_step = step_count
-
-    return (counter >= hold_steps).to(dtype=reached_now.dtype)
 
 
 def _reaching_progress_gate(
@@ -524,160 +1013,16 @@ def _grasp_soft_gate(
     return gate
 
 
-def _grasp_orientation_gate(
-    env: ManagerBasedRLEnv,
-    object_cfg: SceneEntityCfg,
-    eef_link_name: str,
-) -> torch.Tensor:
-    """Continuous gate [0,1] from EE/cup pre-grasp orientation quality."""
-    cfg = getattr(env, "cfg", None)
-    min_reward = float(getattr(cfg, "grasp_orientation_gate_min_reward", 0.25))
-    full_reward = float(getattr(cfg, "grasp_orientation_gate_full_reward", 0.75))
-    full_reward = max(full_reward, min_reward + 1e-6)
-
-    object_quat = env.scene[object_cfg.name].data.root_quat_w
-    body_quat_w = env.scene["robot"].data.body_quat_w
-    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
-    eef_quat = body_quat_w[:, eef_idx]
-
-    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device, dtype=object_quat.dtype).repeat(env.num_envs, 1)
-    ee_z = quat_apply(eef_quat, z_axis)
-    obj_z = quat_apply(object_quat, z_axis)
-
-    cos_theta = torch.sum(ee_z * obj_z, dim=1).clamp(-1.0, 1.0)
-    err = torch.abs(cos_theta)
-    std = float(getattr(cfg, "grasp_orientation_std", 0.2))
-    orient_reward = 1.0 - torch.tanh(err / max(std, 1e-6))
-
-    return torch.clamp((orient_reward - min_reward) / (full_reward - min_reward), 0.0, 1.0)
-
-
-def _grasp_displacement_safety_gate(
-    env: ManagerBasedRLEnv,
-    object_cfg: SceneEntityCfg,
-) -> torch.Tensor:
-    """Suppress grasp gate when cup is pushed in XY before secure grasp."""
-    cfg = getattr(env, "cfg", None)
-    obj: RigidObject = env.scene[object_cfg.name]
-
-    free = float(getattr(cfg, "grasp_displacement_free_threshold", 0.01))
-    scale = float(getattr(cfg, "grasp_displacement_suppress_scale", 0.015))
-    current_xy = obj.data.root_pos_w[:, :2]
-    initial_xy = _get_episode_initial_object_xy(env, obj, "_cup_initial_xy_w_left")
-    displacement_xy = torch.norm(current_xy - initial_xy, dim=1)
-    excess = torch.clamp(displacement_xy - free, min=0.0)
-    if scale <= 0.0:
-        return torch.ones_like(excess)
-    return torch.exp(-excess / scale)
-
-
 def _grasp_progress_gate(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     eef_link_name: str,
 ) -> torch.Tensor:
-    """Grasp gate with orientation/safety checks for robust pre-grasp transition."""
-    cfg = getattr(env, "cfg", None)
+    """Combine soft and stable gates for robust finger-closing transition."""
     stable = _is_grasp_stably_complete(env, object_cfg, eef_link_name)
     soft = _grasp_soft_gate(env, object_cfg, eef_link_name)
-    soft_prefactor = float(getattr(cfg, "grasp_soft_prefactor", 0.2))
-    soft_prefactor = max(0.0, min(1.0, soft_prefactor))
-    soft_relaxed = torch.clamp(soft * soft_prefactor, 0.0, 1.0)
-
-    base_gate = torch.maximum(stable, soft_relaxed)
-    orientation_gate = _grasp_orientation_gate(env, object_cfg, eef_link_name)
-    displacement_gate = _grasp_displacement_safety_gate(env, object_cfg)
-    return base_gate * orientation_gate * displacement_gate
-
-
-def _left_finger_contact_flags(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    contact_threshold: float = 0.02,
-) -> torch.Tensor:
-    """Estimate per-finger contact flags from contact sensor forces."""
-    del object_cfg  # kept for backward signature compatibility
-    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
-    return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
-
-
-def contact_finger_coverage_reward(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-    contact_threshold: float = 0.02,
-    min_fingers_bonus: int = 4,
-    bonus_scale: float = 1.0,
-    require_thumb_contact: bool = False,
-) -> torch.Tensor:
-    """Reward broader multi-finger coverage to avoid 2-3-finger local optima."""
-    contact_flags = _left_finger_contact_flags(
-        env,
-        sensor_cfg=sensor_cfg,
-        object_cfg=object_cfg,
-        contact_threshold=contact_threshold,
-    )
-    num_fingers = contact_flags.sum(dim=1).float()
-    coverage = num_fingers / 5.0
-
-    min_fingers_bonus = max(1, min(5, int(min_fingers_bonus)))
-    bonus_span = float(max(1, 6 - min_fingers_bonus))
-    bonus = torch.clamp((num_fingers - float(min_fingers_bonus - 1)) / bonus_span, 0.0, 1.0)
-
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reward = grasp_gate * (coverage + float(bonus_scale) * bonus)
-    if require_thumb_contact:
-        thumb_contact = contact_flags[:, 0].float()
-        reward = reward * thumb_contact
-    return reward
-
-
-def strict_grasp_lift_success(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-    contact_threshold: float = 0.02,
-    required_fingers: int = 4,
-    minimal_height: float = 0.04,
-    hold_steps: int = 8,
-    require_thumb_contact: bool = False,
-) -> torch.Tensor:
-    """Binary success metric: multi-finger grasp maintained while object is lifted."""
-    obj: RigidObject = env.scene[object_cfg.name]
-    contact_flags = _left_finger_contact_flags(
-        env,
-        sensor_cfg=sensor_cfg,
-        object_cfg=object_cfg,
-        contact_threshold=contact_threshold,
-    )
-    num_fingers = contact_flags.sum(dim=1)
-    required_fingers = max(1, min(5, int(required_fingers)))
-    hold_steps = max(1, int(hold_steps))
-
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    success_now = (num_fingers >= required_fingers) & (obj.data.root_pos_w[:, 2] > minimal_height) & (grasp_gate > 0.2)
-    if require_thumb_contact:
-        success_now = success_now & contact_flags[:, 0]
-
-    if not hasattr(env, "_strict_grasp_success_counter"):
-        env._strict_grasp_success_counter = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
-    counter = env._strict_grasp_success_counter
-
-    # Update once per sim step even if queried by multiple terms.
-    step_count = int(getattr(env, "common_step_counter", -1))
-    if not hasattr(env, "_strict_grasp_success_last_step"):
-        env._strict_grasp_success_last_step = -2
-    if env._strict_grasp_success_last_step != step_count:
-        reset_mask = (env.episode_length_buf == 0).squeeze(-1)
-        counter[reset_mask] = 0
-        counter = torch.where(success_now, counter + 1, torch.zeros_like(counter))
-        env._strict_grasp_success_counter = counter
-        env._strict_grasp_success_last_step = step_count
-
-    return (counter >= hold_steps).to(dtype=obj.data.root_pos_w.dtype)
+    soft_relaxed = torch.clamp(soft * 1.2, 0.0, 1.0)
+    return torch.maximum(stable, soft_relaxed)
 
 
 def object_is_lifted(
@@ -685,14 +1030,78 @@ def object_is_lifted(
     minimal_height: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
-    """Binary reward if object is lifted above minimal height.
+    """Binary reward if object is lifted above initial height + minimal_height.
 
-    Only activates when EE has reached the grasp position first.
+    v2: When sensor_cfg is provided, uses contact sensor for grasp trigger (DexPour style).
+    DexPour: Active when μ=1 (grasp complete with contacts).
+    Returns 1.0 when cup lifted by minimal_height from initial position AND grasp is complete.
     """
     obj: RigidObject = env.scene[object_cfg.name]
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height).float()
+    cup_height = obj.data.root_pos_w[:, 2]
+    initial_z = _get_episode_initial_object_z(env, obj, "_cup_initial_z_w_left")
+
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    return mu_trigger * (cup_height > initial_z + minimal_height).float()
+
+
+def _is_lifting_sustained(
+    env: ManagerBasedRLEnv,
+    minimal_height: float,
+    hold_seconds: float,
+    object_cfg: SceneEntityCfg,
+) -> torch.Tensor:
+    """Check if object has been lifted above minimal_height for hold_seconds.
+
+    Returns 1.0 if lifting has been sustained, 0.0 otherwise.
+    Resets at episode boundary.
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    is_lifted_now = (obj.data.root_pos_w[:, 2] > minimal_height).to(dtype=torch.int64)
+
+    # Calculate hold_steps from hold_seconds
+    cfg = getattr(env, "cfg", None)
+    dt = float(getattr(cfg, "sim", {}).get("dt", 0.01) if isinstance(getattr(cfg, "sim", None), dict) else 0.01)
+    decimation = int(getattr(cfg, "decimation", 4))
+    step_time = dt * decimation  # time per step
+    hold_steps = max(1, int(hold_seconds / step_time))
+
+    if not hasattr(env, "_lift_hold_counter_left"):
+        env._lift_hold_counter_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.int64)
+    if not hasattr(env, "_lift_latched_left"):
+        env._lift_latched_left = torch.zeros(env.num_envs, device=env.device, dtype=torch.bool)
+
+    counter = env._lift_hold_counter_left
+    latched = env._lift_latched_left
+
+    step_count = int(getattr(env, "common_step_counter", -1))
+    if not hasattr(env, "_lift_hold_counter_left_last_step"):
+        env._lift_hold_counter_left_last_step = -2
+    if env._lift_hold_counter_left_last_step != step_count:
+        # Reset at episode boundary
+        ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+        reset_mask = (ep_len <= 1)
+
+        # Also reset in first few global steps to ensure clean start
+        if step_count < 10:
+            counter[:] = 0
+            latched[:] = False
+        else:
+            counter[reset_mask] = 0
+            latched[reset_mask] = False
+
+        counter = torch.where(is_lifted_now > 0, counter + 1, torch.zeros_like(counter))
+        env._lift_hold_counter_left = counter
+
+        # Once sustained, latch it
+        newly_latched = (counter >= hold_steps) & (~latched)
+        latched = latched | newly_latched
+        env._lift_latched_left = latched
+
+        env._lift_hold_counter_left_last_step = step_count
+
+    return latched.float()
 
 
 def object_goal_distance(
@@ -700,13 +1109,16 @@ def object_goal_distance(
     std: float,
     minimal_height: float,
     command_name: str,
+    hold_seconds: float = 2.0,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
     """Reward tracking the goal pose using tanh-kernel.
 
-    Only activates when EE has reached the grasp position first.
+    v2: When sensor_cfg is provided, uses contact sensor for lift trigger (DexPour style).
+    DexPour: Active when ν=1 (lift complete - cup height >= threshold AND grasp complete).
     """
     robot: RigidObject = env.scene[robot_cfg.name]
     obj: RigidObject = env.scene[object_cfg.name]
@@ -714,8 +1126,10 @@ def object_goal_distance(
     des_pos_b = command[:, :3]
     des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
     distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return grasp_gate * (obj.data.root_pos_w[:, 2] > minimal_height) * (1 - torch.tanh(distance / std))
+
+    # DexPour: Active when ν=1 (lift complete)
+    nu_trigger = _lift_trigger(env, object_cfg, eef_link_name, h_lift=minimal_height, sensor_cfg=sensor_cfg)
+    return nu_trigger * (1 - torch.tanh(distance / std))
 
 
 def object_displacement_penalty(
@@ -723,14 +1137,27 @@ def object_displacement_penalty(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     threshold: float = 0.02,
 ) -> torch.Tensor:
-    """Penalize object movement from initial position (XY only)."""
+    """Penalize object movement from initial position (XY only).
+
+    Uses a non-linear penalty to strongly discourage cup pushing.
+    """
     obj: RigidObject = env.scene[object_cfg.name]
+    cfg = getattr(env, "cfg", None)
+    scale = float(getattr(cfg, "displacement_penalty_scale", 0.02))
+    power = float(getattr(cfg, "displacement_penalty_power", 2.0))
+    gate_mix = float(getattr(cfg, "displacement_penalty_gate_mix", 0.5))
+    gate_mix = max(0.0, min(1.0, gate_mix))
 
     current_pos = obj.data.root_pos_w[:, :2]
     initial_pos = _get_episode_initial_object_xy(env, obj, "_cup_initial_xy_w_left")
 
     displacement = torch.norm(current_pos - initial_pos, dim=1)
-    penalty = torch.clamp(displacement - threshold, min=0.0)
+    excess = torch.clamp(displacement - threshold, min=0.0)
+    penalty = torch.pow(excess / max(scale, 1e-6), power)
+
+    # Keep some baseline penalty early, and strengthen as grasp phase progresses.
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name="ll_dg_ee")
+    penalty = penalty * ((1.0 - gate_mix) + gate_mix * grasp_gate)
 
     return penalty
 
@@ -767,24 +1194,52 @@ def finger_normal_range_penalty(
     return total_violation
 
 
-def finger_reaching_pose_reward(
+def thumb_reaching_pose_reward(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward left thumb+pinky staying near initial open pose during reaching.
+    """Reward thumb (finger 1) staying near initial open pose during reaching.
 
-    Prevents excessive curling into the palm while approaching.
-    Deactivates once reaching is stably complete to allow free grasping.
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
     """
     robot = env.scene["robot"]
 
-    # Target = initial positions (open/ready pose)
+    # Thumb target = open pose
     _TARGETS = {
         "lj_dg_1_2": 1.571,    # max open
         "lj_dg_1_3": 0.0,
         "lj_dg_1_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
+
+
+def pinky_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward pinky (finger 5) staying near initial open pose during reaching.
+
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
+    """
+    robot = env.scene["robot"]
+
+    # Pinky target = open pose
+    _TARGETS = {
         "lj_dg_5_3": 0.0,
         "lj_dg_5_4": 0.0,
     }
@@ -797,95 +1252,348 @@ def finger_reaching_pose_reward(
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
 
 
-def thumb_reaching_pose_reward(
+def finger_contact_reward(
+    env: ManagerBasedRLEnv,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
+    contact_threshold: float = 0.02,
+) -> torch.Tensor:
+    """Reward for fingers making contact with the object.
+
+    v2: When sensor_cfg is provided, uses contact sensor for detection (DexPour style).
+    DexPour: Active when λ=1 (approach complete) - encourages contact formation.
+    """
+    if sensor_cfg is not None:
+        # Sensor-based: use per-finger contact flags
+        finger_flags = _left_finger_contact_flags(env, sensor_cfg, contact_threshold)
+        contact_ratio = finger_flags.float().mean(dim=1)  # ratio of 5 fingers in contact
+    else:
+        # Fallback: geometry-based (v1 style)
+        _FINGER_BODIES = [
+            "tesollo_left_ll_dg_1_4", "tesollo_left_ll_dg_2_4", "tesollo_left_ll_dg_3_4", "tesollo_left_ll_dg_4_4", "tesollo_left_ll_dg_5_4",
+            "tesollo_left_ll_dg_1_3", "tesollo_left_ll_dg_2_3", "tesollo_left_ll_dg_3_3", "tesollo_left_ll_dg_4_3", "tesollo_left_ll_dg_5_3",
+        ]
+
+        robot = env.scene["robot"]
+        obj = env.scene[object_cfg.name]
+
+        finger_pos_list = []
+        for body_name in _FINGER_BODIES:
+            if body_name in robot.data.body_names:
+                body_idx = robot.data.body_names.index(body_name)
+                finger_pos_list.append(robot.data.body_pos_w[:, body_idx])
+
+        if not finger_pos_list:
+            return torch.zeros(env.num_envs, device=env.device)
+
+        finger_positions = torch.stack(finger_pos_list, dim=1)
+        obj_pos = env.scene[object_cfg.name].data.root_pos_w.unsqueeze(1)
+        distances = torch.norm(finger_positions - obj_pos, dim=2)
+        geo_threshold = 0.06
+        contacts = (distances < geo_threshold).float()
+        num_contacts = contacts.sum(dim=1)
+        max_contacts = float(len(finger_pos_list))
+        contact_ratio = num_contacts / max_contacts
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * contact_ratio
+
+
+def thumb_grasp_reward(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
-    """Reward thumb (finger 1) staying near initial open pose during reaching."""
-    robot = env.scene["robot"]
-    target_joints = {
-        "lj_dg_1_2": 1.571,
-        "lj_dg_1_3": 0.0,
-        "lj_dg_1_4": 0.0,
-    }
+    """Reward thumb (finger 1) for closing - velocity + position based.
 
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in target_joints.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
+    Combines:
+    - Velocity reward: moving in closing direction
+    - Position reward: being in closed position (even if not moving)
 
-    reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
-
-
-def pinky_reaching_pose_reward(
-    env: ManagerBasedRLEnv,
-    std: float,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-) -> torch.Tensor:
-    """Reward pinky (finger 5) staying near initial open pose during reaching."""
-    robot = env.scene["robot"]
-    target_joints = {
-        "lj_dg_5_3": 0.0,
-        "lj_dg_5_4": 0.0,
-    }
-
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in target_joints.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
-
-    reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
-
-
-def finger_grasp_reward(
-    env: ManagerBasedRLEnv,
-    std: float,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-) -> torch.Tensor:
-    """Reward all left fingers closing toward grasp pose after reaching is complete.
-
-    Only active after _is_reaching_stably_complete.
-    Acts like a binary gripper: maximally close all fingers.
+    v2: When sensor_cfg is provided, uses contact sensor for contact gate (DexPour style).
+    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
     """
     robot = env.scene["robot"]
 
-    _CLOSE_POSE = {
-        # Thumb
-        "lj_dg_1_1": 0.0, "lj_dg_1_2": 1.4, "lj_dg_1_3": -0.5, "lj_dg_1_4": -0.9,
-        # Index
-        "lj_dg_2_1": 0.0, "lj_dg_2_2": 0.5, "lj_dg_2_3": 0.8, "lj_dg_2_4": 1.0,
-        # Middle
-        "lj_dg_3_1": 0.0, "lj_dg_3_2": 0.5, "lj_dg_3_3": 0.8, "lj_dg_3_4": 1.0,
-        # Ring
-        "lj_dg_4_1": 0.0, "lj_dg_4_2": 0.5, "lj_dg_4_3": 0.8, "lj_dg_4_4": 1.0,
-        # Pinky
-        "lj_dg_5_1": 0.0, "lj_dg_5_2": 0.0, "lj_dg_5_3": 0.9, "lj_dg_5_4": 0.9,
+    # Thumb targets (closed position). Include 1_1 for stronger opposition shaping.
+    _CLOSE_TARGETS = {
+        "lj_dg_1_1": -0.45,  # opposition/spread
+        "lj_dg_1_2": 2.5,   # increases to curl (limit: 3.14)
+        "lj_dg_1_3": -1.4,  # decreases to curl (limit: -1.57)
+        "lj_dg_1_4": -1.4,  # decreases to curl (limit: -1.57)
+    }
+
+    # Curl directions for velocity
+    _CURL_DIRECTIONS = {
+        "lj_dg_1_2": +1.0,
+        "lj_dg_1_3": -1.0,
+        "lj_dg_1_4": -1.0,
+    }
+
+    # Velocity-based reward
+    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, direction in _CURL_DIRECTIONS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        vel = robot.data.joint_vel[:, joint_idx]
+        curl_velocity_sum += direction * vel
+
+    velocity_reward = torch.tanh(curl_velocity_sum / std)
+    velocity_reward = torch.clamp(velocity_reward, min=0.0)
+
+    # Position-based reward (how close to closed position)
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _CLOSE_TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    position_reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    thumb_contact = _finger_surface_contact_gate(
+        env, "tesollo_left_ll_dg_1_4", "y", -0.0363, object_cfg=object_cfg,
+        sensor_cfg=sensor_cfg,
+    )
+    thumb_opposition = _thumb_opposition_reward(env, object_cfg)
+
+    # Combine: velocity + posture + opposition.
+    # Contact gate with floor=0.2: provides gradient to close even before contact.
+    contact_gate = torch.maximum(thumb_contact, torch.full_like(thumb_contact, 0.2))
+    reward = (0.25 * velocity_reward + 0.45 * position_reward + 0.30 * thumb_opposition) * contact_gate
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
+    pinky_contact = _finger_surface_contact_gate(
+        env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg,
+        sensor_cfg=sensor_cfg,
+    )
+    _maybe_log_grasp_quality(
+        env=env,
+        object_cfg=object_cfg,
+        eef_link_name=eef_link_name,
+        lambda_trigger=lambda_trigger,
+        grasp_gate=grasp_gate,
+        thumb_contact=thumb_contact,
+        pinky_contact=pinky_contact,
+        thumb_opposition=thumb_opposition,
+        sensor_cfg=sensor_cfg,
+    )
+    return lambda_trigger * reward
+
+
+def pinky_grasp_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """Reward pinky (finger 5) for closing - velocity + position based.
+
+    Combines:
+    - Velocity reward: moving in closing direction
+    - Position reward: being in closed position (even if not moving)
+
+    v2: When sensor_cfg is provided, uses contact sensor for contact gate (DexPour style).
+    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
+    """
+    robot = env.scene["robot"]
+
+    # Pinky targets (closed position)
+    _CLOSE_TARGETS = {
+        "lj_dg_5_3": 1.5,  # increases to curl (limit: 1.57)
+        "lj_dg_5_4": 1.5,  # increases to curl (limit: 1.57)
+    }
+
+    # Curl directions for velocity
+    _CURL_DIRECTIONS = {
+        "lj_dg_5_3": +1.0,
+        "lj_dg_5_4": +1.0,
+    }
+
+    # Velocity-based reward
+    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, direction in _CURL_DIRECTIONS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        vel = robot.data.joint_vel[:, joint_idx]
+        curl_velocity_sum += direction * vel
+
+    velocity_reward = torch.tanh(curl_velocity_sum / std)
+    velocity_reward = torch.clamp(velocity_reward, min=0.0)
+
+    # Position-based reward (how close to closed position)
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _CLOSE_TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    position_reward = 1.0 - torch.tanh(total_sq_error / std)
+
+    pinky_contact = _finger_surface_contact_gate(
+        env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg,
+        sensor_cfg=sensor_cfg,
+    )
+
+    # Combine: velocity + posture.
+    # Contact gate with floor=0.2: provides gradient to close even before contact.
+    contact_gate = torch.maximum(pinky_contact, torch.full_like(pinky_contact, 0.2))
+    reward = (0.3 * velocity_reward + 0.7 * position_reward) * contact_gate
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * reward
+
+
+def synergy_grip_reward(
+    env: ManagerBasedRLEnv,
+    action_name: str = "left_hand_action",
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward synergy fingers (2,3,4) for closing.
+
+    DexPour style: Only active when λ=1 (approach complete).
+    λ=0: returns 0 (use synergy_reaching_pose_reward instead)
+
+    grip_strength in [-1, 1]: -1 = open, +1 = closed
+    """
+    robot = env.scene["robot"]
+
+    # Get the raw action (grip_strength) from action manager
+    action_term = env.action_manager.get_term(action_name)
+    grip_strength = action_term.raw_actions[:, 0]  # shape: (num_envs,)
+
+    # After approach (λ=1): reward based on action command + actual joint positions
+    action_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
+
+    # Position-based reward for synergy fingers (2,3,4)
+    _CLOSE_TARGETS = {
+        "lj_dg_2_2": 1.9, "lj_dg_2_3": 1.5, "lj_dg_2_4": 1.5,
+        "lj_dg_3_2": 1.85, "lj_dg_3_3": 1.5, "lj_dg_3_4": 1.5,
+        "lj_dg_4_2": 1.8, "lj_dg_4_3": 1.5, "lj_dg_4_4": 1.5,
     }
 
     total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in _CLOSE_POSE.items():
+    for joint_name, target in _CLOSE_TARGETS.items():
+        joint_idx = robot.data.joint_names.index(joint_name)
+        pos = robot.data.joint_pos[:, joint_idx]
+        total_sq_error += (pos - target) ** 2
+
+    position_reward = 1.0 - torch.tanh(total_sq_error / 5.0)  # std=5.0 for 9 joints
+
+    # Balance action command and joint pose for stronger closing gradient.
+    close_reward = 0.5 * action_reward + 0.5 * position_reward
+
+    # DexPour: Only active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * close_reward
+
+
+def synergy_reaching_pose_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward synergy fingers (2,3,4) staying near initial open pose during reaching.
+
+    DexPour: Active when λ=0 (before approach complete), deactivates when λ=1.
+    """
+    robot = env.scene["robot"]
+
+    # Synergy fingers target = open pose (all joints near 0)
+    _TARGETS = {
+        "lj_dg_2_2": 0.0, "lj_dg_2_3": 0.0, "lj_dg_2_4": 0.0,
+        "lj_dg_3_2": 0.0, "lj_dg_3_3": 0.0, "lj_dg_3_4": 0.0,
+        "lj_dg_4_2": 0.0, "lj_dg_4_3": 0.0, "lj_dg_4_4": 0.0,
+    }
+
+    total_sq_error = torch.zeros(env.num_envs, device=env.device)
+    for joint_name, target in _TARGETS.items():
         joint_idx = robot.data.joint_names.index(joint_name)
         pos = robot.data.joint_pos[:, joint_idx]
         total_sq_error += (pos - target) ** 2
 
     reward = 1.0 - torch.tanh(total_sq_error / std)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+    # DexPour: Active when λ=0 (before approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return (1.0 - lambda_trigger) * reward
+
+
+def finger_tip_to_cup_reward(
+    env: ManagerBasedRLEnv,
+    std: float,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward fingertips approaching cup center (XY plane).
+
+    Encourages fingers to wrap around the cup by rewarding tips that
+    get closer to the cup's XY position.
+    DexPour: Active when λ=1 (approach complete).
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]  # (num_envs, 2)
+
+    # Fingertip info: (body_name, local_offset_axis, offset_value)
+    # Offset is applied in the link's local frame to get actual tip position
+    _TIP_INFO = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363),  # thumb: Y offset
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),   # index: Z offset
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),   # middle: Z offset
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),   # ring: Z offset
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363),   # pinky: Z offset
+    ]
+
+    total_reward = torch.zeros(env.num_envs, device=env.device)
+    num_tips = 0
+
+    for body_name, offset_axis, offset_val in _TIP_INFO:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]  # (num_envs, 3)
+            link_quat = robot.data.body_quat_w[:, body_idx]  # (num_envs, 4)
+
+            # Create local offset vector
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Transform offset to world frame and add to link position
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_pos_xy = tip_pos[:, :2]  # (num_envs, 2)
+
+            dist_xy = torch.norm(tip_pos_xy - cup_pos_xy, dim=1)
+            tip_reward = 1.0 - torch.tanh(dist_xy / std)
+            total_reward += tip_reward
+            num_tips += 1
+
+    if num_tips > 0:
+        total_reward = total_reward / num_tips  # Average over tips
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+
+    # Visualize fingertip positions
+    _maybe_visualize_fingertips(env, robot, _TIP_INFO, obj)
+
+    return lambda_trigger * total_reward
 
 
 def finger_wrap_cylinder_reward(
@@ -896,15 +1604,19 @@ def finger_wrap_cylinder_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward cylindrical wrap around the cup in XY.
+    """Reward cylindrical wrap grasp around the cup.
 
-    - Radial term: fingertip ring around cup radius.
-    - Opposition term: thumb opposing mean direction of other fingers.
+    Components:
+    - Radial ring reward: fingertips should lie near the cup radius in XY.
+    - Opposition reward: thumb should oppose the mean direction of other fingers.
+
+    DexPour: Active when λ=1 (approach complete).
     """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
     cup_pos_xy = obj.data.root_pos_w[:, :2]
 
+    # Fingertip info: (finger_name, body_name, local_offset_axis, offset_value)
     tip_info = [
         ("thumb", "tesollo_left_ll_dg_1_4", "y", -0.0363),
         ("index", "tesollo_left_ll_dg_2_4", "z", 0.0255),
@@ -920,45 +1632,57 @@ def finger_wrap_cylinder_reward(
     for finger_name, body_name, offset_axis, offset_val in tip_info:
         if body_name not in robot.data.body_names:
             continue
+
         body_idx = robot.data.body_names.index(body_name)
         link_pos = robot.data.body_pos_w[:, body_idx]
         link_quat = robot.data.body_quat_w[:, body_idx]
 
         if offset_axis == "x":
-            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
         elif offset_axis == "y":
-            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
         else:
-            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
 
         world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
-        tip_xy = (link_pos + world_offset)[:, :2]
+        tip_pos = link_pos + world_offset
+        tip_xy = tip_pos[:, :2]
         tip_xy_by_name[finger_name] = tip_xy
 
         radial_dist = torch.norm(tip_xy - cup_pos_xy, dim=1)
         radial_error = torch.abs(radial_dist - target_radius)
-        radial_reward_sum += 1.0 - torch.tanh(radial_error / max(radial_std, 1e-6))
+        radial_reward = 1.0 - torch.tanh(radial_error / radial_std)
+        radial_reward_sum += radial_reward
         tip_count += 1
 
     if tip_count == 0:
         return torch.zeros(env.num_envs, device=env.device)
 
     radial_reward_mean = radial_reward_sum / float(tip_count)
-    opposition_reward = torch.zeros(env.num_envs, device=env.device)
 
+    opposition_reward = torch.zeros(env.num_envs, device=env.device)
     if "thumb" in tip_xy_by_name:
-        other_vectors = [tip_xy_by_name[k] - cup_pos_xy for k in ("index", "middle", "ring", "pinky") if k in tip_xy_by_name]
+        other_vectors = []
+        for key in ("index", "middle", "ring", "pinky"):
+            if key in tip_xy_by_name:
+                other_vectors.append(tip_xy_by_name[key] - cup_pos_xy)
+
         if other_vectors:
             thumb_vec = tip_xy_by_name["thumb"] - cup_pos_xy
             others_mean_vec = torch.stack(other_vectors, dim=0).mean(dim=0)
+
             thumb_unit = thumb_vec / (torch.norm(thumb_vec, dim=1, keepdim=True) + 1e-6)
             others_unit = others_mean_vec / (torch.norm(others_mean_vec, dim=1, keepdim=True) + 1e-6)
-            opposition_reward = torch.clamp(-torch.sum(thumb_unit * others_unit, dim=1), min=0.0, max=1.0)
+            dot = torch.sum(thumb_unit * others_unit, dim=1)
+            opposition_reward = torch.clamp(-dot, min=0.0, max=1.0)
 
     opposition_weight = float(max(0.0, min(1.0, opposition_weight)))
     reward = (1.0 - opposition_weight) * radial_reward_mean + opposition_weight * opposition_reward
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * reward
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    _maybe_visualize_fingertips(env, robot, [(x[1], x[2], x[3]) for x in tip_info], obj)
+    return lambda_trigger * reward
 
 
 def finger_wrap_coverage_reward(
@@ -966,21 +1690,27 @@ def finger_wrap_coverage_reward(
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward angular spread of fingertips around cup center in XY."""
+    """Reward angular coverage of fingertips around cup center in XY.
+
+    Uses pairwise angular separation among available fingertips.
+    Higher reward when fingers are not collapsed into a narrow sector.
+    DexPour: Active when λ=1 (approach complete).
+    """
     robot = env.scene["robot"]
     obj: RigidObject = env.scene[object_cfg.name]
     cup_pos_xy = obj.data.root_pos_w[:, :2]
 
+    # (finger_name, body_name, local_offset_axis, offset_value)
     tip_info = [
-        ("tesollo_left_ll_dg_1_4", "y", -0.0363),
-        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
-        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
-        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
-        ("tesollo_left_ll_dg_5_4", "z", 0.0363),
+        ("thumb", "tesollo_left_ll_dg_1_4", "y", -0.0363),
+        ("index", "tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("middle", "tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("ring", "tesollo_left_ll_dg_4_4", "z", 0.0255),
+        ("pinky", "tesollo_left_ll_dg_5_4", "z", 0.0363),
     ]
 
     unit_vecs = []
-    for body_name, offset_axis, offset_val in tip_info:
+    for _, body_name, offset_axis, offset_val in tip_info:
         if body_name not in robot.data.body_names:
             continue
         body_idx = robot.data.body_names.index(body_name)
@@ -988,20 +1718,22 @@ def finger_wrap_coverage_reward(
         link_quat = robot.data.body_quat_w[:, body_idx]
 
         if offset_axis == "x":
-            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
         elif offset_axis == "y":
-            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
         else:
-            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device, dtype=link_pos.dtype)
+            local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
 
         world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
         tip_xy = (link_pos + world_offset)[:, :2]
         vec = tip_xy - cup_pos_xy
-        unit_vecs.append(vec / (torch.norm(vec, dim=1, keepdim=True) + 1e-6))
+        unit = vec / (torch.norm(vec, dim=1, keepdim=True) + 1e-6)
+        unit_vecs.append(unit)
 
     if len(unit_vecs) < 2:
         return torch.zeros(env.num_envs, device=env.device)
 
+    # Average pairwise angular-distance surrogate: (1 - cos(theta))/2 in [0,1]
     pair_scores = torch.zeros(env.num_envs, device=env.device)
     pair_count = 0
     for i in range(len(unit_vecs)):
@@ -1011,192 +1743,287 @@ def finger_wrap_coverage_reward(
             pair_count += 1
 
     coverage_reward = pair_scores / float(max(1, pair_count))
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * coverage_reward
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * coverage_reward
 
 
-def contact_persistence_reward(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    min_contacts: int = 3,
-    contact_threshold: float = 0.05,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-    require_thumb_contact: bool = False,
-) -> torch.Tensor:
-    """Reward maintaining sufficient finger-level contacts."""
-    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
-    finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
-    num_contacts = finger_flags.sum(dim=-1).float()
-    reward = torch.clamp(num_contacts / float(max(min_contacts, 1)), 0.0, 1.0)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reward = grasp_gate * reward
-    if require_thumb_contact:
-        thumb_contact = finger_flags[:, 0].float()
-        reward = reward * thumb_contact
-    return reward
-
-
-def pregrasp_contact_penalty(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-    contact_threshold: float = 0.02,
-    max_allowed_contacts: int = 1,
-) -> torch.Tensor:
-    """Penalty for excessive finger contacts before full grasp gate opens."""
-    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
-    finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
-    num_contacts = finger_flags.sum(dim=-1).float()
-
-    max_allowed_contacts = max(0, min(4, int(max_allowed_contacts)))
-    excess = torch.clamp(num_contacts - float(max_allowed_contacts), min=0.0)
-    excess = excess / float(max(1, 5 - max_allowed_contacts))
-
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    reach_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    pregrasp_band = torch.clamp(reach_gate - grasp_gate, 0.0, 1.0)
-    return pregrasp_band * excess
-
-
-def synergy_reaching_pose_reward(
+def finger_tip_orientation_reward(
     env: ManagerBasedRLEnv,
     std: float,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward fingers 2-4 staying near open pose during reaching."""
+    """Reward fingertip normals pointing toward cup center (XY plane).
+
+    - Thumb (finger 1): local Y axis is the normal direction
+    - Fingers 2-5: local X axis is the normal direction
+
+    Rewards alignment between finger normal and direction to cup center.
+    DexPour: Active when λ=1 (approach complete).
+    """
     robot = env.scene["robot"]
-    target_joints = {
-        "lj_dg_2_2": 0.0, "lj_dg_2_3": 0.0, "lj_dg_2_4": 0.0,
-        "lj_dg_3_2": 0.0, "lj_dg_3_3": 0.0, "lj_dg_3_4": 0.0,
-        "lj_dg_4_2": 0.0, "lj_dg_4_3": 0.0, "lj_dg_4_4": 0.0,
-    }
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]  # (num_envs, 2)
 
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in target_joints.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
+    # Fingertip info: (body_name, offset_axis, offset_val, normal_axis)
+    # offset: to get actual tip position
+    # normal_axis: the local axis that points outward from fingertip
+    _TIP_INFO = [
+        ("tesollo_left_ll_dg_1_4", "y", -0.0363, "y"),  # thumb: Y offset, Y normal
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255, "x"),   # index: Z offset, X normal
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255, "x"),   # middle: Z offset, X normal
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255, "x"),   # ring: Z offset, X normal
+        ("tesollo_left_ll_dg_5_4", "z", 0.0363, "x"),   # pinky: Z offset, X normal
+    ]
 
-    reward = 1.0 - torch.tanh(total_sq_error / std)
-    grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
-    return (1.0 - grasp_gate) * reward
+    total_reward = torch.zeros(env.num_envs, device=env.device)
+    num_tips = 0
+
+    x_axis = torch.tensor([1.0, 0.0, 0.0], device=env.device)
+    y_axis = torch.tensor([0.0, 1.0, 0.0], device=env.device)
+    z_axis = torch.tensor([0.0, 0.0, 1.0], device=env.device)
+
+    for body_name, offset_axis, offset_val, normal_axis in _TIP_INFO:
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[:, body_idx]  # (num_envs, 3)
+            link_quat = robot.data.body_quat_w[:, body_idx]  # (num_envs, 4)
+
+            # Create local offset vector for tip position
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Calculate actual tip position
+            world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+            tip_pos = link_pos + world_offset
+            tip_pos_xy = tip_pos[:, :2]  # (num_envs, 2)
+
+            # Get the normal direction in world frame
+            if normal_axis == "x":
+                local_normal = x_axis.unsqueeze(0).repeat(env.num_envs, 1)
+            elif normal_axis == "y":
+                local_normal = y_axis.unsqueeze(0).repeat(env.num_envs, 1)
+            else:  # "z"
+                local_normal = z_axis.unsqueeze(0).repeat(env.num_envs, 1)
+
+            # Transform local normal to world frame
+            normal_world = quat_apply(link_quat, local_normal)  # (num_envs, 3)
+            normal_xy = normal_world[:, :2]  # (num_envs, 2)
+            normal_xy = normal_xy / (torch.norm(normal_xy, dim=1, keepdim=True) + 1e-6)
+
+            # Direction from tip to cup center (XY)
+            dir_to_cup = cup_pos_xy - tip_pos_xy  # (num_envs, 2)
+            dir_to_cup = dir_to_cup / (torch.norm(dir_to_cup, dim=1, keepdim=True) + 1e-6)
+
+            # Dot product: 1.0 when aligned, -1.0 when opposite
+            alignment = torch.sum(normal_xy * dir_to_cup, dim=1)  # (num_envs,)
+
+            # Reward when pointing toward cup
+            tip_reward = torch.clamp(alignment, min=0.0)
+
+            total_reward += tip_reward
+            num_tips += 1
+
+    if num_tips > 0:
+        total_reward = total_reward / num_tips  # Average over tips
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+
+    return lambda_trigger * total_reward
 
 
-def slip_magnitude_penalty(
+def _maybe_visualize_fingertips(
     env: ManagerBasedRLEnv,
-    robot_cfg: SceneEntityCfg,
+    robot,
+    tip_info: list[tuple],
+    obj: RigidObject,
+) -> None:
+    """Visualize lines from fingertips to cup center (XY projection)."""
+    cfg = getattr(env, "cfg", None)
+    if cfg is None or not getattr(cfg, "debug_fingertip_vis", False):
+        return
+
+    step_count = int(getattr(env, "common_step_counter", 0))
+    interval = int(getattr(cfg, "debug_fingertip_vis_interval", 10))
+    if interval > 1 and (step_count % interval) != 0:
+        return
+
+    # Initialize debug draw and carb types
+    if not hasattr(env, "_debug_draw"):
+        try:
+            from isaacsim.util.debug_draw import _debug_draw
+            import carb
+            env._debug_draw = _debug_draw.acquire_debug_draw_interface()
+            env._carb = carb
+            print("[DEBUG] debug_draw interface acquired successfully")
+        except ImportError:
+            try:
+                from omni.isaac.debug_draw import _debug_draw
+                import carb
+                env._debug_draw = _debug_draw.acquire_debug_draw_interface()
+                env._carb = carb
+                print("[DEBUG] debug_draw interface acquired (omni.isaac)")
+            except Exception as e:
+                print(f"[DEBUG] Failed to acquire debug_draw: {e}")
+                env._debug_draw = None
+                return
+
+    if env._debug_draw is None:
+        return
+
+    carb = env._carb
+
+    # Clear previous drawings
+    env._debug_draw.clear_lines()
+
+    # Get cup center position (env 0) - use tip Z height for XY plane visualization
+    cup_pos = obj.data.root_pos_w[0].cpu().numpy()  # (3,)
+
+    # Colors for each finger (RGBA)
+    colors = [
+        carb.ColorRgba(1.0, 0.0, 0.0, 1.0),  # thumb - red
+        carb.ColorRgba(0.0, 1.0, 0.0, 1.0),  # index - green
+        carb.ColorRgba(0.0, 0.0, 1.0, 1.0),  # middle - blue
+        carb.ColorRgba(1.0, 1.0, 0.0, 1.0),  # ring - yellow
+        carb.ColorRgba(1.0, 0.0, 1.0, 1.0),  # pinky - magenta
+    ]
+
+    # Collect all points for batch drawing
+    starts = []
+    ends = []
+    line_colors = []
+    sizes = []
+
+    # Draw lines from each fingertip to cup center (XY plane - same Z as tip)
+    for i, tip_data in enumerate(tip_info):
+        body_name, offset_axis, offset_val = tip_data[0], tip_data[1], tip_data[2]
+        if body_name in robot.data.body_names:
+            body_idx = robot.data.body_names.index(body_name)
+            link_pos = robot.data.body_pos_w[0, body_idx]  # (3,)
+            link_quat = robot.data.body_quat_w[0, body_idx]  # (4,)
+
+            # Create local offset vector
+            if offset_axis == "x":
+                local_offset = torch.tensor([offset_val, 0.0, 0.0], device=env.device)
+            elif offset_axis == "y":
+                local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+            else:  # "z"
+                local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+
+            # Transform offset to world frame and get actual tip position
+            world_offset = quat_apply(link_quat.unsqueeze(0), local_offset.unsqueeze(0)).squeeze(0)
+            tip_pos = (link_pos + world_offset).cpu().numpy()
+
+            # Use tip's Z for both start and end to show XY plane distance
+            tip_z = float(tip_pos[2])
+            starts.append(carb.Float3(float(tip_pos[0]), float(tip_pos[1]), tip_z))
+            ends.append(carb.Float3(float(cup_pos[0]), float(cup_pos[1]), tip_z))
+            line_colors.append(colors[i % len(colors)])
+            sizes.append(5.0)
+
+    if starts:
+        env._debug_draw.draw_lines(starts, ends, line_colors, sizes)
+
+
+def thumb_tip_z_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.06,
+    cup_height: float = 0.08,
+    xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    max_slip: float = 0.15,
-    sensor_cfg: SceneEntityCfg | None = None,
-    contact_threshold: float = 0.05,
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Penalty for fingertip-object relative slip."""
-    robot = env.scene[robot_cfg.name]
-    link_vel = robot.data.body_lin_vel_w
-    if robot_cfg.body_ids is not None:
-        link_vel = link_vel[:, robot_cfg.body_ids, :]
+    """Reward thumb tip Z position approaching cup top height.
 
-    obj = env.scene[object_cfg.name]
-    obj_vel = obj.data.root_lin_vel_w.unsqueeze(1)
-    rel_vel = link_vel - obj_vel
-    slip_mag = torch.norm(rel_vel, dim=-1)
-    avg_slip = slip_mag.mean(dim=-1)
+    Guides the thumb fingertip to descend to the cup's top (grasp) height.
+    DexPour: Active when λ=1 (approach complete).
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_top_z = obj.data.root_pos_w[:, 2] + cup_height  # target: cup top
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
 
-    penalty = 1.0 - torch.exp(-torch.square(avg_slip / max(max_slip, 1e-6)))
+    # Thumb tip: body + local offset
+    body_name = "tesollo_left_ll_dg_1_4"
+    offset_axis, offset_val = "y", -0.0363
 
-    if sensor_cfg is not None:
-        contact_sensor = env.scene[sensor_cfg.name]
-        force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
-        if sensor_cfg.body_ids is not None:
-            force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-        has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-        penalty = penalty * has_contact.float()
+    if body_name not in robot.data.body_names:
+        return torch.zeros(env.num_envs, device=env.device)
 
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * penalty
+    body_idx = robot.data.body_names.index(body_name)
+    link_pos = robot.data.body_pos_w[:, body_idx]
+    link_quat = robot.data.body_quat_w[:, body_idx]
+
+    local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
+    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+    tip_pos = link_pos + world_offset
+    tip_z = tip_pos[:, 2]
+
+    z_error = torch.abs(tip_z - cup_top_z)
+    z_reward = 1.0 - torch.tanh(z_error / std)
+
+    # XY proximity: reward decays if EE is far from cup in XY
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
+
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * z_reward * xy_proximity
 
 
-def normal_force_stability_reward(
+def synergy_tip_z_reward(
     env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    contact_threshold: float = 0.05,
+    std: float = 0.06,
+    cup_height: float = 0.08,
+    xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward smooth contact-force changes over time."""
-    contact_sensor = env.scene[sensor_cfg.name]
-    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
-    if sensor_cfg.body_ids is not None:
-        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+    """Reward index finger (finger 2) tip Z position approaching cup top height.
 
-    buffer_name = f"_prev_force_mags_{sensor_cfg.name}"
-    if hasattr(env, buffer_name):
-        prev_forces = getattr(env, buffer_name)
-        delta = torch.abs(force_magnitudes - prev_forces)
-        stability = 1.0 / (1.0 + delta.mean(dim=-1))
-    else:
-        stability = torch.ones(env.num_envs, device=env.device)
-    setattr(env, buffer_name, force_magnitudes.clone())
+    Uses finger 2 as representative for synergy fingers (2,3,4).
+    Guides the fingertip to descend to the cup's top (grasp) height.
+    DexPour: Active when λ=1 (approach complete).
+    """
+    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_top_z = obj.data.root_pos_w[:, 2] + cup_height  # target: cup top
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
 
-    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * stability * has_contact.float()
+    # Index finger (2) tip: body + local offset
+    body_name = "tesollo_left_ll_dg_2_4"
+    offset_axis, offset_val = "z", 0.0255
 
+    if body_name not in robot.data.body_names:
+        return torch.zeros(env.num_envs, device=env.device)
 
-def force_spike_penalty(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    spike_threshold: float = 10.0,
-    contact_threshold: float = 0.05,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-) -> torch.Tensor:
-    """Penalty for abrupt contact-force spikes."""
-    contact_sensor = env.scene[sensor_cfg.name]
-    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
-    if sensor_cfg.body_ids is not None:
-        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+    body_idx = robot.data.body_names.index(body_name)
+    link_pos = robot.data.body_pos_w[:, body_idx]
+    link_quat = robot.data.body_quat_w[:, body_idx]
 
-    buffer_name = f"_prev_force_rate_{sensor_cfg.name}"
-    if hasattr(env, buffer_name):
-        prev_forces = getattr(env, buffer_name)
-        force_rate = torch.abs(force_magnitudes - prev_forces) / max(env.step_dt, 1e-6)
-        max_rate = force_rate.max(dim=-1)[0]
-        penalty = torch.clamp((max_rate - spike_threshold) / max(spike_threshold, 1e-6), 0.0, 1.0)
-    else:
-        penalty = torch.zeros(env.num_envs, device=env.device)
-    setattr(env, buffer_name, force_magnitudes.clone())
+    local_offset = torch.tensor([0.0, 0.0, offset_val], device=env.device)
+    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
+    tip_pos = link_pos + world_offset
+    tip_z = tip_pos[:, 2]
 
-    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * penalty * has_contact.float()
+    z_error = torch.abs(tip_z - cup_top_z)
+    z_reward = 1.0 - torch.tanh(z_error / std)
 
+    # XY proximity: reward decays if EE is far from cup in XY
+    eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
+    ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
+    xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
+    xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
-def overgrip_penalty(
-    env: ManagerBasedRLEnv,
-    sensor_cfg: SceneEntityCfg,
-    target_force_range: tuple[float, float] = (1.0, 12.0),
-    contact_threshold: float = 0.05,
-    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
-    eef_link_name: str = "ll_dg_ee",
-) -> torch.Tensor:
-    """Penalty for under/over target grip force band."""
-    contact_sensor = env.scene[sensor_cfg.name]
-    force_magnitudes = torch.norm(contact_sensor.data.net_forces_w, dim=-1)
-    if sensor_cfg.body_ids is not None:
-        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
-
-    total_force = force_magnitudes.sum(dim=-1)
-    min_force, max_force = target_force_range
-
-    undergrip = torch.clamp(min_force - total_force, 0.0, max(min_force, 1e-6)) / max(min_force, 1e-6)
-    overgrip = torch.clamp(total_force - max_force, 0.0, max(max_force, 1e-6)) / max(max_force, 1e-6)
-    penalty = undergrip + overgrip
-
-    has_contact = (force_magnitudes > contact_threshold).any(dim=-1)
-    reached_gate = _reaching_progress_gate(env, object_cfg, eef_link_name)
-    return reached_gate * penalty * has_contact.float()
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * z_reward * xy_proximity

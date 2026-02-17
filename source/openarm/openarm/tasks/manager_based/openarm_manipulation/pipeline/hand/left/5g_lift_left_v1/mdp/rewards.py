@@ -520,10 +520,7 @@ def object_ee_distance(
     if disp_scale > 0.0:
         reach_reward = reach_reward * torch.exp(-displacement_excess / disp_scale)
 
-    # DexPour: Deactivate when λ=1 (approach complete)
-    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    reach_reward = (1.0 - lambda_trigger) * reach_reward
-
+    # DexPour: reaching reward stays active at all phases (no (1-λ) gating).
     # Debug triggers
     _debug_triggers(env, object_cfg, eef_link_name)
 
@@ -553,10 +550,7 @@ def object_ee_distance_fine(
     dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
     reach_reward = 1 - torch.tanh(dist / std)
 
-    # DexPour: Deactivate when λ=1 (approach complete)
-    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    reach_reward = (1.0 - lambda_trigger) * reach_reward
-
+    # DexPour: reaching reward stays active at all phases (no (1-λ) gating).
     return reach_reward
 
 
@@ -683,9 +677,8 @@ def eef_z_perpendicular_object_z(
     error = torch.abs(cos_theta)
     orientation_reward = 1 - torch.tanh(error / std)
 
-    # DexPour: Active when λ=0 (before approach complete)
-    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return (1.0 - lambda_trigger) * orientation_reward
+    # DexPour: orientation reward stays active at all phases (no (1-λ) gating).
+    return orientation_reward
 
 
 def _is_reaching_complete(
@@ -1233,8 +1226,10 @@ def thumb_grasp_reward(
     )
     thumb_opposition = _thumb_opposition_reward(env, object_cfg)
 
-    # Combine: velocity + posture + opposition. Contact gate blocks air-closing rewards.
-    reward = (0.25 * velocity_reward + 0.45 * position_reward + 0.30 * thumb_opposition) * thumb_contact
+    # Combine: velocity + posture + opposition.
+    # Contact gate with floor=0.2: provides gradient to close even before contact.
+    contact_gate = torch.maximum(thumb_contact, torch.full_like(thumb_contact, 0.2))
+    reward = (0.25 * velocity_reward + 0.45 * position_reward + 0.30 * thumb_opposition) * contact_gate
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
@@ -1306,8 +1301,10 @@ def pinky_grasp_reward(
         env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg
     )
 
-    # Combine: velocity + posture and require local contact for meaningful reward.
-    reward = (0.3 * velocity_reward + 0.7 * position_reward) * pinky_contact
+    # Combine: velocity + posture.
+    # Contact gate with floor=0.2: provides gradient to close even before contact.
+    contact_gate = torch.maximum(pinky_contact, torch.full_like(pinky_contact, 0.2))
+    reward = (0.3 * velocity_reward + 0.7 * position_reward) * contact_gate
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)

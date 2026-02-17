@@ -36,11 +36,11 @@ DEFAULT_OPEN_POSE_RIGHT = {
 
 DEFAULT_CLOSE_POSE_RIGHT = {
     # Finger 2 (index)
-    "rj_dg_2_1": 0.0, "rj_dg_2_2": 0.5, "rj_dg_2_3": 0.8, "rj_dg_2_4": 1.0,
+    "rj_dg_2_1": 0.6108652, "rj_dg_2_2": 2.0071286, "rj_dg_2_3": 1.5707963, "rj_dg_2_4": 1.5707963,
     # Finger 3 (middle)
-    "rj_dg_3_1": 0.0, "rj_dg_3_2": 0.5, "rj_dg_3_3": 0.8, "rj_dg_3_4": 1.0,
+    "rj_dg_3_1": 0.6108652, "rj_dg_3_2": 1.9547686, "rj_dg_3_3": 1.5707963, "rj_dg_3_4": 1.5707963,
     # Finger 4 (ring)
-    "rj_dg_4_1": 0.0, "rj_dg_4_2": 0.5, "rj_dg_4_3": 0.8, "rj_dg_4_4": 1.0,
+    "rj_dg_4_1": 0.418879, "rj_dg_4_2": 1.9024088, "rj_dg_4_3": 1.5707963, "rj_dg_4_4": 1.5707963,
 }
 
 # Default open/close poses for LEFT hand fingers 2-4 (12 joints)
@@ -50,11 +50,11 @@ DEFAULT_OPEN_POSE_LEFT = {
 
 DEFAULT_CLOSE_POSE_LEFT = {
     # Finger 2 (index)
-    "lj_dg_2_1": 0.0, "lj_dg_2_2": 0.5, "lj_dg_2_3": 0.8, "lj_dg_2_4": 1.0,
+    "lj_dg_2_1": 0.418879, "lj_dg_2_2": 2.0071286, "lj_dg_2_3": 1.5707963, "lj_dg_2_4": 1.5707963,
     # Finger 3 (middle)
-    "lj_dg_3_1": 0.0, "lj_dg_3_2": 0.5, "lj_dg_3_3": 0.8, "lj_dg_3_4": 1.0,
+    "lj_dg_3_1": 0.6108652, "lj_dg_3_2": 1.9547686, "lj_dg_3_3": 1.5707963, "lj_dg_3_4": 1.5707963,
     # Finger 4 (ring)
-    "lj_dg_4_1": 0.0, "lj_dg_4_2": 0.5, "lj_dg_4_3": 0.8, "lj_dg_4_4": 1.0,
+    "lj_dg_4_1": 0.6108652, "lj_dg_4_2": 1.9024088, "lj_dg_4_3": 1.5707963, "lj_dg_4_4": 1.5707963,
 }
 
 # Backwards compatibility aliases

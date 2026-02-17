@@ -18,9 +18,9 @@ from isaaclab_rl.rsl_rl import RslRlOnPolicyRunnerCfg, RslRlPpoActorCriticCfg, R
 
 @configclass
 class OpenArmLiftLeftV2PPORunnerCfg(RslRlOnPolicyRunnerCfg):
-    num_steps_per_env = 16
-    max_iterations = 1000
-    save_interval = 50
+    num_steps_per_env = 24
+    max_iterations = 10000
+    save_interval = 100
     experiment_name = "pipeline_left_5g_lift_left_v2"
     empirical_normalization = False
     policy = RslRlPpoActorCriticCfg(
@@ -34,8 +34,8 @@ class OpenArmLiftLeftV2PPORunnerCfg(RslRlOnPolicyRunnerCfg):
         use_clipped_value_loss=True,
         clip_param=0.2,
         entropy_coef=0.01,
-        num_learning_epochs=3,
-        num_mini_batches=2,
+        num_learning_epochs=5,
+        num_mini_batches=4,
         learning_rate=5.0e-4,
         schedule="adaptive",
         gamma=0.99,

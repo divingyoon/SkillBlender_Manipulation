@@ -231,7 +231,7 @@ class RewardsCfg:
             "radial_std": 0.015,
             "opposition_weight": 0.3,
         },
-        weight=14.0,
+        weight=0.0,  # 비활성화: opposition이 엄지-시너지 길항 유발
     )
 
     finger_wrap_coverage = RewTerm(

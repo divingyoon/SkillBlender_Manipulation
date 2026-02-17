@@ -188,7 +188,7 @@ class RewardsCfg:
     thumb_grasp = RewTerm(
         func=mdp.thumb_grasp_reward,
         params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=8.0,
+        weight=15.0,
     )
 
     # 새끼(5번) 그립 리워드 - 독립 제어
@@ -202,7 +202,7 @@ class RewardsCfg:
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
         params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=14.0,
+        weight=20.0,
     )
 
     # 원통 표면 반경으로 손가락 tip 랩핑 유도
@@ -215,14 +215,14 @@ class RewardsCfg:
             "radial_std": 0.015,
             "opposition_weight": 0.3,
         },
-        weight=14.0,
+        weight=0.0,  # 비활성화: opposition이 엄지-시너지 길항 유발
     )
 
     # 손가락이 컵 둘레를 고르게 감싸도록 각도 커버리지 유도
     finger_wrap_coverage = RewTerm(
         func=mdp.finger_wrap_coverage_reward,
         params={"object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,
+        weight=1.0,
     )
 
     # 손가락 tip 법선이 컵 중심을 향하도록 유도
@@ -253,13 +253,13 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-4.0,
+        weight=-5.0,
     )
 
     finger_normal_range = RewTerm(
         func=mdp.finger_normal_range_penalty,
         params={},
-        weight=-1.0,
+        weight=-2.0,
     )
 
     # 엄지(1번) reaching 전 열어두기
@@ -287,21 +287,21 @@ class RewardsCfg:
     thumb_tip_z = RewTerm(
         func=mdp.thumb_tip_z_reward,
         params={"std": 0.06, "cup_height": 0.08, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=10.0,
+        weight=8.0,
     )
 
     # 시너지 손가락(2번 tip 기준) Z를 컵 상단 높이로 유도
     synergy_tip_z = RewTerm(
         func=mdp.synergy_tip_z_reward,
         params={"std": 0.06, "cup_height": 0.08, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=10.0,
+        weight=8.0,
     )
 
     # Grasp 단계에서 EE를 z=0.04까지 더 내려가도록 유도
     ee_descent = RewTerm(
         func=mdp.ee_descent_reward,
         params={"std": 0.04, "target_z_offset": 0.04, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=15.0,
+        weight=10.0,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)

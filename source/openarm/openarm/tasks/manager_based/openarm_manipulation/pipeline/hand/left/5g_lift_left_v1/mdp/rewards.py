@@ -1224,12 +1224,11 @@ def thumb_grasp_reward(
     thumb_contact = _finger_surface_contact_gate(
         env, "tesollo_left_ll_dg_1_4", "y", -0.0363, object_cfg=object_cfg
     )
-    thumb_opposition = _thumb_opposition_reward(env, object_cfg)
 
-    # Combine: velocity + posture + opposition.
+    # Combine: velocity + posture (opposition removed to avoid thumb-synergy antagonism).
     # Contact gate with floor=0.2: provides gradient to close even before contact.
     contact_gate = torch.maximum(thumb_contact, torch.full_like(thumb_contact, 0.2))
-    reward = (0.25 * velocity_reward + 0.45 * position_reward + 0.30 * thumb_opposition) * contact_gate
+    reward = (0.40 * velocity_reward + 0.60 * position_reward) * contact_gate
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
@@ -1237,6 +1236,7 @@ def thumb_grasp_reward(
     pinky_contact = _finger_surface_contact_gate(
         env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg
     )
+    thumb_opposition = _thumb_opposition_reward(env, object_cfg)
     _maybe_log_grasp_quality(
         env=env,
         object_cfg=object_cfg,

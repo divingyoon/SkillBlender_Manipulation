@@ -1239,108 +1239,78 @@ def thumb_grasp_reward(
 
 def pinky_grasp_reward(
     env: ManagerBasedRLEnv,
-    std: float,
+    std: float = 0.05,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
-    """Reward pinky (finger 5) for closing - velocity + position based.
+    """Reward pinky tip approaching cup center in XY (task-space).
 
-    Combines:
-    - Velocity reward: moving in closing direction
-    - Position reward: being in closed position (even if not moving)
+    Same principle as thumb_grasp_reward: let the policy discover
+    the right joint configuration via task-space gradient.
 
-    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
+    DexPour: Active when λ=1 (approach complete).
     """
-    robot = env.scene["robot"]
-
-    # Pinky targets (closed position)
-    _CLOSE_TARGETS = {
-        "lj_dg_5_3": 1.5,  # increases to curl (limit: 1.57)
-        "lj_dg_5_4": 1.5,  # increases to curl (limit: 1.57)
-    }
-
-    # Curl directions for velocity
-    _CURL_DIRECTIONS = {
-        "lj_dg_5_3": +1.0,
-        "lj_dg_5_4": +1.0,
-    }
-
-    # Velocity-based reward
-    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, direction in _CURL_DIRECTIONS.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        vel = robot.data.joint_vel[:, joint_idx]
-        curl_velocity_sum += direction * vel
-
-    velocity_reward = torch.tanh(curl_velocity_sum / std)
-    velocity_reward = torch.clamp(velocity_reward, min=0.0)
-
-    # Position-based reward (how close to closed position)
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in _CLOSE_TARGETS.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
-
-    position_reward = 1.0 - torch.tanh(total_sq_error / std)
-
-    pinky_contact = _finger_surface_contact_gate(
-        env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg
+    pinky_tip = _get_fingertip_world_position(
+        env, "tesollo_left_ll_dg_5_4", "z", 0.0363
     )
+    if pinky_tip is None:
+        return torch.zeros(env.num_envs, device=env.device)
 
-    # Combine: velocity + posture.
-    # Contact gate with floor=0.2: provides gradient to close even before contact.
-    contact_gate = torch.maximum(pinky_contact, torch.full_like(pinky_contact, 0.2))
-    reward = (0.3 * velocity_reward + 0.7 * position_reward) * contact_gate
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+    tip_xy = pinky_tip[:, :2]
+
+    # Task-space approach: pinky tip → cup center XY distance
+    dist = torch.norm(tip_xy - cup_xy, dim=1)
+    approach_reward = 1.0 - torch.tanh(dist / std)
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * reward
+    return lambda_trigger * approach_reward
 
 
 def synergy_grip_reward(
     env: ManagerBasedRLEnv,
-    action_name: str = "left_hand_action",
+    std: float = 0.05,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    action_name: str = "left_hand_action",
 ) -> torch.Tensor:
-    """Reward synergy fingers (2,3,4) for closing.
+    """Reward synergy fingertips (2,3,4) approaching cup center in XY (task-space).
 
-    DexPour style: Only active when λ=1 (approach complete).
-    λ=0: returns 0 (use synergy_reaching_pose_reward instead)
+    Uses the average XY distance of the three synergy fingertips to the cup
+    center.  The single-DOF synergy action discovers the right grip_strength
+    via task-space gradient.
 
-    grip_strength in [-1, 1]: -1 = open, +1 = closed
+    DexPour: Active when λ=1 (approach complete).
     """
-    robot = env.scene["robot"]
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
 
-    # Get the raw action (grip_strength) from action manager
-    action_term = env.action_manager.get_term(action_name)
-    grip_strength = action_term.raw_actions[:, 0]  # shape: (num_envs,)
+    _SYNERGY_TIPS = [
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+    ]
 
-    # After approach (λ=1): reward based on action command + actual joint positions
-    action_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
+    dist_sum = torch.zeros(env.num_envs, device=env.device)
+    count = 0
+    for body_name, axis, offset in _SYNERGY_TIPS:
+        tip = _get_fingertip_world_position(env, body_name, axis, offset)
+        if tip is not None:
+            dist = torch.norm(tip[:, :2] - cup_xy, dim=1)
+            dist_sum += dist
+            count += 1
 
-    # Position-based reward for synergy fingers (2,3,4)
-    _CLOSE_TARGETS = {
-        "lj_dg_2_2": 1.9, "lj_dg_2_3": 1.5, "lj_dg_2_4": 1.5,
-        "lj_dg_3_2": 1.85, "lj_dg_3_3": 1.5, "lj_dg_3_4": 1.5,
-        "lj_dg_4_2": 1.8, "lj_dg_4_3": 1.5, "lj_dg_4_4": 1.5,
-    }
+    if count == 0:
+        return torch.zeros(env.num_envs, device=env.device)
 
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in _CLOSE_TARGETS.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
-
-    position_reward = 1.0 - torch.tanh(total_sq_error / 5.0)  # std=5.0 for 9 joints
-
-    # Balance action command and joint pose for stronger closing gradient.
-    close_reward = 0.5 * action_reward + 0.5 * position_reward
+    avg_dist = dist_sum / float(count)
+    approach_reward = 1.0 - torch.tanh(avg_dist / std)
 
     # DexPour: Only active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * close_reward
+    return lambda_trigger * approach_reward
 
 
 def synergy_reaching_pose_reward(

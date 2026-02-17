@@ -208,18 +208,20 @@ class RewardsCfg:
         weight=8.0,
     )
 
+    # 새끼(5번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
     pinky_grasp = RewTerm(
         func=mdp.pinky_grasp_reward,
         params={
-            "std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
+            "std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
         weight=5.0,
     )
 
+    # 시너지(2,3,4번) 그립 리워드 - 작업 공간: 평균 tip → cup center XY 접근
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
-        params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=14.0,
     )
 

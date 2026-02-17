@@ -184,10 +184,10 @@ class RewardsCfg:
         weight=4.0,
     )
 
-    # 엄지(1번) 그립 리워드 - 독립 제어
+    # 엄지(1번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
     thumb_grasp = RewTerm(
         func=mdp.thumb_grasp_reward,
-        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=15.0,
     )
 
@@ -283,10 +283,10 @@ class RewardsCfg:
         weight=0.5,
     )
 
-    # 엄지 tip Z를 컵 상단 높이로 유도
+    # 엄지 tip Z를 2번 손가락 이하로 유도 (편측: 위에 있을 때만 패널티)
     thumb_tip_z = RewTerm(
         func=mdp.thumb_tip_z_reward,
-        params={"std": 0.06, "cup_height": 0.08, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.10, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=8.0,
     )
 

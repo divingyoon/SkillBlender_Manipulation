@@ -1308,68 +1308,55 @@ def finger_contact_reward(
 
 def thumb_grasp_reward(
     env: ManagerBasedRLEnv,
-    std: float,
+    std: float = 0.05,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
-    """Reward thumb (finger 1) for closing - velocity + position based.
+    """Reward thumb tip approaching cup center in XY (task-space).
 
-    Combines:
-    - Velocity reward: moving in closing direction
-    - Position reward: being in closed position (even if not moving)
+    Instead of rewarding fixed joint targets (which curl the thumb in a
+    fixed direction regardless of cup position), this rewards the thumb
+    tip getting closer to the cup center.  The policy discovers the right
+    joint configuration through the task-space gradient.
 
-    v2: When sensor_cfg is provided, uses contact sensor for contact gate (DexPour style).
-    DexPour: Active when λ=1 (approach complete) - encourages closing fingers.
+    v2: sensor_cfg kept for contact logging compatibility.
+    DexPour: Active when λ=1 (approach complete).
     """
-    robot = env.scene["robot"]
+    thumb_tip = _get_fingertip_world_position(
+        env, "tesollo_left_ll_dg_1_4", "y", -0.0363
+    )
+    if thumb_tip is None:
+        return torch.zeros(env.num_envs, device=env.device)
 
-    # Thumb targets (closed position). Include 1_1 for stronger opposition shaping.
-    _CLOSE_TARGETS = {
-        "lj_dg_1_1": -0.45,  # opposition/spread
-        "lj_dg_1_2": 2.5,   # increases to curl (limit: 3.14)
-        "lj_dg_1_3": -1.4,  # decreases to curl (limit: -1.57)
-        "lj_dg_1_4": -1.4,  # decreases to curl (limit: -1.57)
-    }
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+    tip_xy = thumb_tip[:, :2]
 
-    # Curl directions for velocity
-    _CURL_DIRECTIONS = {
-        "lj_dg_1_2": +1.0,
-        "lj_dg_1_3": -1.0,
-        "lj_dg_1_4": -1.0,
-    }
+    # Task-space approach: thumb tip → cup center XY distance
+    dist = torch.norm(tip_xy - cup_xy, dim=1)
+    approach_reward = 1.0 - torch.tanh(dist / std)
 
-    # Velocity-based reward
-    curl_velocity_sum = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, direction in _CURL_DIRECTIONS.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        vel = robot.data.joint_vel[:, joint_idx]
-        curl_velocity_sum += direction * vel
+    # Z gate: only reward approach when thumb is at or below finger 2 Z
+    finger2_tip = _get_fingertip_world_position(
+        env, "tesollo_left_ll_dg_2_4", "z", 0.0255
+    )
+    if finger2_tip is not None:
+        z_above = torch.clamp(thumb_tip[:, 2] - finger2_tip[:, 2], min=0.0)
+        z_gate = 1.0 - torch.tanh(z_above / 0.03)
+    else:
+        z_gate = torch.ones(env.num_envs, device=env.device)
 
-    velocity_reward = torch.tanh(curl_velocity_sum / std)
-    velocity_reward = torch.clamp(velocity_reward, min=0.0)
+    reward = approach_reward * z_gate
 
-    # Position-based reward (how close to closed position)
-    total_sq_error = torch.zeros(env.num_envs, device=env.device)
-    for joint_name, target in _CLOSE_TARGETS.items():
-        joint_idx = robot.data.joint_names.index(joint_name)
-        pos = robot.data.joint_pos[:, joint_idx]
-        total_sq_error += (pos - target) ** 2
+    # DexPour: Active when λ=1 (approach complete)
+    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
 
-    position_reward = 1.0 - torch.tanh(total_sq_error / std)
-
+    # Logging (contact/opposition still tracked for diagnostics)
     thumb_contact = _finger_surface_contact_gate(
         env, "tesollo_left_ll_dg_1_4", "y", -0.0363, object_cfg=object_cfg,
         sensor_cfg=sensor_cfg,
     )
-
-    # Combine: velocity + posture (opposition removed to avoid thumb-synergy antagonism).
-    # Contact gate with floor=0.2: provides gradient to close even before contact.
-    contact_gate = torch.maximum(thumb_contact, torch.full_like(thumb_contact, 0.2))
-    reward = (0.40 * velocity_reward + 0.60 * position_reward) * contact_gate
-
-    # DexPour: Active when λ=1 (approach complete)
-    lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
     grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name)
     pinky_contact = _finger_surface_contact_gate(
         env, "tesollo_left_ll_dg_5_4", "z", 0.0363, object_cfg=object_cfg,
@@ -1934,42 +1921,36 @@ def _maybe_visualize_fingertips(
 
 def thumb_tip_z_reward(
     env: ManagerBasedRLEnv,
-    std: float = 0.06,
-    cup_height: float = 0.08,
+    std: float = 0.03,
     xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    cup_height: float = 0.08,
 ) -> torch.Tensor:
-    """Reward thumb tip Z position approaching cup top height.
+    """Reward thumb tip Z being at or below index finger (finger 2) tip Z.
 
-    Guides the thumb fingertip to descend to the cup's top (grasp) height.
+    One-sided: full reward when thumb_z <= finger2_z, decays when above.
     DexPour: Active when λ=1 (approach complete).
     """
-    robot = env.scene["robot"]
-    obj: RigidObject = env.scene[object_cfg.name]
-    cup_top_z = obj.data.root_pos_w[:, 2] + cup_height  # target: cup top
-    cup_pos_xy = obj.data.root_pos_w[:, :2]
-
-    # Thumb tip: body + local offset
-    body_name = "tesollo_left_ll_dg_1_4"
-    offset_axis, offset_val = "y", -0.0363
-
-    if body_name not in robot.data.body_names:
+    thumb_tip = _get_fingertip_world_position(
+        env, "tesollo_left_ll_dg_1_4", "y", -0.0363
+    )
+    finger2_tip = _get_fingertip_world_position(
+        env, "tesollo_left_ll_dg_2_4", "z", 0.0255
+    )
+    if thumb_tip is None or finger2_tip is None:
         return torch.zeros(env.num_envs, device=env.device)
 
-    body_idx = robot.data.body_names.index(body_name)
-    link_pos = robot.data.body_pos_w[:, body_idx]
-    link_quat = robot.data.body_quat_w[:, body_idx]
+    thumb_z = thumb_tip[:, 2]
+    finger2_z = finger2_tip[:, 2]
 
-    local_offset = torch.tensor([0.0, offset_val, 0.0], device=env.device)
-    world_offset = quat_apply(link_quat, local_offset.unsqueeze(0).repeat(env.num_envs, 1))
-    tip_pos = link_pos + world_offset
-    tip_z = tip_pos[:, 2]
-
-    z_error = torch.abs(tip_z - cup_top_z)
-    z_reward = 1.0 - torch.tanh(z_error / std)
+    # One-sided: penalize only when thumb is ABOVE finger 2
+    z_above = torch.clamp(thumb_z - finger2_z, min=0.0)
+    z_reward = 1.0 - torch.tanh(z_above / std)
 
     # XY proximity: reward decays if EE is far from cup in XY
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_pos_xy = obj.data.root_pos_w[:, :2]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
     xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)

@@ -162,17 +162,12 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             ),
         )
 
-        # v2: Contact sensors (T3 hand has sensor_link bodies)
+        # v2: 왼손 접촉 센서만 사용 (오른손 센서 제거로 속도 개선)
+        # history_length=1: 현재 스텝 접촉만 필요, 이전 기록 불필요
         self.scene.left_contact_sensor = ContactSensorCfg(
             prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_.*_sensor_link",
             filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
-            history_length=3,
-            track_air_time=False,
-        )
-        self.scene.right_contact_sensor = ContactSensorCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/tesollo_right_.*_sensor_link",
-            filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup2"],
-            history_length=3,
+            history_length=1,
             track_air_time=False,
         )
 

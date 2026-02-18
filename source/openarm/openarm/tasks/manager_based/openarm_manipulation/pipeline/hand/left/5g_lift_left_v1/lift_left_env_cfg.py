@@ -238,6 +238,14 @@ class RewardsCfg:
         weight=10.0,
     )
 
+    # μ=1이면 컵 Z 상승에 연속적 gradient 제공 (tanh: delta=0에서 최대 gradient)
+    # ee_descent가 (1-μ)로 비활성되므로 리프트 방향 힘을 이 보상이 담당
+    cup_lift_progress = RewTerm(
+        func=mdp.cup_lift_progress_reward,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        weight=20.0,
+    )
+
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},

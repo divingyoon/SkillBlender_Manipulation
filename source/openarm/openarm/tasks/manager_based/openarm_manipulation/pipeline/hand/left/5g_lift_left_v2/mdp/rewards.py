@@ -717,9 +717,11 @@ def ee_descent_reward(
     xy_dist = torch.norm(ee_pos_w[:, :2] - cup_pos_xy, dim=1)
     xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
-    # DexPour: Active when λ=1 (approach complete)
+    # DexPour: Active when λ=1 AND μ=0 (approach complete, grasp NOT yet achieved)
+    # When μ=1 (grasp achieved), descent force disabled → arm free to lift
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * descent_reward * xy_proximity
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name)
+    return lambda_trigger * (1.0 - mu_trigger) * descent_reward * xy_proximity
 
 
 def _maybe_visualize_approach_target_all(
@@ -1044,6 +1046,31 @@ def object_is_lifted(
 
     mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
     return mu_trigger * (cup_height > initial_z + minimal_height).float()
+
+
+def cup_lift_progress_reward(
+    env: ManagerBasedRLEnv,
+    std: float = 0.05,
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
+) -> torch.Tensor:
+    """Continuous reward for cup lifting once grasp is complete (μ=1).
+
+    tanh kernel: maximum gradient at delta=0 → immediately rewards any upward
+    cup movement once μ=1. Does not require cup to already be lifted (unlike
+    object_is_lifted which is binary at 4cm).
+    DexPour: Active when μ=1 (grasp complete).
+    """
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_z = obj.data.root_pos_w[:, 2]
+    initial_z = _get_episode_initial_object_z(env, obj, "_cup_initial_z_w_left")
+
+    lift_delta = torch.clamp(cup_z - initial_z, min=0.0)
+    lift_reward = torch.tanh(lift_delta / std)
+
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
+    return mu_trigger * lift_reward
 
 
 def _is_lifting_sustained(

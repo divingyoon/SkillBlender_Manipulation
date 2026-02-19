@@ -43,7 +43,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from . import mdp
-from .config.joint_pos_env_cfg import LEFT_CONTACT_LINKS, LEFT_FORCE_SENSOR_NAMES
+from .config.joint_pos_env_cfg import LEFT_CONTACT_LINKS
 
 
 @configclass
@@ -133,11 +133,11 @@ class ObservationsCfg:
 
         left_contact_flags = ObsTerm(
             func=mdp.contact_flags_multi,
-            params={"sensor_names": LEFT_FORCE_SENSOR_NAMES},
+            params={"sensor_cfg": SceneEntityCfg("left_contact_sensor")},
         )
         left_normal_forces = ObsTerm(
             func=mdp.normal_force_magnitude_multi,
-            params={"sensor_names": LEFT_FORCE_SENSOR_NAMES},
+            params={"sensor_cfg": SceneEntityCfg("left_contact_sensor")},
             noise=Unoise(n_min=-0.1, n_max=0.1),
         )
         left_slip_velocity = ObsTerm(
@@ -223,7 +223,7 @@ class RewardsCfg:
         func=mdp.contact_persistence_reward_multi,
         weight=15.0,
         params={
-            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "sensor_cfg": _SENSOR_CFG,
             "min_contacts": 4,
             "contact_threshold": 0.05,
             "use_filtered": False,
@@ -238,7 +238,7 @@ class RewardsCfg:
             ]),
             "object_cfg": SceneEntityCfg("cup"),
             "max_slip": 0.1,
-            "contact_sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "contact_sensor_cfg": _SENSOR_CFG,
             "contact_threshold": 0.05,
         },
     )
@@ -246,7 +246,7 @@ class RewardsCfg:
         func=mdp.force_spike_penalty_multi,
         weight=-3.0,
         params={
-            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "sensor_cfg": _SENSOR_CFG,
             "spike_threshold": 10.0,
             "contact_threshold": 0.05,
         },
@@ -255,7 +255,7 @@ class RewardsCfg:
         func=mdp.overgrip_penalty_multi,
         weight=-2.0,
         params={
-            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "sensor_cfg": _SENSOR_CFG,
             "max_force": 15.0,
             "contact_threshold": 0.05,
         },

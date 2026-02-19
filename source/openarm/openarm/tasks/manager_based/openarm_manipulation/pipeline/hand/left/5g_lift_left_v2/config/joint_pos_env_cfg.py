@@ -34,7 +34,6 @@ LEFT_CONTACT_LINKS = [
     "ll_dg_4_3", "ll_dg_4_4",  # ring
     "ll_dg_5_3", "ll_dg_5_4",  # pinky
 ]
-LEFT_FORCE_SENSOR_NAMES = [f"left_force_sensor_{i}" for i in range(1, 11)]
 
 # Hand joint names
 # Thumb (finger 1): 4 joints
@@ -174,25 +173,13 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
 
         # v2: 왼손 접촉 센서만 사용 (오른손 센서 제거로 속도 개선)
         # history_length=1: 현재 스텝 접촉만 필요, 이전 기록 불필요
+        # Target only the 10 distal contact links used by the policy/rewards.
         self.scene.left_contact_sensor = ContactSensorCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_.*_sensor_link",
+            prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_ll_dg_[1-5]_[34]_sensor_link",
             filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
             history_length=1,
             track_air_time=False,
         )
-
-        # Per-link force sensors for force-based grasp rewards (10 links)
-        for idx, link_name in enumerate(LEFT_CONTACT_LINKS):
-            setattr(
-                self.scene,
-                LEFT_FORCE_SENSOR_NAMES[idx],
-                ContactSensorCfg(
-                    prim_path=f"{{ENV_REGEX_NS}}/Robot/tesollo_left_{link_name}",
-                    filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
-                    history_length=3,
-                    track_air_time=False,
-                ),
-            )
 
         # Action order: left_arm/hand/thumb/pinky, right_arm/hand/thumb/pinky
         # (identical to v1 - synergy for fingers 2-4)

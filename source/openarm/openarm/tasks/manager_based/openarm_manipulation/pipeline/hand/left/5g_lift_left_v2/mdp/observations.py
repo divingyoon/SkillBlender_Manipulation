@@ -35,57 +35,59 @@ __all__ = [
 
 def _contact_force_magnitudes(
     env: ManagerBasedRLEnv,
-    sensor_names: list[str],
+    sensor_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    """Collect contact force magnitudes for multiple sensors.
+    """Collect contact force magnitudes from one multi-body sensor.
 
     Returns:
-        Force magnitudes (num_envs, num_sensors)
+        Force magnitudes (num_envs, num_bodies)
     """
-    mags = []
-    for sensor_name in sensor_names:
-        contact_sensor: ContactSensor = env.scene[sensor_name]
-        contact_forces = contact_sensor.data.net_forces_w
-        force_magnitudes = torch.norm(contact_forces, dim=-1)
-        if force_magnitudes.dim() == 2:
-            force_magnitudes = force_magnitudes.max(dim=-1)[0]
-        mags.append(force_magnitudes)
-    return torch.stack(mags, dim=-1)
+    contact_sensor: ContactSensor = env.scene[sensor_cfg.name]
+    contact_forces = contact_sensor.data.net_forces_w
+    force_magnitudes = torch.norm(contact_forces, dim=-1)
+
+    if force_magnitudes.dim() == 1:
+        force_magnitudes = force_magnitudes.unsqueeze(-1)
+
+    if sensor_cfg.body_ids is not None:
+        force_magnitudes = force_magnitudes[:, sensor_cfg.body_ids]
+
+    return force_magnitudes
 
 
 def contact_flags_multi(
     env: ManagerBasedRLEnv,
-    sensor_names: list[str],
+    sensor_cfg: SceneEntityCfg,
     threshold: float = 0.1,
 ) -> torch.Tensor:
-    """Get binary contact flags for multiple single-body sensors.
+    """Get binary contact flags for a multi-body contact sensor.
 
     Args:
         env: Environment instance
-        sensor_names: List of contact sensor names
+        sensor_cfg: Contact sensor entity config
         threshold: Force threshold for contact detection (N)
 
     Returns:
-        Binary contact flags (num_envs, num_sensors)
+        Binary contact flags (num_envs, num_bodies)
     """
-    force_magnitudes = _contact_force_magnitudes(env, sensor_names)
+    force_magnitudes = _contact_force_magnitudes(env, sensor_cfg)
     return (force_magnitudes > threshold).float()
 
 
 def normal_force_magnitude_multi(
     env: ManagerBasedRLEnv,
-    sensor_names: list[str],
+    sensor_cfg: SceneEntityCfg,
 ) -> torch.Tensor:
-    """Get force magnitudes for multiple single-body sensors.
+    """Get force magnitudes for a multi-body contact sensor.
 
     Args:
         env: Environment instance
-        sensor_names: List of contact sensor names
+        sensor_cfg: Contact sensor entity config
 
     Returns:
-        Force magnitudes (num_envs, num_sensors)
+        Force magnitudes (num_envs, num_bodies)
     """
-    return _contact_force_magnitudes(env, sensor_names)
+    return _contact_force_magnitudes(env, sensor_cfg)
 
 
 def slip_velocity(

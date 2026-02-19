@@ -139,6 +139,51 @@ def _left_finger_contact_flags(
     return _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
 
 
+def _contact_debug_strings(
+    env: ManagerBasedRLEnv,
+    sensor_cfg: SceneEntityCfg | None,
+    contact_threshold: float = 0.02,
+) -> tuple[str, str]:
+    """Return concise contact debug strings for env0.
+
+    Returns:
+        touched_fingers: e.g. "thumb,pinky" or "-"
+        touched_links: e.g. "tesollo_left_finger_1_sensor_link:0.23N, ..."
+    """
+    if sensor_cfg is None:
+        return "-", "sensor=off"
+
+    force_magnitudes, sensor_body_names = _sensor_force_magnitudes_filtered(env, sensor_cfg)
+    if force_magnitudes.numel() == 0 or force_magnitudes.shape[0] == 0:
+        return "-", "no-force-data"
+
+    finger_flags = _finger_contact_flags_from_sensor(force_magnitudes, contact_threshold, sensor_body_names)
+    finger_names = ["thumb", "index", "middle", "ring", "pinky"]
+    touched_fingers = [name for name, flag in zip(finger_names, finger_flags[0].tolist()) if flag]
+    touched_fingers_str = ",".join(touched_fingers) if touched_fingers else "-"
+
+    force0 = force_magnitudes[0]
+    active_mask = force0 > contact_threshold
+    active_idx = torch.nonzero(active_mask, as_tuple=False).squeeze(-1)
+    if active_idx.numel() == 0:
+        return touched_fingers_str, "-"
+
+    # Show up to top-5 strongest contacted links for readability.
+    active_forces = force0[active_idx]
+    order = torch.argsort(active_forces, descending=True)[:5]
+    top_idx = active_idx[order]
+
+    parts: list[str] = []
+    for idx in top_idx.tolist():
+        if sensor_body_names is not None and idx < len(sensor_body_names):
+            raw_name = str(sensor_body_names[idx])
+            link_name = raw_name.split("/")[-1]
+        else:
+            link_name = f"link[{idx}]"
+        parts.append(f"{link_name}:{force0[idx].item():.2f}N")
+    return touched_fingers_str, ", ".join(parts)
+
+
 def object_position_in_robot_root_frame(
     env: ManagerBasedRLEnv,
     robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
@@ -603,13 +648,16 @@ def _debug_triggers(
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
     target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
     ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
+    touched_fingers, touched_links = _contact_debug_strings(env, sensor_cfg, contact_threshold=0.02)
 
     print(f"[Step {step_count}] λ={lambda_t[0].item():.0f} | "
           f"Contacts={num_contacts[0].item():.0f}/4 | "
           f"μ={mu_t[0].item():.0f} | "
           f"CupZ={cup_z:.3f}m | "
           f"ν={nu_t[0].item():.0f} | "
-          f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f})")
+          f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f}) | "
+          f"touch_fingers={touched_fingers}")
+    print(f"[Step {step_count}] touch_links(env0): {touched_links}")
 
 
 def object_ee_distance(

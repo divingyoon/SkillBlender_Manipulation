@@ -195,7 +195,7 @@ class RewardsCfg:
     pinky_grasp = RewTerm(
         func=mdp.pinky_grasp_reward,
         params={"std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=5.0,
+        weight=12.0,
     )
 
     # 시너지(2,3,4번) 그립 리워드 - 단순 그리퍼: grip_strength → +1 (완전 닫기)
@@ -211,7 +211,7 @@ class RewardsCfg:
         params={
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
-            "target_radius": 0.04,
+            "target_radius": 0.045,
             "radial_std": 0.015,
             "opposition_weight": 0.3,
         },
@@ -301,7 +301,7 @@ class RewardsCfg:
     # 시너지 손가락(2번 tip 기준) Z를 컵 상단 높이로 유도
     synergy_tip_z = RewTerm(
         func=mdp.synergy_tip_z_reward,
-        params={"std": 0.06, "cup_height": 0.08, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.06, "cup_height": 0.09, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=8.0,
     )
 
@@ -312,11 +312,11 @@ class RewardsCfg:
         weight=10.0,
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-5e-3)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-1e-3,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 

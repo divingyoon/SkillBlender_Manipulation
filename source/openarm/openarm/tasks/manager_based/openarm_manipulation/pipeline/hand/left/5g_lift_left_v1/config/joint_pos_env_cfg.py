@@ -57,8 +57,8 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=False,
-                    solver_position_iteration_count=8,
-                    solver_velocity_iteration_count=0,
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
@@ -114,7 +114,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "openarm_gripper": ImplicitActuatorCfg(
                     joint_names_expr=["lj_dg_.*", "rj_dg_.*"],
                     stiffness=2e3,
-                    damping=1e2,
+                    damping=2e2,
                 ),
             },
             soft_joint_pos_limit_factor=1.0,

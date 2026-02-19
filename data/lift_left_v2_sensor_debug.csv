@@ -96,3 +96,9 @@ step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,to
 150,0,0,0,0,-0.021000,0.254438,0.000000,0.000000,-,-
 200,0,0,0,0,-0.021000,0.241408,0.000000,0.000000,-,-
 250,0,0,0,0,-0.021000,0.153175,0.000000,0.000000,-,-
+step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links
+50,0,0,0,0,-0.020998,0.281768,0.000000,0.000000,-,-
+100,0,0,0,0,-0.020998,0.263607,0.000000,0.000000,-,-
+150,0,0,0,0,-0.021000,0.182722,0.000000,0.000000,-,-
+step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links
+50,0,0,0,0,-0.021000,0.280518,0.000000,0.000000,-,-

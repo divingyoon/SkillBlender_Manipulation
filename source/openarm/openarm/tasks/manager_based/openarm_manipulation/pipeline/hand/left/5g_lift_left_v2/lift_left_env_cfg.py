@@ -43,6 +43,7 @@ from isaaclab.utils.noise import AdditiveUniformNoiseCfg as Unoise
 from isaaclab.markers.config import FRAME_MARKER_CFG
 
 from . import mdp
+from .config.joint_pos_env_cfg import LEFT_CONTACT_LINKS, LEFT_FORCE_SENSOR_NAMES
 
 
 @configclass
@@ -130,6 +131,26 @@ class ObservationsCfg:
         left_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_thumb_action"})
         left_pinky_action = ObsTerm(func=mdp.last_action, params={"action_name": "left_pinky_action"})
 
+        left_contact_flags = ObsTerm(
+            func=mdp.contact_flags_multi,
+            params={"sensor_names": LEFT_FORCE_SENSOR_NAMES},
+        )
+        left_normal_forces = ObsTerm(
+            func=mdp.normal_force_magnitude_multi,
+            params={"sensor_names": LEFT_FORCE_SENSOR_NAMES},
+            noise=Unoise(n_min=-0.1, n_max=0.1),
+        )
+        left_slip_velocity = ObsTerm(
+            func=mdp.slip_velocity,
+            params={
+                "robot_cfg": SceneEntityCfg("robot", body_names=[
+                    f"tesollo_left_{ln}" for ln in LEFT_CONTACT_LINKS
+                ]),
+                "object_cfg": SceneEntityCfg("cup"),
+            },
+            noise=Unoise(n_min=-0.01, n_max=0.01),
+        )
+
         def __post_init__(self):
             self.enable_corruption = True
             self.concatenate_terms = True
@@ -197,31 +218,47 @@ class RewardsCfg:
         weight=4.0,
     )
 
-    # 엄지(1번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
-    thumb_grasp = RewTerm(
-        func=mdp.thumb_grasp_reward,
-        params={
-            "std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
-        },
+    # Force-based grasp rewards (replacing geometry-based thumb_grasp/pinky_grasp/synergy_grip)
+    contact_persistence = RewTerm(
+        func=mdp.contact_persistence_reward_multi,
         weight=15.0,
-    )
-
-    # 새끼(5번) 그립 리워드 - 작업 공간: tip → cup surface 접근
-    pinky_grasp = RewTerm(
-        func=mdp.pinky_grasp_reward,
         params={
-            "std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
-            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
+            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "min_contacts": 4,
+            "contact_threshold": 0.05,
+            "use_filtered": False,
         },
-        weight=12.0,
     )
-
-    # 시너지(2,3,4번) 그립 리워드 - 단순 그리퍼: grip_strength → +1 (완전 닫기)
-    synergy_grip = RewTerm(
-        func=mdp.synergy_grip_reward,
-        params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=20.0,
+    slip_penalty = RewTerm(
+        func=mdp.slip_magnitude_penalty,
+        weight=-5.0,
+        params={
+            "robot_cfg": SceneEntityCfg("robot", body_names=[
+                f"tesollo_left_{ln}" for ln in LEFT_CONTACT_LINKS
+            ]),
+            "object_cfg": SceneEntityCfg("cup"),
+            "max_slip": 0.1,
+            "contact_sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "contact_threshold": 0.05,
+        },
+    )
+    force_spike = RewTerm(
+        func=mdp.force_spike_penalty_multi,
+        weight=-3.0,
+        params={
+            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "spike_threshold": 10.0,
+            "contact_threshold": 0.05,
+        },
+    )
+    overgrip = RewTerm(
+        func=mdp.overgrip_penalty_multi,
+        weight=-2.0,
+        params={
+            "sensor_names": LEFT_FORCE_SENSOR_NAMES,
+            "max_force": 15.0,
+            "contact_threshold": 0.05,
+        },
     )
 
     finger_tip_to_cup = RewTerm(
@@ -416,7 +453,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
 
         self.sim.physx.bounce_threshold_velocity = 0.01
         # 2048 envs
-        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
+        self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 128 * 1024 * 1024
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
         self.sim.physx.gpu_max_rigid_patch_count = 2**23
         self.sim.physx.gpu_max_rigid_contact_count = 2**23

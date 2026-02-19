@@ -26,6 +26,16 @@ from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
 
+# Per-link contact sensor links (10 fingertip/distal links)
+LEFT_CONTACT_LINKS = [
+    "ll_dg_1_3", "ll_dg_1_4",  # thumb
+    "ll_dg_2_3", "ll_dg_2_4",  # index
+    "ll_dg_3_3", "ll_dg_3_4",  # middle
+    "ll_dg_4_3", "ll_dg_4_4",  # ring
+    "ll_dg_5_3", "ll_dg_5_4",  # pinky
+]
+LEFT_FORCE_SENSOR_NAMES = [f"left_force_sensor_{i}" for i in range(1, 11)]
+
 # Hand joint names
 # Thumb (finger 1): 4 joints
 LEFT_THUMB_JOINTS = [f"lj_dg_1_{joint}" for joint in range(1, 5)]
@@ -170,6 +180,19 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
             history_length=1,
             track_air_time=False,
         )
+
+        # Per-link force sensors for force-based grasp rewards (10 links)
+        for idx, link_name in enumerate(LEFT_CONTACT_LINKS):
+            setattr(
+                self.scene,
+                LEFT_FORCE_SENSOR_NAMES[idx],
+                ContactSensorCfg(
+                    prim_path=f"{{ENV_REGEX_NS}}/Robot/tesollo_left_{link_name}",
+                    filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
+                    history_length=3,
+                    track_air_time=False,
+                ),
+            )
 
         # Action order: left_arm/hand/thumb/pinky, right_arm/hand/thumb/pinky
         # (identical to v1 - synergy for fingers 2-4)

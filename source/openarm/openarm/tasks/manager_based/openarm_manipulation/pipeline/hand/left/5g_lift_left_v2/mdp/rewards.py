@@ -2161,3 +2161,199 @@ def synergy_tip_z_reward(
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
     return lambda_trigger * z_reward * xy_proximity
+
+
+# =============================================================================
+# Force-based grasp rewards (multi-sensor)
+# =============================================================================
+
+def _force_magnitudes_multi(
+    env: ManagerBasedRLEnv,
+    sensor_names: list[str],
+) -> torch.Tensor:
+    """Collect contact force magnitudes for multiple single-body sensors.
+
+    Returns:
+        Force magnitudes (num_envs, num_sensors)
+    """
+    from isaaclab.sensors import ContactSensor
+
+    mags = []
+    for sensor_name in sensor_names:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        contact_forces = contact_sensor.data.net_forces_w
+        force_magnitudes = torch.norm(contact_forces, dim=-1)
+        if force_magnitudes.dim() == 2:
+            force_magnitudes = force_magnitudes.max(dim=-1)[0]
+        mags.append(force_magnitudes)
+    return torch.stack(mags, dim=-1)
+
+
+def _force_magnitudes_multi_filtered(
+    env: ManagerBasedRLEnv,
+    sensor_names: list[str],
+) -> torch.Tensor:
+    """Collect filtered contact force magnitudes (sensor-body vs filtered prims only).
+
+    If a sensor has no filtered force matrix, returns zeros for that sensor.
+    """
+    from isaaclab.sensors import ContactSensor
+
+    mags = []
+    for sensor_name in sensor_names:
+        contact_sensor: ContactSensor = env.scene[sensor_name]
+        force_matrix_w = getattr(contact_sensor.data, "force_matrix_w", None)
+        if force_matrix_w is None:
+            mags.append(torch.zeros(env.num_envs, device=env.device))
+            continue
+        force_magnitudes = torch.norm(force_matrix_w, dim=-1).max(dim=-1)[0]
+        if force_magnitudes.dim() == 2:
+            force_magnitudes = force_magnitudes.max(dim=-1)[0]
+        mags.append(force_magnitudes)
+    return torch.stack(mags, dim=-1)
+
+
+def contact_persistence_reward_multi(
+    env: ManagerBasedRLEnv,
+    sensor_names: list[str],
+    min_contacts: int = 3,
+    contact_threshold: float = 0.1,
+    use_filtered: bool = False,
+) -> torch.Tensor:
+    """Reward for maintaining minimum number of contacts (multi-sensor).
+
+    Args:
+        env: Environment instance
+        sensor_names: List of contact sensor names
+        min_contacts: Minimum contacts for full reward
+        contact_threshold: Force threshold for contact detection
+
+    Returns:
+        Reward in [0, 1] (num_envs,)
+    """
+    if use_filtered:
+        force_magnitudes = _force_magnitudes_multi_filtered(env, sensor_names)
+    else:
+        force_magnitudes = _force_magnitudes_multi(env, sensor_names)
+    num_contacts = (force_magnitudes > contact_threshold).sum(dim=-1).float()
+    return torch.clamp(num_contacts / min_contacts, 0.0, 1.0)
+
+
+def slip_magnitude_penalty(
+    env: ManagerBasedRLEnv,
+    robot_cfg: SceneEntityCfg,
+    object_cfg: SceneEntityCfg = None,
+    max_slip: float = 0.05,
+    contact_sensor_names: list[str] | None = None,
+    contact_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalty for tangential slip at contact points.
+
+    Args:
+        env: Environment instance
+        robot_cfg: Robot config with body_names for contact links
+        object_cfg: Optional object config for relative velocity
+        max_slip: Maximum acceptable slip velocity (m/s)
+        contact_sensor_names: Sensor names to gate penalty by contact
+        contact_threshold: Force threshold for contact detection
+
+    Returns:
+        Normalized slip penalty (num_envs,)
+    """
+    robot = env.scene[robot_cfg.name]
+
+    # Get contact link velocities
+    link_vel = robot.data.body_lin_vel_w
+
+    if robot_cfg.body_ids is not None:
+        link_vel = link_vel[:, robot_cfg.body_ids, :]
+
+    if object_cfg is not None:
+        obj = env.scene[object_cfg.name]
+        obj_vel = obj.data.root_lin_vel_w.unsqueeze(1)
+        relative_vel = link_vel - obj_vel
+    else:
+        relative_vel = link_vel
+
+    # Compute slip magnitude per link
+    slip_mag = torch.norm(relative_vel, dim=-1)
+
+    contact_count = None
+    if contact_sensor_names is not None:
+        contact_mags = _force_magnitudes_multi(env, contact_sensor_names)
+        contact_mask = contact_mags > contact_threshold
+        if slip_mag.shape[-1] != contact_mask.shape[-1]:
+            min_count = min(slip_mag.shape[-1], contact_mask.shape[-1])
+            slip_mag = slip_mag[:, :min_count]
+            contact_mask = contact_mask[:, :min_count]
+        contact_count = contact_mask.sum(dim=-1)
+        slip_mag = slip_mag * contact_mask
+        avg_slip = slip_mag.sum(dim=-1) / torch.clamp(contact_count, min=1)
+    else:
+        avg_slip = slip_mag.mean(dim=-1)
+
+    # Smooth normalized penalty to avoid saturation.
+    penalty = 1.0 - torch.exp(-torch.square(avg_slip / max_slip))
+    if contact_count is not None:
+        penalty = penalty * (contact_count > 0).float()
+
+    return penalty
+
+
+def force_spike_penalty_multi(
+    env: ManagerBasedRLEnv,
+    sensor_names: list[str],
+    spike_threshold: float = 10.0,
+    contact_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalty for sudden force spikes across multiple sensors.
+
+    Args:
+        env: Environment instance
+        sensor_names: List of contact sensor names
+        spike_threshold: Force rate threshold (N/s)
+        contact_threshold: Force threshold for contact detection
+
+    Returns:
+        Spike penalty (num_envs,)
+    """
+    force_magnitudes = _force_magnitudes_multi(env, sensor_names)
+    contact_count = (force_magnitudes > contact_threshold).sum(dim=-1)
+    buffer_name = f"_prev_forces_{'_'.join(sensor_names)}"
+    if hasattr(env, buffer_name):
+        prev_forces = getattr(env, buffer_name)
+        dt = env.step_dt
+        force_rate = torch.abs(force_magnitudes - prev_forces) / dt
+        max_rate = force_rate.max(dim=-1)[0]
+        penalty = torch.clamp((max_rate - spike_threshold) / spike_threshold, 0.0, 1.0)
+    else:
+        penalty = torch.zeros(env.num_envs, device=env.device)
+    setattr(env, buffer_name, force_magnitudes.clone())
+    penalty = penalty * (contact_count > 0).float()
+    return penalty
+
+
+def overgrip_penalty_multi(
+    env: ManagerBasedRLEnv,
+    sensor_names: list[str],
+    max_force: float = 15.0,
+    contact_threshold: float = 0.1,
+) -> torch.Tensor:
+    """Penalty for excessive grip force across multiple sensors.
+
+    Args:
+        env: Environment instance
+        sensor_names: List of contact sensor names
+        max_force: Maximum acceptable total force (N)
+        contact_threshold: Force threshold for contact detection
+
+    Returns:
+        Overgrip penalty (num_envs,)
+    """
+    force_magnitudes = _force_magnitudes_multi(env, sensor_names)
+    contact_count = (force_magnitudes > contact_threshold).sum(dim=-1)
+    total_force = force_magnitudes.sum(dim=-1)
+    excess = torch.clamp(total_force - max_force, 0.0, max_force)
+    penalty = excess / max_force
+    penalty = penalty * (contact_count > 0).float()
+    return penalty

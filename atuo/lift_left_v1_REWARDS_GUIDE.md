@@ -1,140 +1,301 @@
-# 5G Lift Left v1 Rewards Guide (Latest)
+# 5G Lift Left v1 - 보상함수 상세 가이드 (LLM/Orchestrator용)
 
-업데이트 기준: 2026-02-19
+이 문서는 `orchestrator.py` + LLM(ollama)이 **보상 weight/params override를 안전하게 제안**할 수 있도록,
+- 함수별 계산식
+- 활성화 게이트(연결 흐름)
+- weight 증감 시 기대 효과/부작용
+을 최신 코드 기준으로 정리한 문서입니다.
 
 기준 코드:
 - `SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/left/5g_lift_left_v1/lift_left_env_cfg.py`
 - `SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/left/5g_lift_left_v1/mdp/rewards.py`
-- `SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/left/5g_lift_left_v1/mdp/actions.py`
-- `SkillBlender_Manipulation/source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand/left/5g_lift_left_v1/mdp/terminations.py`
 
-## 1) Phase Trigger (DexPour style)
+---
 
-- `λ` (approach): `λ = 1[ ||p_ee - p_target_static|| < 0.05 ]`
-- `μ` (grasp): `μ = λ * 1[ n_contact >= 3 ]`
-- `ν` (lift): `ν = μ * 1[ z_cup >= z_init + 0.04 ]`
+## 1) 전체 연결 흐름
 
-여기서:
-- `n_contact`: 기하학 기반 fingertip contact 개수
-- `p_target_static`: `grasp2g_target_offset`를 적용한 정적 grasp target
+### 1-1. 하드 트리거 (DexPour)
+- `λ (approach)`
+  - `λ = 1[ ||p_ee - p_target_static|| < 0.05 ]`
+- `μ (grasp)`
+  - `μ = λ * 1[ n_contact >= 3 ]`
+  - `n_contact`: fingertip geometry contact count
+- `ν (lift)`
+  - `ν = μ * 1[ z_cup >= z_init + 0.04 ]`
 
-## 2) Grasp Target / Reach Params
+### 1-2. 보상 활성 흐름(요약)
+1. Reach 유도: `reaching_object`, `reaching_object_fine`, `end_effector_orientation`
+2. Reach 이후 hand closing: `thumb_grasp`, `pinky_grasp`, `synergy_grip`, `thumb_tip_z`, `synergy_tip_z`, `ee_descent`
+3. Lift: `lifting_object`, `cup_lift_progress`
+4. Goal tracking: `object_goal_tracking`, `object_goal_tracking_fine_grained`
+5. 전구간 패널티/정규화: `object_displacement`, `finger_normal_range`, `action_rate`, `joint_vel`
+
+중요:
+- 현재 코드에서 `reaching_object`, `reaching_object_fine`, `end_effector_orientation`은 하드 `(1-λ)` 게이트가 없음(항상 계산).
+- `ee_descent`는 `λ*(1-μ)`로 동작.
+
+---
+
+## 2) 핵심 파라미터
 
 - `grasp2g_target_offset = (0.01, -0.06, 0.08)`
-- 동적 접근 Z 파라미터:
+- dynamic reach z:
   - `reach_dynamic_z_high=0.25`
   - `reach_dynamic_xy_hi=0.10`
   - `reach_dynamic_xy_lo=0.03`
   - `reach_dynamic_xy_gate=0.03`
   - `reach_dynamic_z_descent_rate=0.001`
-- 접근 중 컵 밀림 억제:
+- reach 중 cup 밀림 억제:
   - `reach_displacement_free_threshold=0.015`
   - `reach_displacement_suppress_scale=0.03`
+- displacement shaping:
+  - `displacement_penalty_scale=0.02`
+  - `displacement_penalty_power=2.0`
+  - `displacement_penalty_gate_mix=0.5`
 
-## 3) Reward Terms (Current)
+---
 
-| Term | Function | Weight | Key Params |
-|---|---|---:|---|
-| reaching_object | `object_ee_distance` | 8.0 | `std=0.15` |
-| reaching_object_fine | `object_ee_distance_fine` | 10.0 | `std=0.065` |
-| end_effector_orientation | `eef_z_perpendicular_object_z` | 4.0 | `std=0.3` |
-| thumb_grasp | `thumb_grasp_reward` | 15.0 | `std=0.05` |
-| pinky_grasp | `pinky_grasp_reward` | 12.0 | `std=0.05` |
-| synergy_grip | `synergy_grip_reward` | 20.0 | `surface-gated` |
-| finger_tip_to_cup | `finger_wrap_cylinder_reward` | 0.0 | `target_radius=0.045` |
-| finger_wrap_coverage | `finger_wrap_coverage_reward` | 0.0 | - |
-| finger_tip_orientation | `finger_tip_orientation_reward` | 5.0 | `std=0.5` |
-| lifting_object | `object_is_lifted` | 10.0 | `minimal_height=0.04` |
-| cup_lift_progress | `cup_lift_progress_reward` | 20.0 | `std=0.05` |
-| object_goal_tracking | `object_goal_distance` | 20.0 | `std=0.3, minimal_height=0.04` |
-| object_goal_tracking_fine_grained | `object_goal_distance` | 10.0 | `std=0.1, minimal_height=0.04` |
-| object_displacement | `object_displacement_penalty` | -5.0 | `threshold=0.01` |
-| finger_normal_range | `finger_normal_range_penalty` | -2.0 | - |
-| thumb_reaching_pose | `thumb_reaching_pose_reward` | 0.5 | `std=1.0` |
-| pinky_reaching_pose | `pinky_reaching_pose_reward` | 0.5 | `std=1.0` |
-| synergy_reaching_pose | `synergy_reaching_pose_reward` | 0.5 | `std=5.0` |
-| thumb_tip_z | `thumb_tip_z_reward` | 8.0 | `std=0.10` |
-| synergy_tip_z | `synergy_tip_z_reward` | 8.0 | `std=0.06, cup_height=0.09` |
-| ee_descent | `ee_descent_reward` | 10.0 | `std=0.04, target_z_offset=0.04` |
-| action_rate | `action_rate_l2` | -0.0001 | - |
-| joint_vel | `joint_vel_l2` | -0.0001 | left arm+hand |
+## 3) 보상 합산 수식
 
-## 4) 보상 함수 계산식
+- raw term: `r_i`
+- weighted term: `R_i = w_i * r_i`
+- total step reward: `R_total = Σ_i R_i`
 
-공통:
-- `tanh-kernel(d,s) = 1 - tanh(d/s)`
-- 최종 step 보상: `R = Σ_i w_i * r_i`
+`tanh kernel` 표기:
+- `K(d, s) = 1 - tanh(d/s)`
 
-항목별:
-- `reaching_object`
-  - `r = tanh-kernel(||p_target_dyn - p_ee||, std) * exp(-max(d_xy - d_free, 0)/s_disp)`
-- `reaching_object_fine`
-  - `r = tanh-kernel(||p_target_static - p_ee||, std)`
-- `end_effector_orientation`
-  - `r = tanh-kernel(|cos(theta_ee_z,obj_z)|, std)`
-- `thumb_grasp`
-  - `r_surface = tanh-kernel(| ||p_thumb_xy-p_cup_xy|| - r_cup |, std)`
-  - `r_penetration = tanh(max(r_cup-||p_thumb_xy-p_cup_xy||,0)/0.01)`
+---
+
+## 4) 항목별 상세 (수식 + 활성 게이트 + weight 증감)
+
+### 4-1. Reaching Phase
+
+#### `reaching_object` (`object_ee_distance`, weight `8.0`)
+- 수식:
+  - `r = K(||p_target_dyn - p_ee||, 0.15) * exp(-max(d_xy - d_free, 0)/s_disp)`
+- 역할:
+  - 멀리서 EE를 grasp target으로 끌어오는 주 gradient
+- weight 증감:
+  - 증가: 접근 속도↑, 대신 컵 밀기/충돌 행동 증가 가능
+  - 감소: grasp 학습 전환은 빨라질 수 있으나 초기 접근 실패 증가
+
+#### `reaching_object_fine` (`object_ee_distance_fine`, weight `10.0`)
+- 수식:
+  - `r = K(||p_target_static - p_ee||, 0.065)`
+- 역할:
+  - target 근처 정밀 접근
+- weight 증감:
+  - 증가: 최종 접근 정밀도↑, 과하면 손가락 닫기 전환이 늦어짐
+  - 감소: 빠른 전환 가능, 대신 contact 전 EE 오차 커짐
+
+#### `end_effector_orientation` (`eef_z_perpendicular_object_z`, weight `4.0`)
+- 수식:
+  - `cos = dot(z_ee, z_obj)`
+  - `r = K(|cos|, 0.3)`
+- 역할:
+  - EE z축이 cup z축과 수직에 가까운 orientation 유도
+- weight 증감:
+  - 증가: 자세 안정↑, reach 속도↓ 가능
+  - 감소: 빠른 접근 대신 grasp 자세 불량 가능
+
+#### `thumb_reaching_pose` (weight `0.5`)
+- 게이트: `(1-λ)`
+- 수식:
+  - `e = Σ(q_thumb - q_open)^2`
+  - `r = (1-λ) * K(e, 1.0)`
+- 증감:
+  - 증가: 엄지 premature closing 방지↑
+  - 감소: 조기 닫힘 가능
+
+#### `pinky_reaching_pose` (weight `0.5`)
+- 게이트: `(1-λ)`
+- 수식:
+  - `e = Σ(q_pinky - q_open)^2`
+  - `r = (1-λ) * K(e, 1.0)`
+- 증감:
+  - 증가: pinky 조기 닫힘 억제
+  - 감소: grasp 전 손가락 형상 안정성 저하 가능
+
+#### `synergy_reaching_pose` (weight `0.5`)
+- 게이트: `(1-λ)`
+- 수식:
+  - `e = Σ(q_synergy - 0)^2`
+  - `r = (1-λ) * K(e, 5.0)`
+- 증감:
+  - 증가: reach 중 synergy 개방 유지
+  - 감소: reach 중 synergy 조기 수축 가능
+
+### 4-2. Grasp Phase
+
+#### `thumb_grasp` (weight `15.0`)
+- 게이트: `λ`
+- 수식:
+  - `rad = ||p_thumb_xy - p_cup_xy||`
+  - `r_surface = K(|rad - r_cup|, 0.05)`
+  - `r_pen = tanh(max(r_cup-rad,0)/0.01)`
   - `z_gate = 1 - tanh(max(z_thumb-z_f2,0)/0.03)`
-  - `r = λ * (r_surface - r_penetration) * z_gate`
-- `pinky_grasp`
-  - `r = λ * (tanh-kernel(| ||p_pinky_xy-p_cup_xy|| - r_cup |, std) - tanh(max(r_cup-||...||,0)/0.01))`
-- `synergy_grip`
-  - `close = clamp((a_synergy+1)/2, 0, 1)`
-  - `g_surface = tanh-kernel(mean_k | ||p_f{k}_xy-p_cup_xy|| - r_cup |, proximity_std), k∈{2,3,4}`
+  - `r = λ * (r_surface - r_pen) * z_gate`
+- 증감:
+  - 증가: 엄지 접촉 형성↑, 과하면 엄지 과집중
+  - 감소: 엄지 참여 부족으로 3점 접촉 실패 가능
+
+#### `pinky_grasp` (weight `12.0`)
+- 게이트: `λ`
+- 수식:
+  - `rad = ||p_pinky_xy - p_cup_xy||`
+  - `r = λ * (K(|rad-r_cup|, 0.05) - tanh(max(r_cup-rad,0)/0.01))`
+- 증감:
+  - 증가: pinky 지지력↑
+  - 감소: 대칭 파지 약화
+
+#### `synergy_grip` (weight `20.0`)
+- 게이트: `λ`
+- 수식:
+  - `close = clamp((a_synergy+1)/2, 0,1)`
+  - `g_surface = K(mean_k | ||p_fk_xy-p_cup_xy|| - r_cup |, 0.01), k={2,3,4}`
   - `r = λ * g_surface * close`
-- `finger_tip_to_cup` (현재 weight 0)
-  - `r = λ * mean_j tanh-kernel(||p_tip_j_xy-p_cup_xy||, std)`
-- `finger_wrap_coverage` (현재 weight 0)
-  - `r = λ * mean_{i<j} ((1 - cos(theta_ij))/2)`
-- `finger_tip_orientation`
-  - `r = λ * mean_j clamp(dot(n_tip_j_xy, dir_tip_to_cup_j_xy), 0, 1)`
-- `lifting_object`
-  - `r = μ * 1[z_cup > z_init + h_min]`
-- `cup_lift_progress`
-  - `r = μ * tanh(max(z_cup-z_init, 0)/std)`
-- `object_goal_tracking`, `object_goal_tracking_fine_grained`
-  - `r = ν * tanh-kernel(||p_obj - p_goal||, std)`
-- `object_displacement`
-  - `d = ||p_cup_xy - p_cup_xy_init||`
-  - `p = (max(d-th,0)/scale)^power`
-  - `p = p * ((1-g_mix) + g_mix*g_grasp_progress) * (1-μ)`
-  - `r = p` (음수 weight로 패널티 적용)
-- `finger_normal_range`
-  - `r = Σ_j [max(lo_j-q_j,0) + max(q_j-hi_j,0)]`
-- `thumb_reaching_pose`
-  - `e = Σ_j (q_j-q*_j)^2, j∈thumb`
-  - `r = (1-λ) * tanh-kernel(e, std)`
-- `pinky_reaching_pose`
-  - `e = Σ_j (q_j-q*_j)^2, j∈pinky`
-  - `r = (1-λ) * tanh-kernel(e, std)`
-- `synergy_reaching_pose`
-  - `e = Σ_j (q_j-0)^2, j∈{f2,f3,f4 joints}`
-  - `r = (1-λ) * tanh-kernel(e, std)`
-- `thumb_tip_z`
-  - `z_term = tanh-kernel(max(z_thumb-z_f2,0), std)`
-  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/xy_std)`
+- 증감:
+  - 증가: closing action 적극화, 과하면 허공 closing/진동 위험(표면게이트가 일부 완화)
+  - 감소: grasp 형성 느림, lift 진입 지연
+
+#### `thumb_tip_z` (weight `8.0`)
+- 게이트: `λ`
+- 수식:
+  - `z_term = K(max(z_thumb-z_f2,0), 0.10)`
+  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/0.06)`
   - `r = λ * z_term * xy_gate`
-- `synergy_tip_z`
-  - `z_term = tanh-kernel(|z_f2_tip - (z_cup+cup_height)|, std)`
-  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/xy_std)`
+- 증감:
+  - 증가: 엄지 높이 정렬 강화
+  - 감소: 엄지 위로 뜨는 failure 증가 가능
+
+#### `synergy_tip_z` (weight `8.0`)
+- 게이트: `λ`
+- 수식:
+  - `z_term = K(|z_f2_tip-(z_cup+0.09)|, 0.06)`
+  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/0.06)`
   - `r = λ * z_term * xy_gate`
-- `ee_descent`
-  - `z_term = tanh-kernel(|z_ee-(z_cup+z_offset)|, std)`
-  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/xy_std)`
-  - `r = λ * (1-μ) * z_term * xy_gate`
-- `action_rate`
-  - `r = ||a_t - a_{t-1}||^2`
-- `joint_vel`
-  - `r = ||qdot_left_arm_hand||^2`
+- 증감:
+  - 증가: synergy finger 높이 정렬 강화
+  - 감소: cup 상단 랩핑 품질 저하 가능
 
-## 5) Recent Behavior-Critical Points
+#### `ee_descent` (weight `10.0`)
+- 게이트: `λ*(1-μ)`
+- 수식:
+  - `z_term = K(|z_ee-(z_cup+0.04)|, 0.04)`
+  - `xy_gate = exp(-||p_ee_xy-p_cup_xy||/0.06)`
+  - `r = λ*(1-μ)*z_term*xy_gate`
+- 증감:
+  - 증가: grasp 직전 z 접근 강화
+  - 과증가: 과도한 하강으로 cup disturbance 가능
 
-- `synergy_grip_reward = λ * surface_proximity_gate * close_reward`
-- 시너지 close pose에서 spread 조인트(`lj_dg_2_1`, `lj_dg_3_1`, `lj_dg_4_1`)는 `0.0`
-- reaching 계열(`reaching_object`, `reaching_object_fine`, `end_effector_orientation`)은 현재 하드 `(1-λ)` 게이트 없이 동작
+### 4-3. Lift / Goal Phase
 
-## 6) Termination
+#### `lifting_object` (weight `10.0`)
+- 게이트: `μ`
+- 수식:
+  - `r = μ * 1[z_cup > z_init + 0.04]`
+- 증감:
+  - 증가: binary success 신호 강조
+  - 감소: lift 성공 강화 약화
+
+#### `cup_lift_progress` (weight `20.0`)
+- 게이트: `μ`
+- 수식:
+  - `r = μ * tanh(max(z_cup-z_init,0)/0.05)`
+- 증감:
+  - 증가: 들어올리는 연속 gradient 강화
+  - 감소: lift 시작 지연
+
+#### `object_goal_tracking` (weight `20.0`)
+- 게이트: `ν`
+- 수식:
+  - `r = ν * K(||p_obj-p_goal||, 0.3)`
+- 증감:
+  - 증가: lift 후 목표 이동 강조
+  - 감소: lift는 되는데 목표 추적 약화
+
+#### `object_goal_tracking_fine_grained` (weight `10.0`)
+- 게이트: `ν`
+- 수식:
+  - `r = ν * K(||p_obj-p_goal||, 0.1)`
+- 증감:
+  - 증가: goal 근처 미세 정렬 강화
+  - 감소: 최종 정밀도 저하 가능
+
+### 4-4. Penalty / Regularization
+
+#### `object_displacement` (`weight=-5.0`)
+- raw 수식:
+  - `d = ||p_cup_xy-p_init_xy||`
+  - `p = (max(d-0.01,0)/0.02)^2`
+  - `p = p * ((1-0.5) + 0.5*g_grasp_progress) * (1-μ)`
+  - `r_raw = p` (양수), 최종기여 `R = -5.0 * r_raw`
+- weight(절댓값) 증감:
+  - 절댓값 증가: cup 밀기 강하게 억제, 과하면 탐색 위축
+  - 절댓값 감소: reach는 빨라질 수 있으나 cup pushing 증가
+
+#### `finger_normal_range` (`weight=-2.0`)
+- raw 수식:
+  - `v = Σ_j [max(lo_j-q_j,0)+max(q_j-hi_j,0)]`
+  - `R = -2.0 * v`
+- 증감:
+  - 절댓값 증가: 관절 안정↑, 과하면 grasp 자유도 제약
+  - 절댓값 감소: 비정상 관절 자세 증가 가능
+
+#### `action_rate` (`weight=-1e-4`)
+- `R = -1e-4 * ||a_t-a_{t-1}||^2`
+
+#### `joint_vel` (`weight=-1e-4`)
+- `R = -1e-4 * ||qdot_left||^2`
+
+---
+
+## 5) 비활성(현재 weight=0) 항목
+
+- `finger_tip_to_cup` (`finger_wrap_cylinder_reward`)
+- `finger_wrap_coverage` (`finger_wrap_coverage_reward`)
+
+필요 시 재활성화:
+- `env.rewards.finger_tip_to_cup.weight`
+- `env.rewards.finger_wrap_coverage.weight`
+
+---
+
+## 6) Hydra Override 가이드 (orchestrator 직접 사용)
+
+### 6-1. weight 조정 키
+- 형식: `env.rewards.<term>.weight=<value>`
+- 예시:
+  - `env.rewards.synergy_grip.weight=24.0`
+  - `env.rewards.object_displacement.weight=-6.0`
+
+### 6-2. params 조정 키
+- 형식: `env.rewards.<term>.params.<param>=<value>`
+- 예시:
+  - `env.rewards.ee_descent.params.target_z_offset=0.035`
+  - `env.rewards.thumb_grasp.params.std=0.04`
+
+### 6-3. 권장 조정 스텝
+- 큰 항목(10~20대 weight): 한 번에 `±10~20%`
+- 중간 항목(1~10): 한 번에 `±10~30%`
+- 패널티 항목: 절댓값 기준 `±10~20%`
+
+---
+
+## 7) Termination
 
 - `cup_dropping`: `z_cup < -0.05`
 - `cup_tipping`: `dot(z_cup_axis, z_world) < cos(90°)`
+
+---
+
+## 8) 빠른 진단 규칙 (LLM용)
+
+- `synergy_grip` 낮고 `reaching_*` 높음:
+  - `synergy_grip.weight` 소폭↑ 또는 `thumb/pinky_grasp` 소폭↑
+- `object_displacement` 절댓값 급증:
+  - `object_displacement` 절댓값↑, `reaching_object.weight` 소폭↓
+- `lifting_object` 거의 0:
+  - `cup_lift_progress.weight`↑, `ee_descent.weight` 미세↑
+- lift는 되는데 goal tracking 저조:
+  - `object_goal_tracking(_fine)` weight↑

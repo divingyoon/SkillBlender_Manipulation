@@ -40,3 +40,26 @@ def cup_tipped(
     dot = torch.sum(z_axis_world * world_up, dim=-1)
     cos_thresh = math.cos(math.radians(max_tilt_deg))
     return dot < cos_thresh
+
+
+def cup_xy_displacement_exceeded(
+    env: ManagerBasedRLEnv,
+    asset_cfg: SceneEntityCfg,
+    max_xy_displacement: float = 0.10,
+) -> torch.Tensor:
+    """Terminate if cup XY displacement from episode-start position exceeds threshold."""
+    cup = env.scene[asset_cfg.name]
+    current_xy = cup.data.root_pos_w[:, :2]
+
+    cache_attr = "_cup_initial_xy_w_left_term_v2"
+    if not hasattr(env, cache_attr):
+        setattr(env, cache_attr, current_xy.clone())
+    initial_xy = getattr(env, cache_attr)
+
+    ep_len = env.episode_length_buf.squeeze(-1) if env.episode_length_buf.dim() > 1 else env.episode_length_buf
+    reset_mask = (ep_len <= 1)
+    initial_xy[reset_mask] = current_xy[reset_mask]
+    setattr(env, cache_attr, initial_xy)
+
+    displacement_xy = torch.norm(current_xy - initial_xy, dim=1)
+    return displacement_xy > max_xy_displacement

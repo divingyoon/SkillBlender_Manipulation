@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import torch
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
@@ -182,6 +183,54 @@ def _contact_debug_strings(
             link_name = f"link[{idx}]"
         parts.append(f"{link_name}:{force0[idx].item():.2f}N")
     return touched_fingers_str, ", ".join(parts)
+
+
+def _write_sensor_debug_csv(
+    env: ManagerBasedRLEnv,
+    step_count: int,
+    lambda_t: torch.Tensor,
+    mu_t: torch.Tensor,
+    nu_t: torch.Tensor,
+    num_contacts: torch.Tensor,
+    cup_z: float,
+    ee_dist: torch.Tensor,
+    touched_fingers: str,
+    touched_links: str,
+    sensor_cfg: SceneEntityCfg | None,
+) -> None:
+    """Append sensor debug snapshot (env0) to CSV under SkillBlender_Manipulation/data."""
+    if sensor_cfg is None:
+        return
+
+    force_magnitudes, _ = _sensor_force_magnitudes_filtered(env, sensor_cfg)
+    if force_magnitudes.numel() > 0 and force_magnitudes.shape[0] > 0:
+        env0_force = force_magnitudes[0]
+        sensor_max_force = float(env0_force.max().item())
+        sensor_mean_force = float(env0_force.mean().item())
+    else:
+        sensor_max_force = 0.0
+        sensor_mean_force = 0.0
+
+    log_dir = Path("/home/user/rl_ws/SkillBlender_Manipulation/data")
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "lift_left_v2_sensor_debug.csv"
+
+    if not hasattr(env, "_sensor_debug_csv_initialized"):
+        with log_file.open("a", encoding="utf-8") as f:
+            f.write(
+                "step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links\n"
+            )
+        env._sensor_debug_csv_initialized = True
+
+    touched_fingers_csv = touched_fingers.replace(",", "|")
+    touched_links_csv = touched_links.replace(",", ";")
+    with log_file.open("a", encoding="utf-8") as f:
+        f.write(
+            f"{step_count},{lambda_t[0].item():.0f},{mu_t[0].item():.0f},{nu_t[0].item():.0f},"
+            f"{num_contacts[0].item():.0f},{cup_z:.6f},{ee_dist[0].item():.6f},"
+            f"{sensor_max_force:.6f},{sensor_mean_force:.6f},"
+            f"{touched_fingers_csv},{touched_links_csv}\n"
+        )
 
 
 def object_position_in_robot_root_frame(
@@ -648,7 +697,8 @@ def _debug_triggers(
     ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
     target_pos_w = _compute_grasp_target_pos_w(env, obj, ee_pos_w, use_dynamic_z=False)
     ee_dist = torch.norm(target_pos_w - ee_pos_w, dim=1)
-    touched_fingers, touched_links = _contact_debug_strings(env, sensor_cfg, contact_threshold=0.02)
+    effective_sensor_cfg = sensor_cfg if sensor_cfg is not None else SceneEntityCfg("left_contact_sensor")
+    touched_fingers, touched_links = _contact_debug_strings(env, effective_sensor_cfg, contact_threshold=0.02)
 
     print(f"[Step {step_count}] λ={lambda_t[0].item():.0f} | "
           f"Contacts={num_contacts[0].item():.0f}/4 | "
@@ -658,6 +708,19 @@ def _debug_triggers(
           f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f}) | "
           f"touch_fingers={touched_fingers}")
     print(f"[Step {step_count}] touch_links(env0): {touched_links}")
+    _write_sensor_debug_csv(
+        env=env,
+        step_count=step_count,
+        lambda_t=lambda_t,
+        mu_t=mu_t,
+        nu_t=nu_t,
+        num_contacts=num_contacts,
+        cup_z=cup_z,
+        ee_dist=ee_dist,
+        touched_fingers=touched_fingers,
+        touched_links=touched_links,
+        sensor_cfg=effective_sensor_cfg,
+    )
 
 
 def object_ee_distance(
@@ -1220,6 +1283,7 @@ def object_displacement_penalty(
     cfg = getattr(env, "cfg", None)
     scale = float(getattr(cfg, "displacement_penalty_scale", 0.02))
     power = float(getattr(cfg, "displacement_penalty_power", 2.0))
+    penalty_max = float(getattr(cfg, "displacement_penalty_max", 2.0))
     gate_mix = float(getattr(cfg, "displacement_penalty_gate_mix", 0.5))
     gate_mix = max(0.0, min(1.0, gate_mix))
 
@@ -1229,10 +1293,19 @@ def object_displacement_penalty(
     displacement = torch.norm(current_pos - initial_pos, dim=1)
     excess = torch.clamp(displacement - threshold, min=0.0)
     penalty = torch.pow(excess / max(scale, 1e-6), power)
+    penalty = torch.clamp(penalty, max=max(0.0, penalty_max))
 
     # Keep some baseline penalty early, and strengthen as grasp phase progresses.
     grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name="ll_dg_ee")
     penalty = penalty * ((1.0 - gate_mix) + gate_mix * grasp_gate)
+    # Disable displacement penalty once grasp is established (μ=1).
+    mu_trigger = _grasp_trigger(
+        env,
+        object_cfg,
+        eef_link_name="ll_dg_ee",
+        sensor_cfg=SceneEntityCfg("left_contact_sensor"),
+    )
+    penalty = penalty * (1.0 - mu_trigger)
 
     return penalty
 

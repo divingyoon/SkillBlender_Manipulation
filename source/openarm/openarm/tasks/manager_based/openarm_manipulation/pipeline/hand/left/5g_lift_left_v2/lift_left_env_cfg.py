@@ -350,6 +350,10 @@ class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
     cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup")})
     cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup"), "max_tilt_deg": 90.0})
+    cup_xy_out_of_bounds = DoneTerm(
+        func=mdp.cup_xy_displacement_exceeded,
+        params={"asset_cfg": SceneEntityCfg("cup"), "max_xy_displacement": 0.10},
+    )
 
 
 @configclass
@@ -381,6 +385,9 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     displacement_penalty_scale: float = 0.02
     displacement_penalty_power: float = 2.0
     displacement_penalty_gate_mix: float = 0.5
+    # Cap raw displacement penalty before reward weight is applied.
+    # With object_displacement weight=-5.0, max contribution is -10.0 when max=2.0.
+    displacement_penalty_max: float = 2.0
     require_filtered_contact_matrix: bool = True
     # Debug visualization
     debug_approach_target_vis: bool = True

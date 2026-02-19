@@ -1048,6 +1048,9 @@ def object_displacement_penalty(
     # Keep some baseline penalty early, and strengthen as grasp phase progresses.
     grasp_gate = _grasp_progress_gate(env, object_cfg, eef_link_name="ll_dg_ee")
     penalty = penalty * ((1.0 - gate_mix) + gate_mix * grasp_gate)
+    # Disable displacement penalty once grasp is established (μ=1).
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name="ll_dg_ee")
+    penalty = penalty * (1.0 - mu_trigger)
 
     return penalty
 

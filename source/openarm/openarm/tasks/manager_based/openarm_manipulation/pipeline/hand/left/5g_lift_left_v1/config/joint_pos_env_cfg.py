@@ -270,6 +270,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
 
         self.commands.object_pose.body_name = "ll_dg_ee"
         self.commands.object_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
+        # Match test1 regularization strengths.
 
 
 @configclass

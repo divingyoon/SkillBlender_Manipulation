@@ -304,9 +304,9 @@ def _finger_surface_contact_gate(
     offset_axis: str,
     offset_val: float,
     object_cfg: SceneEntityCfg,
-    cup_radius: float = 0.04,
+    cup_radius: float = 0.045,
     radial_std: float = 0.015,
-    cup_height: float = 0.10,
+    cup_height: float = 0.109,
     sensor_cfg: SceneEntityCfg | None = None,
     contact_threshold: float = 0.02,
 ) -> torch.Tensor:
@@ -433,7 +433,7 @@ def _maybe_log_grasp_quality(
 def _count_finger_contacts(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
-    cup_radius: float = 0.05,
+    cup_radius: float = 0.045,
     contact_threshold: float = 0.02,
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
@@ -456,7 +456,7 @@ def _count_finger_contacts(
     dist_to_surface = dist_to_center_xy - cup_radius
     tip_z = tip_positions[:, :, 2]
     cup_z = cup_pos[:, 2].unsqueeze(1)
-    cup_height = 0.10
+    cup_height = 0.109
     z_valid = (tip_z >= cup_z) & (tip_z <= cup_z + cup_height)
     contacts = (dist_to_surface < contact_threshold) & z_valid
     return contacts.float().sum(dim=1)
@@ -486,8 +486,8 @@ def _grasp_trigger(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg,
     eef_link_name: str = "ll_dg_ee",
-    min_contacts: int = 4,
-    cup_radius: float = 0.05,
+    min_contacts: int = 3,
+    cup_radius: float = 0.045,
     contact_threshold: float = 0.02,
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
@@ -1286,9 +1286,9 @@ def pinky_reaching_pose_reward(
 
 def finger_contact_reward(
     env: ManagerBasedRLEnv,
-    cup_radius: float = 0.05,
+    cup_radius: float = 0.045,
     contact_threshold: float = 0.02,
-    cup_height: float = 0.10,
+    cup_height: float = 0.109,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
     sensor_cfg: SceneEntityCfg | None = None,
@@ -1349,12 +1349,11 @@ def thumb_grasp_reward(
     eef_link_name: str = "ll_dg_ee",
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
-    """Reward thumb tip approaching cup center in XY (task-space).
+    """Reward thumb tip approaching cup surface in XY (task-space).
 
-    Instead of rewarding fixed joint targets (which curl the thumb in a
-    fixed direction regardless of cup position), this rewards the thumb
-    tip getting closer to the cup center.  The policy discovers the right
-    joint configuration through the task-space gradient.
+    Instead of rewarding approach to cup center (which causes penetration),
+    this rewards the thumb tip approaching the cup's outer surface.
+    Penetration (tip inside cup radius) is penalized.
 
     v2: sensor_cfg kept for contact logging compatibility.
     DexPour: Active when λ=1 (approach complete).
@@ -1369,9 +1368,14 @@ def thumb_grasp_reward(
     cup_xy = obj.data.root_pos_w[:, :2]
     tip_xy = thumb_tip[:, :2]
 
-    # Task-space approach: thumb tip → cup center XY distance
-    dist = torch.norm(tip_xy - cup_xy, dim=1)
-    approach_reward = 1.0 - torch.tanh(dist / std)
+    # Surface approach: thumb tip → cup surface (not center)
+    cup_radius = 0.045  # actual cup outer radius at scale (1,1,1.2)
+    radial_dist = torch.norm(tip_xy - cup_xy, dim=1)
+    surface_dist = torch.abs(radial_dist - cup_radius)
+    approach_reward = 1.0 - torch.tanh(surface_dist / std)
+    # Penetration penalty: penalize thumb being inside the cup
+    penetration = torch.clamp(cup_radius - radial_dist, min=0.0)
+    approach_reward = approach_reward - torch.tanh(penetration / 0.01)
 
     # Z gate: only reward approach when thumb is at or below finger 2 Z
     finger2_tip = _get_fingertip_world_position(
@@ -1420,10 +1424,11 @@ def pinky_grasp_reward(
     eef_link_name: str = "ll_dg_ee",
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
-    """Reward pinky tip approaching cup center in XY (task-space).
+    """Reward pinky tip approaching cup surface in XY (task-space).
 
-    Same principle as thumb_grasp_reward: let the policy discover
-    the right joint configuration via task-space gradient.
+    Instead of rewarding approach to cup center (which causes penetration),
+    this rewards the pinky tip approaching the cup's outer surface.
+    Penetration (tip inside cup radius) is penalized.
 
     v2: sensor_cfg kept for API compatibility.
     DexPour: Active when λ=1 (approach complete).
@@ -1438,9 +1443,14 @@ def pinky_grasp_reward(
     cup_xy = obj.data.root_pos_w[:, :2]
     tip_xy = pinky_tip[:, :2]
 
-    # Task-space approach: pinky tip → cup center XY distance
-    dist = torch.norm(tip_xy - cup_xy, dim=1)
-    approach_reward = 1.0 - torch.tanh(dist / std)
+    # Surface approach: pinky tip → cup surface (not center)
+    cup_radius = 0.045  # actual cup outer radius at scale (1,1,1.2)
+    radial_dist = torch.norm(tip_xy - cup_xy, dim=1)
+    surface_dist = torch.abs(radial_dist - cup_radius)
+    approach_reward = 1.0 - torch.tanh(surface_dist / std)
+    # Penetration penalty: penalize pinky being inside the cup
+    penetration = torch.clamp(cup_radius - radial_dist, min=0.0)
+    approach_reward = approach_reward - torch.tanh(penetration / 0.01)
 
     # DexPour: Active when λ=1 (approach complete)
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
@@ -1452,11 +1462,14 @@ def synergy_grip_reward(
     action_name: str = "left_hand_action",
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    cup_radius: float = 0.045,
+    proximity_std: float = 0.01,
 ) -> torch.Tensor:
     """Reward synergy gripper closing fully after approach.
 
     grip_strength in [-1, +1]: -1 = open, +1 = closed.
-    Simply rewards grip_strength → +1 when λ=1.
+    Rewards grip_strength → +1 when λ=1 and synergy tips (fingers 2,3,4)
+    are close to the cup surface in XY.
 
     DexPour: Active when λ=1 (approach complete).
     """
@@ -1465,9 +1478,33 @@ def synergy_grip_reward(
 
     close_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
 
-    # DexPour: Only active when λ=1 (approach complete)
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+    synergy_tips = [
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+    ]
+
+    total_surface_error = torch.zeros(env.num_envs, device=env.device)
+    valid_tip_count = 0
+    for body_name, axis, offset in synergy_tips:
+        tip = _get_fingertip_world_position(env, body_name, axis, offset)
+        if tip is None:
+            continue
+        valid_tip_count += 1
+        radial_dist = torch.norm(tip[:, :2] - cup_xy, dim=1)
+        total_surface_error += torch.abs(radial_dist - cup_radius)
+
+    if valid_tip_count == 0:
+        surface_proximity_gate = torch.zeros(env.num_envs, device=env.device)
+    else:
+        mean_surface_error = total_surface_error / float(valid_tip_count)
+        surface_proximity_gate = 1.0 - torch.tanh(mean_surface_error / proximity_std)
+
+    # DexPour: Only active when λ=1 (approach complete), with surface gate
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * close_reward
+    return lambda_trigger * surface_proximity_gate * close_reward
 
 
 def synergy_reaching_pose_reward(
@@ -1569,7 +1606,7 @@ def finger_tip_to_cup_reward(
 
 def finger_wrap_cylinder_reward(
     env: ManagerBasedRLEnv,
-    target_radius: float = 0.04,
+    target_radius: float = 0.045,
     radial_std: float = 0.015,
     opposition_weight: float = 0.3,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
@@ -1909,7 +1946,7 @@ def thumb_tip_z_reward(
     xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
-    cup_height: float = 0.08,
+    cup_height: float = 0.09,
 ) -> torch.Tensor:
     """Reward thumb tip Z being at or below index finger (finger 2) tip Z.
 
@@ -1948,7 +1985,7 @@ def thumb_tip_z_reward(
 def synergy_tip_z_reward(
     env: ManagerBasedRLEnv,
     std: float = 0.06,
-    cup_height: float = 0.08,
+    cup_height: float = 0.09,
     xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",

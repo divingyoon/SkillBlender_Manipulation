@@ -204,24 +204,24 @@ class RewardsCfg:
             "std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
-        weight=8.0,
+        weight=15.0,
     )
 
-    # 새끼(5번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
+    # 새끼(5번) 그립 리워드 - 작업 공간: tip → cup surface 접근
     pinky_grasp = RewTerm(
         func=mdp.pinky_grasp_reward,
         params={
             "std": 0.05, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
-        weight=5.0,
+        weight=12.0,
     )
 
     # 시너지(2,3,4번) 그립 리워드 - 단순 그리퍼: grip_strength → +1 (완전 닫기)
     synergy_grip = RewTerm(
         func=mdp.synergy_grip_reward,
         params={"action_name": "left_hand_action", "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=14.0,
+        weight=20.0,
     )
 
     finger_tip_to_cup = RewTerm(
@@ -229,7 +229,7 @@ class RewardsCfg:
         params={
             "object_cfg": SceneEntityCfg("cup"),
             "eef_link_name": "ll_dg_ee",
-            "target_radius": 0.04,
+            "target_radius": 0.045,
             "radial_std": 0.015,
             "opposition_weight": 0.3,
         },
@@ -291,13 +291,13 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-4.0,
+        weight=-5.0,
     )
 
     finger_normal_range = RewTerm(
         func=mdp.finger_normal_range_penalty,
         params={},
-        weight=-1.0,
+        weight=-2.0,
     )
 
     thumb_reaching_pose = RewTerm(
@@ -326,7 +326,7 @@ class RewardsCfg:
 
     synergy_tip_z = RewTerm(
         func=mdp.synergy_tip_z_reward,
-        params={"std": 0.06, "cup_height": 0.08, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
+        params={"std": 0.06, "cup_height": 0.09, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
         weight=10.0,
     )
 

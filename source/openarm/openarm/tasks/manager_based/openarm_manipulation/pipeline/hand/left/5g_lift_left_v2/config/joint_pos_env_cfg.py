@@ -62,8 +62,8 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=False,
-                    solver_position_iteration_count=8,
-                    solver_velocity_iteration_count=0,
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
@@ -119,7 +119,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "openarm_gripper": ImplicitActuatorCfg(
                     joint_names_expr=["lj_dg_.*", "rj_dg_.*"],
                     stiffness=2e3,
-                    damping=1e2,
+                    damping=2e2,
                 ),
             },
             soft_joint_pos_limit_factor=1.0,
@@ -165,7 +165,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
         # v2: 왼손 접촉 센서만 사용 (오른손 센서 제거로 속도 개선)
         # history_length=1: 현재 스텝 접촉만 필요, 이전 기록 불필요
         self.scene.left_contact_sensor = ContactSensorCfg(
-            prim_path="{ENV_REGEX_NS}/Robot/tesollo_left_.*_sensor_link",
+            prim_path="{ENV_REGEX_NS}/Robot/openarm_tesollo_mount/tesollo_left_.*_sensor_link",
             filter_prim_paths_expr=["{ENV_REGEX_NS}/Cup"],
             history_length=1,
             track_air_time=False,

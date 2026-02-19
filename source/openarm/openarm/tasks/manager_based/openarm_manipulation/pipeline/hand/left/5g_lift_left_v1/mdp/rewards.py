@@ -1322,11 +1322,14 @@ def synergy_grip_reward(
     action_name: str = "left_hand_action",
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    cup_radius: float = 0.045,
+    proximity_std: float = 0.01,
 ) -> torch.Tensor:
     """Reward synergy gripper closing fully after approach.
 
     grip_strength in [-1, +1]: -1 = open, +1 = closed.
-    Simply rewards grip_strength → +1 when λ=1.
+    Rewards grip_strength → +1 when λ=1 and synergy tips (fingers 2,3,4)
+    are close to the cup surface in XY.
 
     DexPour: Active when λ=1 (approach complete).
     """
@@ -1335,9 +1338,33 @@ def synergy_grip_reward(
 
     close_reward = torch.clamp((grip_strength + 1.0) / 2.0, min=0.0, max=1.0)
 
-    # DexPour: Only active when λ=1 (approach complete)
+    obj: RigidObject = env.scene[object_cfg.name]
+    cup_xy = obj.data.root_pos_w[:, :2]
+    synergy_tips = [
+        ("tesollo_left_ll_dg_2_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_3_4", "z", 0.0255),
+        ("tesollo_left_ll_dg_4_4", "z", 0.0255),
+    ]
+
+    total_surface_error = torch.zeros(env.num_envs, device=env.device)
+    valid_tip_count = 0
+    for body_name, axis, offset in synergy_tips:
+        tip = _get_fingertip_world_position(env, body_name, axis, offset)
+        if tip is None:
+            continue
+        valid_tip_count += 1
+        radial_dist = torch.norm(tip[:, :2] - cup_xy, dim=1)
+        total_surface_error += torch.abs(radial_dist - cup_radius)
+
+    if valid_tip_count == 0:
+        surface_proximity_gate = torch.zeros(env.num_envs, device=env.device)
+    else:
+        mean_surface_error = total_surface_error / float(valid_tip_count)
+        surface_proximity_gate = 1.0 - torch.tanh(mean_surface_error / proximity_std)
+
+    # DexPour: Only active when λ=1 (approach complete), with surface gate
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    return lambda_trigger * close_reward
+    return lambda_trigger * surface_proximity_gate * close_reward
 
 
 def synergy_reaching_pose_reward(

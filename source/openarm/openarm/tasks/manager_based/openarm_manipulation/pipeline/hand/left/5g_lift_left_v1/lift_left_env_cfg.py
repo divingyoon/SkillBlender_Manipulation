@@ -312,11 +312,11 @@ class RewardsCfg:
         weight=10.0,
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-5e-3)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-3,
+        weight=-1e-4,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 

@@ -149,6 +149,7 @@ class ObservationsCfg:
                 "object_cfg": SceneEntityCfg("cup"),
             },
             noise=Unoise(n_min=-0.01, n_max=0.01),
+            clip=(0.0, 2.0),  # 관절 폭발 시 극단값이 policy에 피드백되지 않도록 클리핑
         )
 
         def __post_init__(self):
@@ -221,7 +222,7 @@ class RewardsCfg:
     # Force-based grasp rewards (replacing geometry-based thumb_grasp/pinky_grasp/synergy_grip)
     contact_persistence = RewTerm(
         func=mdp.contact_persistence_reward_multi,
-        weight=15.0,
+        weight=5.0,  # 15.0 → 5.0: slip_penalty와의 충돌로 관절 폭발 유발 방지
         params={
             "sensor_cfg": _SENSOR_CFG,
             "min_contacts": 4,
@@ -244,7 +245,7 @@ class RewardsCfg:
     )
     force_spike = RewTerm(
         func=mdp.force_spike_penalty_multi,
-        weight=-3.0,
+        weight=-15.0,  # -3.0 → -15.0: 관절 폭발 억제를 위한 핵심 강화
         params={
             "sensor_cfg": _SENSOR_CFG,
             "spike_threshold": 10.0,
@@ -253,7 +254,7 @@ class RewardsCfg:
     )
     overgrip = RewTerm(
         func=mdp.overgrip_penalty_multi,
-        weight=-2.0,
+        weight=-8.0,  # -2.0 → -8.0: force_spike 강화에 맞춰 과도한 힘 억제 강화
         params={
             "sensor_cfg": _SENSOR_CFG,
             "max_force": 15.0,

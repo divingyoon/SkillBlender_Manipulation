@@ -67,13 +67,15 @@ class Lift5gRightSceneCfg(InteractiveSceneCfg):
 
 @configclass
 class ActionsCfg:
-    # Order: left_arm/hand/thumb, right_arm/hand/thumb
+    # Order: left_arm/hand/thumb/pinky, right_arm/hand/thumb/pinky
     left_arm_action: ActionTerm = MISSING
     left_hand_action: ActionTerm = MISSING
     left_thumb_action: ActionTerm = MISSING
+    left_pinky_action: ActionTerm = MISSING
     right_arm_action: ActionTerm = MISSING
     right_hand_action: ActionTerm = MISSING
     right_thumb_action: ActionTerm = MISSING
+    right_pinky_action: ActionTerm = MISSING
 
 
 # Create larger marker config for better visibility
@@ -87,7 +89,7 @@ class CommandsCfg:
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(5.0, 5.0),
-        debug_vis=True,
+        debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
             pos_y=(-0.2, -0.1),
@@ -119,6 +121,7 @@ class ObservationsCfg:
         right_arm_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_arm_action"})
         right_hand_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_hand_action"})
         right_thumb_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_thumb_action"})
+        right_pinky_action = ObsTerm(func=mdp.last_action, params={"action_name": "right_pinky_action"})
 
         def __post_init__(self):
             self.enable_corruption = True
@@ -167,13 +170,12 @@ class RewardsCfg:
     reaching_object = RewTerm(
         func=mdp.object_ee_distance,
         params={"std": 0.15, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=8.0,
+        weight=8.0,  # 먼 거리 gradient (초기 0.15m → 접근 유도)
     )
-
     reaching_object_fine = RewTerm(
         func=mdp.object_ee_distance_fine,
-        params={"std": 0.15, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=4.0,
+        params={"std": 0.065, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=10.0,  # std 0.15→0.05, weight 4→6: threshold 근처 gradient 강화
     )
 
     end_effector_orientation = RewTerm(
@@ -182,16 +184,66 @@ class RewardsCfg:
         weight=4.0,
     )
 
-    finger_grasp = RewTerm(
-        func=mdp.finger_grasp_reward,
-        params={"std": 2.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=6.0,
+    # 엄지(1번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
+    thumb_grasp = RewTerm(
+        func=mdp.thumb_grasp_reward,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=15.0,
+    )
+
+    # 새끼(5번) 그립 리워드 - 작업 공간: tip → cup center XY 접근
+    pinky_grasp = RewTerm(
+        func=mdp.pinky_grasp_reward,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=12.0,
+    )
+
+    # 시너지(2,3,4번) 그립 리워드 - 단순 그리퍼: grip_strength → +1 (완전 닫기)
+    synergy_grip = RewTerm(
+        func=mdp.synergy_grip_reward,
+        params={"action_name": "right_hand_action", "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=20.0,
+    )
+
+    # 원통 표면 반경으로 손가락 tip 랩핑 유도
+    finger_tip_to_cup = RewTerm(
+        func=mdp.finger_wrap_cylinder_reward,
+        params={
+            "object_cfg": SceneEntityCfg("cup2"),
+            "eef_link_name": "rl_dg_ee",
+            "target_radius": 0.045,
+            "radial_std": 0.015,
+            "opposition_weight": 0.3,
+        },
+        weight=0.0,  # 비활성화: opposition이 엄지-시너지 길항 유발
+    )
+
+    # 손가락이 컵 둘레를 고르게 감싸도록 각도 커버리지 유도
+    finger_wrap_coverage = RewTerm(
+        func=mdp.finger_wrap_coverage_reward,
+        params={"object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=0.0,  # 비활성화: 시너지 단일 DOF로 각도 분산 불가, oscillation 유발
+    )
+
+    # 손가락 tip 법선이 컵 중심을 향하도록 유도
+    finger_tip_orientation = RewTerm(
+        func=mdp.finger_tip_orientation_reward,
+        params={"std": 0.5, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=5.0,
     )
 
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup2")},
         weight=10.0,
+    )
+
+    # μ=1이면 컵 Z 상승에 연속적 gradient 제공 (tanh: delta=0에서 최대 gradient)
+    # ee_descent가 (1-μ)로 비활성되므로 리프트 방향 힘을 이 보상이 담당
+    cup_lift_progress = RewTerm(
+        func=mdp.cup_lift_progress_reward,
+        params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=20.0,
     )
 
     object_goal_tracking = RewTerm(
@@ -209,19 +261,55 @@ class RewardsCfg:
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup2"), "threshold": 0.01},
-        weight=-1.5,
+        weight=-5.0,
     )
 
     finger_normal_range = RewTerm(
         func=mdp.finger_normal_range_penalty,
         params={},
-        weight=-1.0,
+        weight=-2.0,
     )
 
-    finger_reaching_pose = RewTerm(
-        func=mdp.finger_reaching_pose_reward,
+    # 엄지(1번) reaching 전 열어두기
+    thumb_reaching_pose = RewTerm(
+        func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=2.0,
+        weight=0.5,
+    )
+
+    # 새끼(5번) reaching 전 열어두기
+    pinky_reaching_pose = RewTerm(
+        func=mdp.pinky_reaching_pose_reward,
+        params={"std": 1.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=0.5,  # 새끼는 덜 중요
+    )
+
+    # 시너지(2,3,4번) reaching 전 열어두기 - DexPour λ=0일 때만 활성화
+    synergy_reaching_pose = RewTerm(
+        func=mdp.synergy_reaching_pose_reward,
+        params={"std": 5.0, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=0.5,
+    )
+
+    # 엄지 tip Z를 2번 손가락 이하로 유도 (편측: 위에 있을 때만 패널티)
+    thumb_tip_z = RewTerm(
+        func=mdp.thumb_tip_z_reward,
+        params={"std": 0.10, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=8.0,
+    )
+
+    # 시너지 손가락(2번 tip 기준) Z를 컵 상단 높이로 유도
+    synergy_tip_z = RewTerm(
+        func=mdp.synergy_tip_z_reward,
+        params={"std": 0.06, "cup_height": 0.09, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=8.0,
+    )
+
+    # Grasp 단계에서 EE를 z=0.04까지 더 내려가도록 유도
+    ee_descent = RewTerm(
+        func=mdp.ee_descent_reward,
+        params={"std": 0.04, "target_z_offset": 0.04, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
+        weight=10.0,
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
@@ -236,22 +324,24 @@ class RewardsCfg:
 @configclass
 class TerminationsCfg:
     time_out = DoneTerm(func=mdp.time_out, time_out=True)
-    cup2_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")})
-    cup2_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 90.0})
+    cup_dropping = DoneTerm(func=mdp.root_height_below_minimum, params={"minimum_height": -0.05, "asset_cfg": SceneEntityCfg("cup2")})
+    cup_tipping = DoneTerm(func=mdp.cup_tipped, params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 90.0})
 
 
 @configclass
 class CurriculumCfg:
-    action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
-    joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+    # 커리큘럼 비활성화 - 그립 학습 전에 속도 페널티 증가 시 학습 실패
+    # action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
+    # joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+    pass
 
 
 @configclass
 class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     task_name: str = "lift_5g_right"
-    curriculum_stage: int = 1
+    curriculum_stage: int = 0
     mask_inactive_arm_actions: bool = True
-    grasp2g_target_offset: tuple[float, float, float] = (0.0, -0.06, 0.08)
+    grasp2g_target_offset: tuple[float, float, float] = (0.01, -0.06, 0.08)
     reach_dynamic_z_high: float = 0.25
     reach_dynamic_xy_hi: float = 0.10
     reach_dynamic_xy_lo: float = 0.03
@@ -259,10 +349,27 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
     reach_dynamic_z_descent_rate: float = 0.001
     reach_displacement_free_threshold: float = 0.015
     reach_displacement_suppress_scale: float = 0.03
-    reach_switch_threshold: float = 0.035
-    reach_switch_hold_steps: int = 4
+    reach_switch_threshold: float = 0.05
+    reach_switch_hold_steps: int = 2
+    # Soft gate for grasp/contact rewards to avoid hard 0/1 dead-zone near transition.
+    reach_soft_gate_near: float = 0.02
+    reach_soft_gate_far: float = 0.10
+    # Separate grasp activation gate: require closer EE-target distance before finger closing.
+    grasp_switch_threshold: float = 0.025
+    grasp_switch_hold_steps: int = 4
+    grasp_soft_gate_near: float = 0.012
+    grasp_soft_gate_far: float = 0.05
+    displacement_penalty_scale: float = 0.02
+    displacement_penalty_power: float = 2.0
+    displacement_penalty_gate_mix: float = 0.5
+    # Debug visualization
+    debug_approach_target_vis: bool = True  # rl_dg_ee approach target 마커 끔
+    debug_fingertip_vis: bool = True  # 손가락 tip 위치 시각화
+    debug_fingertip_vis_interval: int = 5  # 시각화 업데이트 간격
+    debug_grasp_quality: bool = True
+    debug_grasp_quality_interval: int = 50
 
-    scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048 * 1, env_spacing=2.5)
+    scene: Lift5gRightSceneCfg = Lift5gRightSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()
     actions: ActionsCfg = ActionsCfg()
     rewards: RewardsCfg = RewardsCfg()
@@ -276,15 +383,16 @@ class Lift5gRightEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 10.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
-        self.commands.object_pose.debug_vis = True
+        self.commands.object_pose.debug_vis = False  # object_tracking 마커 끔
 
         self.observations.policy.concatenate_terms = True
 
         self.sim.physx.bounce_threshold_velocity = 0.01
+        # 2048 환경용
         self.sim.physx.gpu_found_lost_aggregate_pairs_capacity = 64 * 1024 * 1024
         self.sim.physx.gpu_total_aggregate_pairs_capacity = 16 * 1024 * 1024
-        self.sim.physx.gpu_max_rigid_patch_count = 2**25
-        self.sim.physx.gpu_max_rigid_contact_count = 2**25
-        self.sim.physx.gpu_collision_stack_size = 2**25
+        self.sim.physx.gpu_max_rigid_patch_count = 2**23
+        self.sim.physx.gpu_max_rigid_contact_count = 2**23
+        self.sim.physx.gpu_collision_stack_size = 2**23
         self.sim.physx.gpu_max_num_partitions = 8
         self.sim.physx.friction_correlation_distance = 0.00625

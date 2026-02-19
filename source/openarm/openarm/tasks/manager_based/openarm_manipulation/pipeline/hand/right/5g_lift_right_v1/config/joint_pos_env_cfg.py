@@ -22,10 +22,15 @@ from isaaclab.sim.spawners.from_files.from_files_cfg import UsdFileCfg
 from isaaclab.utils import configclass
 
 from openarm.tasks.manager_based.openarm_manipulation import OPENARM_ROOT_DIR
+
 # Hand joint names
-# Thumb action now controls finger 1 (thumb) + finger 5 (pinky): 8 joints
-LEFT_THUMB_JOINTS = [f"lj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
-RIGHT_THUMB_JOINTS = [f"rj_dg_{finger}_{joint}" for finger in (1, 5) for joint in range(1, 5)]
+# Thumb (finger 1): 4 joints
+LEFT_THUMB_JOINTS = [f"lj_dg_1_{joint}" for joint in range(1, 5)]
+RIGHT_THUMB_JOINTS = [f"rj_dg_1_{joint}" for joint in range(1, 5)]
+
+# Pinky (finger 5): 4 joints - separated for independent control
+LEFT_PINKY_JOINTS = [f"lj_dg_5_{joint}" for joint in range(1, 5)]
+RIGHT_PINKY_JOINTS = [f"rj_dg_5_{joint}" for joint in range(1, 5)]
 
 # Fingers 2-4: controlled via synergy (defined in mdp/actions.py)
 # Full hand joints (for reference only)
@@ -52,8 +57,8 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
                 ),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(
                     enabled_self_collisions=False,
-                    solver_position_iteration_count=8,
-                    solver_velocity_iteration_count=0,
+                    solver_position_iteration_count=16,
+                    solver_velocity_iteration_count=1,
                 ),
             ),
             init_state=ArticulationCfg.InitialStateCfg(
@@ -109,7 +114,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
                 "openarm_gripper": ImplicitActuatorCfg(
                     joint_names_expr=["lj_dg_.*", "rj_dg_.*"],
                     stiffness=2e3,
-                    damping=1e2,
+                    damping=2e2,
                 ),
             },
             soft_joint_pos_limit_factor=1.0,
@@ -121,7 +126,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.15, 0.1, 0.0], rot=[1.0, 0.0, 0.0, 0.0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(0.8, 0.8, 1.0),
+                scale=(1.0, 1.0, 1.2),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
@@ -139,7 +144,7 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
             init_state=RigidObjectCfg.InitialStateCfg(pos=[0.15, -0.1, 0.0], rot=[1.0, 0.0, 0.0, 0.0]),
             spawn=UsdFileCfg(
                 usd_path=cup_usd,
-                scale=(0.8, 0.8, 1.0),
+                scale=(1.0, 1.0, 1.2),
                 articulation_props=sim_utils.ArticulationRootPropertiesCfg(articulation_enabled=False),
                 rigid_props=RigidBodyPropertiesCfg(
                     solver_position_iteration_count=16,
@@ -170,11 +175,42 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
         # Left hand: Synergy for fingers 2-4 (1D) + Individual control for thumb+pinky (8D)
         self.actions.left_hand_action = mdp.FingerSynergyActionLeftCfg(
             asset_name="robot",
+            # Uses default: NON_THUMB_JOINTS_LEFT (fingers 2-4)
         )
+        # Thumb action (finger 1 only): 4 DOF
         self.actions.left_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=LEFT_THUMB_JOINTS,
-            scale=0.786,
+            scale={
+                "lj_dg_1_1": 0.8901179,
+                "lj_dg_1_2": 1.5705927,
+                "lj_dg_1_3": 1.5707963,
+                "lj_dg_1_4": 1.5707963,
+            },
+            clip={
+                "lj_dg_1_1": (-0.8901179, 0.3839724),
+                "lj_dg_1_2": (0.0, 3.1415927),
+                "lj_dg_1_3": (-1.5707963, 1.5707963),
+                "lj_dg_1_4": (-1.5707963, 1.5707963),
+            },
+            use_default_offset=True,
+        )
+        # Pinky action (finger 5 only): 4 DOF - separated for independent control
+        self.actions.left_pinky_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=LEFT_PINKY_JOINTS,
+            scale={
+                "lj_dg_5_1": 1.0471976,
+                "lj_dg_5_2": 0.6108652,
+                "lj_dg_5_3": 1.5707963,
+                "lj_dg_5_4": 1.5707963,
+            },
+            clip={
+                "lj_dg_5_1": (-1.0471976, 0.0174533),
+                "lj_dg_5_2": (-0.6108652, 0.418879),
+                "lj_dg_5_3": (-1.5707963, 1.5707963),
+                "lj_dg_5_4": (-1.5707963, 1.5707963),
+            },
             use_default_offset=True,
         )
         self.actions.right_arm_action = mdp.JointPositionActionCfg(
@@ -195,15 +231,46 @@ class OpenArmLift5gRightEnvCfg(Lift5gRightEnvCfg):
         self.actions.right_hand_action = mdp.FingerSynergyActionCfg(
             asset_name="robot",
         )
+        # Right thumb action (finger 1 only): 4 DOF
         self.actions.right_thumb_action = mdp.JointPositionActionCfg(
             asset_name="robot",
             joint_names=RIGHT_THUMB_JOINTS,
-            scale=0.786,
+            scale={
+                "rj_dg_1_1": 0.8901179,
+                "rj_dg_1_2": 1.5705927,
+                "rj_dg_1_3": 1.5707963,
+                "rj_dg_1_4": 1.5707963,
+            },
+            clip={
+                "rj_dg_1_1": (-0.3839724, 0.8901179),
+                "rj_dg_1_2": (-3.1415927, 0.0),
+                "rj_dg_1_3": (-1.5707963, 1.5707963),
+                "rj_dg_1_4": (-1.5707963, 1.5707963),
+            },
+            use_default_offset=True,
+        )
+        # Right pinky action (finger 5 only): 4 DOF
+        self.actions.right_pinky_action = mdp.JointPositionActionCfg(
+            asset_name="robot",
+            joint_names=RIGHT_PINKY_JOINTS,
+            scale={
+                "rj_dg_5_1": 1.0471976,
+                "rj_dg_5_2": 0.6108652,
+                "rj_dg_5_3": 1.5707963,
+                "rj_dg_5_4": 1.5707963,
+            },
+            clip={
+                "rj_dg_5_1": (-0.0174533, 1.0471976),
+                "rj_dg_5_2": (-0.418879, 0.6108652),
+                "rj_dg_5_3": (-1.5707963, 1.5707963),
+                "rj_dg_5_4": (-1.5707963, 1.5707963),
+            },
             use_default_offset=True,
         )
 
         self.commands.object_pose.body_name = "rl_dg_ee"
         self.commands.object_pose.ranges.pitch = (math.pi / 2, math.pi / 2)
+        # Match test1 regularization strengths.
 
 
 @configclass

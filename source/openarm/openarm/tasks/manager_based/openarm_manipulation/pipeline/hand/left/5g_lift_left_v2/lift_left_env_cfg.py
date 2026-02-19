@@ -426,12 +426,16 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     # With object_displacement weight=-5.0, max contribution is -10.0 when max=2.0.
     displacement_penalty_max: float = 2.0
     require_filtered_contact_matrix: bool = True
-    # Debug visualization
-    debug_approach_target_vis: bool = True
-    debug_fingertip_vis: bool = True
-    debug_fingertip_vis_interval: int = 5
-    debug_grasp_quality: bool = True
-    debug_grasp_quality_interval: int = 50
+    # Debug controls (default OFF for training performance)
+    debug_approach_target_vis: bool = False
+    debug_fingertip_vis: bool = False
+    debug_fingertip_vis_interval: int = 500
+    debug_grasp_quality: bool = False
+    debug_grasp_quality_interval: int = 500
+    debug_triggers: bool = False
+    debug_triggers_interval: int = 500
+    debug_reaching: bool = False
+    debug_reaching_interval: int = 500
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048, env_spacing=2.5)
     observations: ObservationsCfg = ObservationsCfg()

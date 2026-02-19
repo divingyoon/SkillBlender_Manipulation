@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import torch
-from pathlib import Path
 from typing import TYPE_CHECKING
 
 from isaaclab.assets import RigidObject
@@ -183,65 +182,6 @@ def _contact_debug_strings(
             link_name = f"link[{idx}]"
         parts.append(f"{link_name}:{force0[idx].item():.2f}N")
     return touched_fingers_str, ", ".join(parts)
-
-
-def _write_sensor_debug_csv(
-    env: ManagerBasedRLEnv,
-    step_count: int,
-    lambda_t: torch.Tensor,
-    mu_t: torch.Tensor,
-    nu_t: torch.Tensor,
-    num_contacts: torch.Tensor,
-    cup_z: float,
-    ee_dist: torch.Tensor,
-    touched_fingers: str,
-    touched_links: str,
-    sensor_cfg: SceneEntityCfg | None,
-) -> None:
-    """Append sensor debug snapshot (env0) to CSV under SkillBlender_Manipulation/data."""
-    if sensor_cfg is None:
-        return
-
-    force_magnitudes, _ = _sensor_force_magnitudes_filtered(env, sensor_cfg)
-    if force_magnitudes.numel() > 0 and force_magnitudes.shape[0] > 0:
-        env0_force = force_magnitudes[0]
-        sensor_max_force = float(env0_force.max().item())
-        sensor_mean_force = float(env0_force.mean().item())
-    else:
-        sensor_max_force = 0.0
-        sensor_mean_force = 0.0
-
-    # Resolve project-relative log path so it works across different user home dirs.
-    try:
-        project_root = next(
-            (p for p in Path(__file__).resolve().parents if p.name == "SkillBlender_Manipulation"),
-            Path.cwd(),
-        )
-        log_dir = project_root / "data"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / "lift_left_v2_sensor_debug.csv"
-
-        if not hasattr(env, "_sensor_debug_csv_initialized"):
-            with log_file.open("a", encoding="utf-8") as f:
-                f.write(
-                    "step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links\n"
-                )
-            env._sensor_debug_csv_initialized = True
-
-        touched_fingers_csv = touched_fingers.replace(",", "|")
-        touched_links_csv = touched_links.replace(",", ";")
-        with log_file.open("a", encoding="utf-8") as f:
-            f.write(
-                f"{step_count},{lambda_t[0].item():.0f},{mu_t[0].item():.0f},{nu_t[0].item():.0f},"
-                f"{num_contacts[0].item():.0f},{cup_z:.6f},{ee_dist[0].item():.6f},"
-                f"{sensor_max_force:.6f},{sensor_mean_force:.6f},"
-                f"{touched_fingers_csv},{touched_links_csv}\n"
-            )
-    except Exception as exc:
-        # Debug logging must never break training loop.
-        if not hasattr(env, "_sensor_debug_csv_error_reported"):
-            print(f"[sensor_debug] CSV write disabled due to error: {exc}")
-            env._sensor_debug_csv_error_reported = True
 
 
 def object_position_in_robot_root_frame(
@@ -502,7 +442,7 @@ def _maybe_log_grasp_quality(
         return
 
     step_count = int(getattr(env, "common_step_counter", -1))
-    interval = int(getattr(cfg, "debug_grasp_quality_interval", 50))
+    interval = int(getattr(cfg, "debug_grasp_quality_interval", 500))
     if step_count < 0 or (interval > 1 and step_count % interval != 0):
         return
 
@@ -688,12 +628,13 @@ def _debug_triggers(
     eef_link_name: str = "ll_dg_ee",
     sensor_cfg: SceneEntityCfg | None = None,
 ) -> None:
-    """Print trigger states for debugging (env 0 only, every 50 steps)."""
+    """Print trigger states for debugging (env 0 only, configurable interval)."""
     cfg = getattr(env, "cfg", None)
-    debug_enabled = getattr(cfg, "debug_triggers", True)
+    debug_enabled = getattr(cfg, "debug_triggers", False)
+    interval = int(getattr(cfg, "debug_triggers_interval", 500))
     step_count = int(getattr(env, "common_step_counter", -1))
 
-    if not debug_enabled or step_count % 50 != 0:
+    if not debug_enabled or (interval > 1 and step_count % interval != 0):
         return
 
     lambda_t = _approach_trigger(env, object_cfg, eef_link_name)
@@ -719,19 +660,6 @@ def _debug_triggers(
           f"ee_dist={ee_dist[0].item():.4f}m (mean={ee_dist.mean().item():.4f}) | "
           f"touch_fingers={touched_fingers}")
     print(f"[Step {step_count}] touch_links(env0): {touched_links}")
-    _write_sensor_debug_csv(
-        env=env,
-        step_count=step_count,
-        lambda_t=lambda_t,
-        mu_t=mu_t,
-        nu_t=nu_t,
-        num_contacts=num_contacts,
-        cup_z=cup_z,
-        ee_dist=ee_dist,
-        touched_fingers=touched_fingers,
-        touched_links=touched_links,
-        sensor_cfg=effective_sensor_cfg,
-    )
 
 
 def object_ee_distance(
@@ -853,10 +781,10 @@ def _maybe_visualize_approach_target_all(
     marker_attr: str,
 ) -> None:
     cfg = getattr(env, "cfg", None)
-    if cfg is None or not getattr(cfg, "debug_approach_target_vis", True):
+    if cfg is None or not getattr(cfg, "debug_approach_target_vis", False):
         return
 
-    interval = int(getattr(cfg, "debug_approach_target_vis_interval", 10))
+    interval = int(getattr(cfg, "debug_approach_target_vis_interval", 500))
     step_count = int(getattr(env, "common_step_counter", 0))
     if interval > 1 and (step_count % interval) != 0:
         return
@@ -1001,8 +929,12 @@ def _is_reaching_stably_complete(
             counter[reset_mask] = 0
             latched[reset_mask] = False
 
+        debug_enabled = getattr(cfg, "debug_reaching", False)
+        debug_interval = int(getattr(cfg, "debug_reaching_interval", 500))
+        should_print_step = debug_enabled and (debug_interval <= 1 or step_count % debug_interval == 0)
+
         # Debug: print EE distance at episode start for env 0
-        if ep_len[0].item() == 1:
+        if should_print_step and ep_len[0].item() == 1:
             obj_dbg = env.scene[object_cfg.name]
             eef_idx_dbg = env.scene["robot"].data.body_names.index(eef_link_name)
             ee_pos_dbg = env.scene["robot"].data.body_pos_w[:, eef_idx_dbg]
@@ -1017,7 +949,7 @@ def _is_reaching_stably_complete(
         newly_latched = (counter >= hold_steps) & (~latched)
 
         # Debug: print when latched becomes True for env 0
-        if newly_latched[0].item():
+        if should_print_step and newly_latched[0].item():
             obj = env.scene[object_cfg.name]
             eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
             ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
@@ -1030,9 +962,8 @@ def _is_reaching_stably_complete(
 
         env._reach_hold_counter_left_last_step = step_count
 
-        # Debug output (every 50 steps, env 0 only) - inside step check to print once per step
-        debug_enabled = getattr(cfg, "debug_reaching", True)
-        if debug_enabled and step_count % 50 == 0:
+        # Debug output (configurable interval, env 0 only)
+        if should_print_step:
             obj = env.scene[object_cfg.name]
             eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
             ee_pos_w = env.scene["robot"].data.body_pos_w[:, eef_idx]
@@ -2327,8 +2258,14 @@ def force_spike_penalty_multi(
     contact_count = (force_magnitudes > contact_threshold).sum(dim=-1)
     body_tag = "all"
     if sensor_cfg.body_ids is not None:
-        body_ids = sensor_cfg.body_ids.tolist() if torch.is_tensor(sensor_cfg.body_ids) else list(sensor_cfg.body_ids)
-        body_tag = "_".join(str(int(i)) for i in body_ids)
+        if isinstance(sensor_cfg.body_ids, slice):
+            start = 0 if sensor_cfg.body_ids.start is None else int(sensor_cfg.body_ids.start)
+            stop = "end" if sensor_cfg.body_ids.stop is None else int(sensor_cfg.body_ids.stop)
+            step = 1 if sensor_cfg.body_ids.step is None else int(sensor_cfg.body_ids.step)
+            body_tag = f"slice_{start}_{stop}_{step}"
+        else:
+            body_ids = sensor_cfg.body_ids.tolist() if torch.is_tensor(sensor_cfg.body_ids) else list(sensor_cfg.body_ids)
+            body_tag = "_".join(str(int(i)) for i in body_ids)
     buffer_name = f"_prev_forces_{sensor_cfg.name}_{body_tag}"
     if hasattr(env, buffer_name):
         prev_forces = getattr(env, buffer_name)

@@ -211,26 +211,37 @@ def _write_sensor_debug_csv(
         sensor_max_force = 0.0
         sensor_mean_force = 0.0
 
-    log_dir = Path("/home/user/rl_ws/SkillBlender_Manipulation/data")
-    log_dir.mkdir(parents=True, exist_ok=True)
-    log_file = log_dir / "lift_left_v2_sensor_debug.csv"
+    # Resolve project-relative log path so it works across different user home dirs.
+    try:
+        project_root = next(
+            (p for p in Path(__file__).resolve().parents if p.name == "SkillBlender_Manipulation"),
+            Path.cwd(),
+        )
+        log_dir = project_root / "data"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / "lift_left_v2_sensor_debug.csv"
 
-    if not hasattr(env, "_sensor_debug_csv_initialized"):
+        if not hasattr(env, "_sensor_debug_csv_initialized"):
+            with log_file.open("a", encoding="utf-8") as f:
+                f.write(
+                    "step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links\n"
+                )
+            env._sensor_debug_csv_initialized = True
+
+        touched_fingers_csv = touched_fingers.replace(",", "|")
+        touched_links_csv = touched_links.replace(",", ";")
         with log_file.open("a", encoding="utf-8") as f:
             f.write(
-                "step,lambda,mu,nu,contacts,cup_z,ee_dist,force_max,force_mean,touched_fingers,touched_links\n"
+                f"{step_count},{lambda_t[0].item():.0f},{mu_t[0].item():.0f},{nu_t[0].item():.0f},"
+                f"{num_contacts[0].item():.0f},{cup_z:.6f},{ee_dist[0].item():.6f},"
+                f"{sensor_max_force:.6f},{sensor_mean_force:.6f},"
+                f"{touched_fingers_csv},{touched_links_csv}\n"
             )
-        env._sensor_debug_csv_initialized = True
-
-    touched_fingers_csv = touched_fingers.replace(",", "|")
-    touched_links_csv = touched_links.replace(",", ";")
-    with log_file.open("a", encoding="utf-8") as f:
-        f.write(
-            f"{step_count},{lambda_t[0].item():.0f},{mu_t[0].item():.0f},{nu_t[0].item():.0f},"
-            f"{num_contacts[0].item():.0f},{cup_z:.6f},{ee_dist[0].item():.6f},"
-            f"{sensor_max_force:.6f},{sensor_mean_force:.6f},"
-            f"{touched_fingers_csv},{touched_links_csv}\n"
-        )
+    except Exception as exc:
+        # Debug logging must never break training loop.
+        if not hasattr(env, "_sensor_debug_csv_error_reported"):
+            print(f"[sensor_debug] CSV write disabled due to error: {exc}")
+            env._sensor_debug_csv_error_reported = True
 
 
 def object_position_in_robot_root_frame(

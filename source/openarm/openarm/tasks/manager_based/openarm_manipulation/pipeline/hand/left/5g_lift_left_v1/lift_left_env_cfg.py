@@ -343,15 +343,28 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    # [hard step] 비권장: num_steps 시점에 weight가 한번에 교체됨
-    # action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
-    # joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
-
-    # [linear ramp] 권장: start_step ~ end_step 구간에서 weight를 선형으로 증가
-    # 토글: 아래 두 줄 주석 해제 시 활성화
-    # action_rate = CurrTerm(func=mdp.linear_reward_weight, params={"term_name": "action_rate", "start_weight": -5e-4, "end_weight": -5e-3, "start_step": 0, "end_step": 50000})
-    # joint_vel = CurrTerm(func=mdp.linear_reward_weight, params={"term_name": "joint_vel", "start_weight": -5e-4, "end_weight": -5e-3, "start_step": 0, "end_step": 50000})
-    pass
+    # Activate curriculum after 8000 PPO epochs.
+    # With horizon_length=24, this maps to common_step_counter ~= 8000 * 24 = 192000.
+    action_rate = CurrTerm(
+        func=mdp.linear_reward_weight,
+        params={
+            "term_name": "action_rate",
+            "start_weight": -5e-4,
+            "end_weight": -5e-3,
+            "start_step": 192000,
+            "end_step": 242000,
+        },
+    )
+    joint_vel = CurrTerm(
+        func=mdp.linear_reward_weight,
+        params={
+            "term_name": "joint_vel",
+            "start_weight": -5e-4,
+            "end_weight": -5e-3,
+            "start_step": 192000,
+            "end_step": 242000,
+        },
+    )
 
 
 @configclass

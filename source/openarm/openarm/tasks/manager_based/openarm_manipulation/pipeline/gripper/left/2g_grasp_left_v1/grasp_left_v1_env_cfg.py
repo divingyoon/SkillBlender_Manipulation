@@ -274,7 +274,7 @@ class Grasp2gV2EnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
     commands: CommandsCfg = CommandsCfg()
-    curriculum: CurriculumCfg = CurriculumCfg()
+    curriculum = None
 
     def __post_init__(self):
         # lift_openarm-like timing

@@ -232,7 +232,7 @@ class TerminationsCfg:
 
     cup2_tipping = DoneTerm(
         func=mdp.cup_tipped,
-        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 45.0},
+        params={"asset_cfg": SceneEntityCfg("cup2"), "max_tilt_deg": 30.0},
     )
 
 
@@ -274,7 +274,7 @@ class Grasp2gRightV2EnvCfg(ManagerBasedRLEnvCfg):
     terminations: TerminationsCfg = TerminationsCfg()
     events: EventCfg = EventCfg()
     commands: CommandsCfg = CommandsCfg()
-    curriculum: CurriculumCfg = CurriculumCfg()
+    curriculum = None
 
     def __post_init__(self):
         # lift_openarm-like timing

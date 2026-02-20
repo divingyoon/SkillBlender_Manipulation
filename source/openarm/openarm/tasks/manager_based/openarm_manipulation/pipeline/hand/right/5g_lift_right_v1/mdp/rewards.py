@@ -1058,23 +1058,23 @@ def object_displacement_penalty(
 def finger_normal_range_penalty(
     env: ManagerBasedRLEnv,
 ) -> torch.Tensor:
-    """Penalize left thumb+pinky joints going outside their normal curl range.
+    """Penalize right thumb+pinky joints going outside their normal curl range.
 
     Returns total violation amount (positive). Use negative weight in config.
     Joints outside the normal range (e.g. bending backward) accumulate violation in radians.
     """
     robot = env.scene["robot"]
 
-    # Left hand normal ranges (from user-confirmed curl directions)
+    # Right hand normal ranges (from user-confirmed curl directions)
     # 1_1 (thumb spread) excluded - full range is acceptable
     _RANGES = {
-        "lj_dg_1_2": (0.0, 1.571),      # positive = curl
-        "lj_dg_1_3": (-1.571, 0.0),      # negative = curl
-        "lj_dg_1_4": (-1.571, 0.0),      # negative = curl
-        "lj_dg_5_1": (-0.1, 0.1),        # should stay near 0
-        "lj_dg_5_2": (-0.611, 0.05),     # 0.0 ideal, slight positive tolerance
-        "lj_dg_5_3": (0.0, 1.571),       # positive = curl
-        "lj_dg_5_4": (0.0, 1.571),       # positive = curl
+        "rj_dg_1_2": (-1.571, 0.0),      # negative = curl (right thumb opens toward -π/2)
+        "rj_dg_1_3": (-1.571, 0.0),      # negative = curl
+        "rj_dg_1_4": (-1.571, 0.0),      # negative = curl
+        "rj_dg_5_1": (-0.1, 0.1),        # should stay near 0
+        "rj_dg_5_2": (-0.611, 0.05),     # 0.0 ideal, slight positive tolerance
+        "rj_dg_5_3": (0.0, 1.571),       # positive = curl
+        "rj_dg_5_4": (0.0, 1.571),       # positive = curl
     }
 
     total_violation = torch.zeros(env.num_envs, device=env.device)
@@ -1101,9 +1101,9 @@ def thumb_reaching_pose_reward(
 
     # Thumb target = open pose
     _TARGETS = {
-        "lj_dg_1_2": 1.571,    # max open
-        "lj_dg_1_3": 0.0,
-        "lj_dg_1_4": 0.0,
+        "rj_dg_1_2": -1.571,   # max open (right thumb opens toward -π/2)
+        "rj_dg_1_3": 0.0,
+        "rj_dg_1_4": 0.0,
     }
 
     total_sq_error = torch.zeros(env.num_envs, device=env.device)
@@ -1133,8 +1133,8 @@ def pinky_reaching_pose_reward(
 
     # Pinky target = open pose
     _TARGETS = {
-        "lj_dg_5_3": 0.0,
-        "lj_dg_5_4": 0.0,
+        "rj_dg_5_3": 0.0,
+        "rj_dg_5_4": 0.0,
     }
 
     total_sq_error = torch.zeros(env.num_envs, device=env.device)
@@ -1384,9 +1384,9 @@ def synergy_reaching_pose_reward(
 
     # Synergy fingers target = open pose (all joints near 0)
     _TARGETS = {
-        "lj_dg_2_2": 0.0, "lj_dg_2_3": 0.0, "lj_dg_2_4": 0.0,
-        "lj_dg_3_2": 0.0, "lj_dg_3_3": 0.0, "lj_dg_3_4": 0.0,
-        "lj_dg_4_2": 0.0, "lj_dg_4_3": 0.0, "lj_dg_4_4": 0.0,
+        "rj_dg_2_2": 0.0, "rj_dg_2_3": 0.0, "rj_dg_2_4": 0.0,
+        "rj_dg_3_2": 0.0, "rj_dg_3_3": 0.0, "rj_dg_3_4": 0.0,
+        "rj_dg_4_2": 0.0, "rj_dg_4_3": 0.0, "rj_dg_4_4": 0.0,
     }
 
     total_sq_error = torch.zeros(env.num_envs, device=env.device)

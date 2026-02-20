@@ -222,7 +222,7 @@ class RewardsCfg:
     # Force-based grasp rewards (replacing geometry-based thumb_grasp/pinky_grasp/synergy_grip)
     contact_persistence = RewTerm(
         func=mdp.contact_persistence_reward_multi,
-        weight=5.0,  # 15.0 → 5.0: slip_penalty와의 충돌로 관절 폭발 유발 방지
+        weight=10.0,  # 5.0 → 10.0: 접촉 유지 인센티브 복구 (너무 낮아 hover 전략 허용)
         params={
             "sensor_cfg": _SENSOR_CFG,
             "min_contacts": 4,
@@ -245,7 +245,7 @@ class RewardsCfg:
     )
     force_spike = RewTerm(
         func=mdp.force_spike_penalty_multi,
-        weight=-15.0,  # -3.0 → -15.0: 관절 폭발 억제를 위한 핵심 강화
+        weight=-8.0,  # -15.0 → -8.0: 너무 강해서 접촉 자체를 회피하는 원인
         params={
             "sensor_cfg": _SENSOR_CFG,
             "spike_threshold": 10.0,
@@ -254,7 +254,7 @@ class RewardsCfg:
     )
     overgrip = RewTerm(
         func=mdp.overgrip_penalty_multi,
-        weight=-8.0,  # -2.0 → -8.0: force_spike 강화에 맞춰 과도한 힘 억제 강화
+        weight=-4.0,  # -8.0 → -4.0: 동일 이유, force_spike 비율에 맞춰 조정
         params={
             "sensor_cfg": _SENSOR_CFG,
             "max_force": 15.0,
@@ -292,7 +292,7 @@ class RewardsCfg:
             "minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup"),
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
-        weight=10.0,
+        weight=50.0,  # 10.0 → 50.0: sparse reward 돌파를 위한 강력한 인센티브
     )
 
     # μ=1이면 컵 Z 상승에 연속적 gradient 제공 (tanh: delta=0에서 최대 gradient)
@@ -370,8 +370,12 @@ class RewardsCfg:
 
     ee_descent = RewTerm(
         func=mdp.ee_descent_reward,
-        params={"std": 0.04, "target_z_offset": 0.04, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=15.0,
+        params={
+            "std": 0.04, "target_z_offset": 0.04,
+            "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
+            "sensor_cfg": SceneEntityCfg("left_contact_sensor"),  # 구조적 수정: μ 판정을 sensor 기준으로 통일
+        },
+        weight=8.0,  # 15.0 → 8.0: hover 전략의 수익성 감소 (contact 없이도 15pt 영구 수령 방지)
     )
 
     action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)

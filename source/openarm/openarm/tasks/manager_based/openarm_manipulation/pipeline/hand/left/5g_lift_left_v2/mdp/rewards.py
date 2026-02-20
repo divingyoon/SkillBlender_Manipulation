@@ -743,12 +743,17 @@ def ee_descent_reward(
     xy_proximity_std: float = 0.06,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
     eef_link_name: str = "ll_dg_ee",
+    sensor_cfg: SceneEntityCfg | None = None,
 ) -> torch.Tensor:
     """Reward EE descending to grasp height after approach is complete.
 
     After approach is complete (λ=1), guide EE to descend further
     to target_z_offset (default 0.04) for proper grasping.
-    DexPour: Active when λ=1 (approach complete).
+    DexPour: Active when λ=1 AND μ=0 (approach complete, grasp NOT yet achieved).
+    When μ=1 (grasp achieved), descent force disabled → arm free to lift.
+
+    v2: sensor_cfg를 전달하면 μ 판정을 contact sensor 기준으로 통일.
+        None인 경우 geometry-based fallback 사용.
     """
     obj: RigidObject = env.scene[object_cfg.name]
     eef_idx = env.scene["robot"].data.body_names.index(eef_link_name)
@@ -768,9 +773,9 @@ def ee_descent_reward(
     xy_proximity = torch.exp(-xy_dist / xy_proximity_std)
 
     # DexPour: Active when λ=1 AND μ=0 (approach complete, grasp NOT yet achieved)
-    # When μ=1 (grasp achieved), descent force disabled → arm free to lift
+    # sensor_cfg 전달로 다른 보상들과 동일한 contact sensor 기준 μ 사용
     lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
-    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name)
+    mu_trigger = _grasp_trigger(env, object_cfg, eef_link_name, sensor_cfg=sensor_cfg)
     return lambda_trigger * (1.0 - mu_trigger) * descent_reward * xy_proximity
 
 

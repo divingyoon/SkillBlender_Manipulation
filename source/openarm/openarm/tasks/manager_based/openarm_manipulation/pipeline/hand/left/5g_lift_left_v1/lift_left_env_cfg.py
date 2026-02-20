@@ -89,7 +89,7 @@ class CommandsCfg:
         asset_name="robot",
         body_name=MISSING,
         resampling_time_range=(5.0, 5.0),
-        debug_vis=False,
+        debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
             pos_y=(0.1, 0.2),
@@ -312,11 +312,11 @@ class RewardsCfg:
         weight=10.0,
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-5e-4)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-5e-4,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 
@@ -330,9 +330,14 @@ class TerminationsCfg:
 
 @configclass
 class CurriculumCfg:
-    # 커리큘럼 비활성화 - 그립 학습 전에 속도 페널티 증가 시 학습 실패
+    # [hard step] 비권장: num_steps 시점에 weight가 한번에 교체됨
     # action_rate = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "action_rate", "weight": -5e-1, "num_steps": 100000})
     # joint_vel = CurrTerm(func=mdp.modify_reward_weight, params={"term_name": "joint_vel", "weight": -5e-1, "num_steps": 100000})
+
+    # [linear ramp] 권장: start_step ~ end_step 구간에서 weight를 선형으로 증가
+    # 토글: 아래 두 줄 주석 해제 시 활성화
+    # action_rate = CurrTerm(func=mdp.linear_reward_weight, params={"term_name": "action_rate", "start_weight": -5e-4, "end_weight": -5e-3, "start_step": 0, "end_step": 50000})
+    # joint_vel = CurrTerm(func=mdp.linear_reward_weight, params={"term_name": "joint_vel", "start_weight": -5e-4, "end_weight": -5e-3, "start_step": 0, "end_step": 50000})
     pass
 
 
@@ -363,10 +368,10 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     displacement_penalty_power: float = 2.0
     displacement_penalty_gate_mix: float = 0.5
     # Debug visualization
-    debug_approach_target_vis: bool = True  # ll_dg_ee approach target 마커 끔
-    debug_fingertip_vis: bool = True  # 손가락 tip 위치 시각화
-    debug_fingertip_vis_interval: int = 5  # 시각화 업데이트 간격
-    debug_grasp_quality: bool = True
+    debug_approach_target_vis: bool = False
+    debug_fingertip_vis: bool = False
+    debug_fingertip_vis_interval: int = 5
+    debug_grasp_quality: bool = False
     debug_grasp_quality_interval: int = 50
 
     scene: Lift5gLeftSceneCfg = Lift5gLeftSceneCfg(num_envs=2048, env_spacing=2.5)
@@ -383,7 +388,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
         self.episode_length_s = 10.0
         self.sim.dt = 0.01
         self.sim.render_interval = self.decimation
-        self.commands.object_pose.debug_vis = False  # object_tracking 마커 끔
+        self.commands.object_pose.debug_vis = True
 
         self.observations.policy.concatenate_terms = True
 

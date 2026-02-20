@@ -299,3 +299,41 @@
   - `cup_lift_progress.weight`↑, `ee_descent.weight` 미세↑
 - lift는 되는데 goal tracking 저조:
   - `object_goal_tracking(_fine)` weight↑
+
+---
+
+## 9) `rl_games` 학습 에이전트 설명
+
+### 9-1. 이 태스크에서 쓰는 기본 `rl_games` 에이전트
+- task id `5g_lift_left-v1`는 `rl_games_cfg_entry_point`를 통해
+  `config/agents/rl_games_ppo_cfg.yaml`을 사용.
+- 학습 실행 시 `--agent rl_games_cfg_entry_point`를 주면 해당 설정이 로드됨.
+- 내부 알고리즘 표기:
+  - `algo.name: a2c_continuous`
+  - `config.ppo: True`
+- 즉, 구현상 `rl_games`의 A2C continuous 러너를 사용하지만
+  실제 업데이트 규칙은 PPO 클리핑(`e_clip`, `mini_epochs`, `normalize_advantage`) 기반.
+
+### 9-2. 주요 에이전트/모델 타입 (현재 코드 기준)
+- `a2c_continuous`:
+  - 연속 action 공간용 on-policy 에이전트.
+  - `horizon_length` 단위 rollout 후 PPO-style 갱신 수행.
+- `continuous_a2c_logstd`:
+  - 정책이 Gaussian action을 출력하는 actor-critic 모델.
+  - `fixed_sigma=True`일 때 초기 `sigma`를 고정값 기반으로 사용.
+- `actor_critic` (single-head):
+  - 현재 `5g_lift_left-v1` 기본 네트워크.
+  - actor/critic shared trunk(`separate=False`) + MLP(`[256, 128, 64]`, `elu`).
+- `dualhead_a2c` (bimanual 전용):
+  - 저장소에 커스텀 등록된 `rl_games` 네트워크(`sbm.rl.rl_games_networks`).
+  - 좌/우 팔 관측/행동을 분리 인코딩할 때 사용.
+  - 예: `pipeline/gripper/both/2g_pouring_v1`의 `rl_games_ppo_dualhead_cfg.yaml`.
+
+### 9-3. 운영 시 유의점 (orchestrator/runner)
+- `agent` 문자열이 `rl_games_`로 시작하면 `atuo/orchestrator.py`가
+  학습 스크립트를 `scripts/reinforcement_learning/rl_games/train.py`로 자동 전환.
+- 로그 루트는 `log/rl_games` 계열로 전환되며, 체크포인트는 보통 `nn/*.pth`.
+- resume 시 `atuo/runner.py`가
+  - run 디렉터리(`test*`) 탐색
+  - `nn/<checkpoint>` 우선
+  순으로 체크포인트를 자동 해석.

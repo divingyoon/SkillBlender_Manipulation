@@ -1022,6 +1022,42 @@ def object_goal_distance(
     return nu_trigger * (1 - torch.tanh(distance / std))
 
 
+def object_goal_settle_reward(
+    env: ManagerBasedRLEnv,
+    goal_std: float,
+    lin_vel_std: float,
+    ang_vel_std: float,
+    minimal_height: float,
+    command_name: str,
+    robot_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
+    object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),
+    eef_link_name: str = "ll_dg_ee",
+) -> torch.Tensor:
+    """Reward stable settling near goal by preferring low object velocities.
+
+    Notes:
+    - No observation-space change required (uses simulator state only).
+    - Active after lift trigger (nu) to avoid over-constraining early approach.
+    """
+    robot: RigidObject = env.scene[robot_cfg.name]
+    obj: RigidObject = env.scene[object_cfg.name]
+    command = env.command_manager.get_command(command_name)
+    des_pos_b = command[:, :3]
+    des_pos_w, _ = combine_frame_transforms(robot.data.root_pos_w, robot.data.root_quat_w, des_pos_b)
+
+    distance = torch.norm(des_pos_w - obj.data.root_pos_w, dim=1)
+    near_goal = 1.0 - torch.tanh(distance / max(goal_std, 1e-6))
+
+    lin_speed = torch.norm(obj.data.root_lin_vel_w, dim=1)
+    ang_speed = torch.norm(obj.data.root_ang_vel_w, dim=1)
+    lin_stability = torch.exp(-lin_speed / max(lin_vel_std, 1e-6))
+    ang_stability = torch.exp(-ang_speed / max(ang_vel_std, 1e-6))
+    settle = lin_stability * ang_stability
+
+    nu_trigger = _lift_trigger(env, object_cfg, eef_link_name, h_lift=minimal_height)
+    return nu_trigger * near_goal * settle
+
+
 def object_displacement_penalty(
     env: ManagerBasedRLEnv,
     object_cfg: SceneEntityCfg = SceneEntityCfg("cup"),

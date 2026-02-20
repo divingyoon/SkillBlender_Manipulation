@@ -194,7 +194,7 @@ class OpenArmLift5gLeftEnvCfg(Lift5gLeftEnvCfg):
                 "openarm_left_joint6",
                 "openarm_left_joint7",
             ],
-            scale=0.2,
+            scale=0.1,
             use_default_offset=True,
         )
         # Left hand: Synergy for fingers 2-4 (1D)

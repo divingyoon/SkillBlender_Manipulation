@@ -234,7 +234,7 @@ class RewardsCfg:
     )
     slip_penalty = RewTerm(
         func=mdp.slip_magnitude_penalty,
-        weight=-5.0,
+        weight=0.0,  # stability phase: disabled
         params={
             "robot_cfg": SceneEntityCfg("robot", body_names=[
                 f"tesollo_left_{ln}" for ln in LEFT_CONTACT_LINKS
@@ -247,7 +247,7 @@ class RewardsCfg:
     )
     force_spike = RewTerm(
         func=mdp.force_spike_penalty_multi,
-        weight=-8.0,  # -15.0 → -8.0: 너무 강해서 접촉 자체를 회피하는 원인
+        weight=0.0,  # stability phase: disabled
         params={
             "sensor_cfg": _SENSOR_CFG,
             "spike_threshold": 10.0,
@@ -256,7 +256,7 @@ class RewardsCfg:
     )
     overgrip = RewTerm(
         func=mdp.overgrip_penalty_multi,
-        weight=-4.0,  # -8.0 → -4.0: 동일 이유, force_spike 비율에 맞춰 조정
+        weight=0.0,  # stability phase: disabled
         params={
             "sensor_cfg": _SENSOR_CFG,
             "max_force": 15.0,
@@ -285,7 +285,7 @@ class RewardsCfg:
     finger_tip_orientation = RewTerm(
         func=mdp.finger_tip_orientation_reward,
         params={"std": 0.5, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=5.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     lifting_object = RewTerm(
@@ -315,7 +315,7 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"),
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
-        weight=20.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     object_goal_tracking_fine_grained = RewTerm(
@@ -325,49 +325,49 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"),
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),
         },
-        weight=10.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     object_displacement = RewTerm(
         func=mdp.object_displacement_penalty,
         params={"object_cfg": SceneEntityCfg("cup"), "threshold": 0.01},
-        weight=-5.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     finger_normal_range = RewTerm(
         func=mdp.finger_normal_range_penalty,
         params={},
-        weight=-2.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     thumb_reaching_pose = RewTerm(
         func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,  # 0.5 → 4.0: contact_persistence(10) 대비 충분한 억제력 확보
+        weight=0.0,  # stability phase: disabled
     )
 
     pinky_reaching_pose = RewTerm(
         func=mdp.pinky_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,  # 0.5 → 4.0
+        weight=0.0,  # stability phase: disabled
     )
 
     synergy_reaching_pose = RewTerm(
         func=mdp.synergy_reaching_pose_reward,
         params={"std": 5.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=4.0,  # 0.5 → 4.0: approach 전 손가락 조기 폐쇄 억제 핵심
+        weight=0.0,  # stability phase: disabled
     )
 
     thumb_tip_z = RewTerm(
         func=mdp.thumb_tip_z_reward,
         params={"std": 0.03, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=10.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     synergy_tip_z = RewTerm(
         func=mdp.synergy_tip_z_reward,
         params={"std": 0.06, "cup_height": 0.09, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=10.0,
+        weight=0.0,  # stability phase: disabled
     )
 
     ee_descent = RewTerm(
@@ -377,14 +377,14 @@ class RewardsCfg:
             "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee",
             "sensor_cfg": SceneEntityCfg("left_contact_sensor"),  # 구조적 수정: μ 판정을 sensor 기준으로 통일
         },
-        weight=8.0,  # 15.0 → 8.0: hover 전략의 수익성 감소 (contact 없이도 15pt 영구 수령 방지)
+        weight=0.0,  # stability phase: disabled
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-5e-4)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-5e-4,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_left_joint.*", "lj_dg_.*"])},
     )
 
@@ -430,7 +430,7 @@ class Lift5gLeftEnvCfg(ManagerBasedRLEnvCfg):
     displacement_penalty_power: float = 2.0
     displacement_penalty_gate_mix: float = 0.5
     # Cap raw displacement penalty before reward weight is applied.
-    # With object_displacement weight=-5.0, max contribution is -10.0 when max=2.0.
+    # Note: object_displacement is disabled (weight=0.0) in the current stability phase.
     displacement_penalty_max: float = 2.0
     require_filtered_contact_matrix: bool = True
     # Debug controls (default OFF for training performance)

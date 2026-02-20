@@ -88,7 +88,8 @@ class CommandsCfg:
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,
-        resampling_time_range=(5.0, 5.0),
+        # Keep one goal per episode to improve final placement precision.
+        resampling_time_range=(10.0, 10.0),
         debug_vis=True,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
@@ -254,8 +255,20 @@ class RewardsCfg:
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
-        params={"std": 0.15, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
-        weight=15.0,  # std 0.1→0.15: 0.225m 오차에서 tanh 포화 탈출 / weight 10→15
+        params={"std": 0.10, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup")},
+        weight=20.0,  # Tighten fine tracking near goal for precise placement.
+    )
+    object_goal_settle = RewTerm(
+        func=mdp.object_goal_settle_reward,
+        params={
+            "goal_std": 0.08,
+            "lin_vel_std": 0.08,
+            "ang_vel_std": 0.8,
+            "minimal_height": 0.04,
+            "command_name": "object_pose",
+            "object_cfg": SceneEntityCfg("cup"),
+        },
+        weight=8.0,
     )
 
     object_displacement = RewTerm(

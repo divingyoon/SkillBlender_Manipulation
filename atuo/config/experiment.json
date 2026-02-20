@@ -61,6 +61,15 @@
     "max_tokens": 2048,
     "api_base": "http://localhost:11434"
   },
+  "llm_refine_loop": {
+    "enabled": true,
+    "freeze_analysis_script": "../../scripts/tools/freeze_run_analysis.py",
+    "out_dir": "../../log/analysis_llm",
+    "report_verbosity": "long",
+    "gemini": true,
+    "gemini_cmd": "gemini",
+    "gemini_no_browser": false
+  },
   "override_policy": {
     "allowed_overrides": [
       "env.rewards.",

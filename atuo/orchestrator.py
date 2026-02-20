@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 import time
 from dataclasses import dataclass
@@ -11,6 +12,7 @@ import subprocess
 import threading
 
 from analyzer import analyze, rule_based_issues, load_learned_rules, merge_rules
+from llm import call_ollama_messages
 from metrics import summarize_train_metrics, write_metrics_json
 from report import write_report_md
 from runner import run_train
@@ -233,6 +235,171 @@ def _extract_reward_keys(env_yaml_path: Path) -> list[str]:
     return keys
 
 
+def _extract_task_ids_from_config_init(path: Path) -> list[str]:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(r"""gym\.register\(\s*id\s*=\s*["']([^"']+)["']""")
+    return sorted(set(pattern.findall(text)))
+
+
+def _discover_pipeline_hand_tasks(skillblender_root: str) -> set[str]:
+    root = (
+        Path(skillblender_root)
+        / "source/openarm/openarm/tasks/manager_based/openarm_manipulation/pipeline/hand"
+    )
+    if not root.is_dir():
+        return set()
+    task_ids: set[str] = set()
+    for cfg_init in root.glob("**/config/__init__.py"):
+        try:
+            task_ids.update(_extract_task_ids_from_config_init(cfg_init))
+        except Exception:
+            continue
+    return task_ids
+
+
+def _parse_llm_json(text: str) -> dict:
+    try:
+        return json.loads(text)
+    except Exception:
+        pass
+    block = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
+    if block:
+        try:
+            return json.loads(block.group(1))
+        except Exception:
+            pass
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end > start:
+        try:
+            return json.loads(text[start : end + 1])
+        except Exception:
+            pass
+    return {"analysis": text.strip(), "overrides": []}
+
+
+def _filter_overrides(overrides: list[str], allowed_overrides: list[str]) -> list[str]:
+    if not allowed_overrides:
+        return overrides
+    filtered: list[str] = []
+    for item in overrides:
+        if "=" not in item:
+            continue
+        key = item.split("=", 1)[0].strip()
+        if any(key.startswith(prefix) for prefix in allowed_overrides):
+            filtered.append(item)
+    return filtered
+
+
+def _normalize_override_types(overrides: list[str]) -> list[str]:
+    normalized: list[str] = []
+    for item in overrides:
+        if "=" not in item:
+            normalized.append(item)
+            continue
+        key, value = item.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if key.endswith(".weight"):
+            try:
+                num = float(value)
+            except Exception:
+                normalized.append(item)
+                continue
+            if "." not in value and "e" not in value.lower():
+                normalized.append(f"{key}={num:.1f}")
+            else:
+                normalized.append(f"{key}={num}")
+        else:
+            normalized.append(item)
+    return normalized
+
+
+def _run_freeze_analysis(
+    *,
+    script_path: str,
+    run_dir: Path,
+    out_dir: str,
+    report_verbosity: str,
+    use_gemini: bool,
+    gemini_cmd: str,
+    gemini_no_browser: bool,
+    stream_logs: bool,
+    isaaclab_root: str,
+) -> tuple[Path | None, str]:
+    cmd = [
+        "python3",
+        str(Path(script_path).resolve()),
+        "--run",
+        str(run_dir),
+        "--out-dir",
+        str(Path(out_dir).resolve()),
+        "--report-verbosity",
+        report_verbosity,
+    ]
+    if use_gemini:
+        cmd.append("--gemini")
+        if gemini_cmd:
+            cmd += ["--gemini-cmd", gemini_cmd]
+        if gemini_no_browser:
+            cmd.append("--gemini-no-browser")
+
+    proc = subprocess.run(
+        cmd,
+        cwd=str(Path(isaaclab_root).resolve()),
+        capture_output=not stream_logs,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        stderr = (proc.stderr or "").strip()
+        return None, stderr or f"freeze_run_analysis failed (code={proc.returncode})"
+
+    answer_path = Path(out_dir).resolve() / run_dir.name / "gemini_answer.md"
+    if not answer_path.is_file():
+        return None, f"gemini answer not found: {answer_path}"
+    return answer_path, ""
+
+
+def _ollama_overrides_from_gemini_answer(
+    *,
+    answer_text: str,
+    allowed_overrides: list[str],
+    model: str,
+    temperature: float,
+    api_base: str,
+) -> tuple[list[str], str]:
+    system_prompt = (
+        "You convert RL analysis markdown into strict JSON.\n"
+        "Return JSON with keys: analysis, overrides.\n"
+        "overrides must be a list of 'key=value' strings only."
+    )
+    user_prompt = (
+        "Read the markdown analysis below and extract practical next-run hydra overrides.\n"
+        "Only include overrides whose key starts with one of these allowed prefixes:\n"
+        f"{json.dumps(allowed_overrides)}\n\n"
+        "Do not include explanations outside JSON.\n\n"
+        "Markdown analysis:\n"
+        f"{answer_text}"
+    )
+    response = call_ollama_messages(
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        model=model,
+        temperature=temperature,
+        api_base=api_base,
+    )
+    parsed = _parse_llm_json(response)
+    raw = parsed.get("overrides", [])
+    overrides = [str(x) for x in raw] if isinstance(raw, list) else []
+    overrides = _filter_overrides(overrides, allowed_overrides)
+    overrides = _normalize_override_types(overrides)
+    summary = str(parsed.get("analysis", "")).strip()
+    return overrides, summary
+
+
 def decide_success(eval_metrics: dict, criteria: dict) -> tuple[bool, dict]:
     lift = _mean_pair(eval_metrics.get("lift_success_left", 0.0), eval_metrics.get("lift_success_right", 0.0))
     hold = _mean_pair(eval_metrics.get("hold_success_left", 0.0), eval_metrics.get("hold_success_right", 0.0))
@@ -367,7 +534,7 @@ def main() -> int:
     parser.add_argument("--gui", action="store_true", help="Disable headless mode")
     parser.add_argument("--task", type=str, default=None, help="Override task")
     parser.add_argument("--agent", type=str, default=None, help="Override agent")
-    parser.add_argument("--max_iterations", type=int, default=None, help="Override max_iterations")
+    parser.add_argument("--max_iterations", "--max_iteration", dest="max_iterations", type=int, default=None, help="Override max_iterations")
     parser.add_argument("--resume_from", type=str, default=None, help="Override resume load_run")
     parser.add_argument("--resume_checkpoint", type=str, default=None, help="Override resume checkpoint")
     parser.add_argument("--swap_lr", action="store_true", default=False, help="Enable left/right swap augmentation")
@@ -424,6 +591,13 @@ def main() -> int:
     llm_cfg = cfg.get("llm", {})
     override_policy = cfg.get("override_policy", {})
     policy = cfg.get("run_policy", {})
+    llm_refine = cfg.get("llm_refine_loop", {})
+
+    hand_tasks = _discover_pipeline_hand_tasks(project["skillblender_root"])
+    if hand_tasks:
+        print(f"[orchestrator] discovered pipeline/hand task ids: {len(hand_tasks)}")
+    if train.get("task") in hand_tasks:
+        print(f"[orchestrator] task '{train['task']}' is available in pipeline/hand registry.")
 
     max_runs = int(policy.get("max_runs", 1))
     stop_on_success = bool(policy.get("stop_on_success", True))
@@ -431,6 +605,24 @@ def main() -> int:
     max_total_iterations = policy.get("max_total_iterations", None)
     stop_on_collapse = bool(policy.get("stop_on_collapse", True))
     stream_logs = bool(policy.get("stream_logs", True))
+    llm_refine_enabled = bool(llm_refine.get("enabled", False))
+    freeze_script = resolve_path(
+        str(
+            llm_refine.get(
+                "freeze_analysis_script",
+                Path(project["skillblender_root"]) / "scripts" / "tools" / "freeze_run_analysis.py",
+            )
+        ),
+        config_dir,
+    )
+    freeze_out_dir = resolve_path(
+        str(llm_refine.get("out_dir", Path(project["skillblender_root"]) / "log" / "analysis_llm")),
+        config_dir,
+    )
+    freeze_report_verbosity = str(llm_refine.get("report_verbosity", "long"))
+    freeze_use_gemini = bool(llm_refine.get("gemini", True))
+    freeze_gemini_cmd = str(llm_refine.get("gemini_cmd", "gemini"))
+    freeze_gemini_no_browser = bool(llm_refine.get("gemini_no_browser", False))
 
     seed = train.get("seed", None)
     if args.num_envs is not None:
@@ -683,7 +875,10 @@ def main() -> int:
         write_metrics_json(metrics_path, payload)
 
         if skip_eval:
-            success, aggregated = False, {}
+            train_only_payload = {"train": train_metrics, "eval": {}}
+            train_issues, _ = rule_based_issues(train_only_payload, analysis_thresholds)
+            success = len(train_issues) == 0
+            aggregated = {"train_only_issues": train_issues}
         else:
             success, aggregated = decide_success(eval_metrics, criteria)
         analysis_result = None
@@ -697,16 +892,63 @@ def main() -> int:
                     continue
                 reward_override_keys.append(f"env.rewards.{name}.weight")
                 reward_override_keys.append(f"env.rewards.{name}.params.")
-            analysis_result = analyze(
-                payload=payload,
-                thresholds=analysis_thresholds,
-                llm_cfg=llm_cfg,
-                allowed_overrides=reward_override_keys or override_policy.get("allowed_overrides", []),
-                rules=analysis_rules,
-                config_dir=config_dir,
-            )
-            applied_overrides = analysis_result.applied_overrides
-            pending_overrides = list(applied_overrides)
+            allowed_override_keys = reward_override_keys or override_policy.get("allowed_overrides", [])
+
+            llm_refine_summary = ""
+            llm_refine_answer_path = ""
+            llm_refine_error = ""
+            llm_refine_overrides: list[str] = []
+
+            if llm_refine_enabled and str(train.get("agent", "")).startswith("rl_games_"):
+                answer_path, refine_err = _run_freeze_analysis(
+                    script_path=freeze_script,
+                    run_dir=log_dir,
+                    out_dir=freeze_out_dir,
+                    report_verbosity=freeze_report_verbosity,
+                    use_gemini=freeze_use_gemini,
+                    gemini_cmd=freeze_gemini_cmd,
+                    gemini_no_browser=freeze_gemini_no_browser,
+                    stream_logs=stream_logs,
+                    isaaclab_root=project["isaaclab_root"],
+                )
+                if answer_path is None:
+                    llm_refine_error = refine_err
+                    print(f"[orchestrator] llm_refine_loop skipped: {refine_err}")
+                else:
+                    llm_refine_answer_path = str(answer_path)
+                    try:
+                        gemini_answer = answer_path.read_text(encoding="utf-8")
+                        llm_refine_overrides, llm_refine_summary = _ollama_overrides_from_gemini_answer(
+                            answer_text=gemini_answer,
+                            allowed_overrides=allowed_override_keys,
+                            model=str(llm_cfg.get("model", "qwen2.5:14b")),
+                            temperature=float(llm_cfg.get("temperature", 0.3)),
+                            api_base=str(llm_cfg.get("api_base", "http://localhost:11434")),
+                        )
+                    except Exception as exc:
+                        llm_refine_error = str(exc)
+                        llm_refine_overrides = []
+                        print(f"[orchestrator] llm_refine_loop parse failed: {exc}")
+
+            if llm_refine_overrides:
+                applied_overrides = llm_refine_overrides
+                pending_overrides = list(applied_overrides)
+                payload["override_source"] = "gemini+ollama"
+                payload["analysis_response_raw"] = llm_refine_summary
+                payload["analysis_prompt"] = "freeze_run_analysis prompt + gemini_answer.md -> ollama override extraction"
+                analysis_result = None
+            else:
+                analysis_result = analyze(
+                    payload=payload,
+                    thresholds=analysis_thresholds,
+                    llm_cfg=llm_cfg,
+                    allowed_overrides=allowed_override_keys,
+                    rules=analysis_rules,
+                    config_dir=config_dir,
+                )
+                applied_overrides = analysis_result.applied_overrides
+                pending_overrides = list(applied_overrides)
+
         report["eval"] = {
             "returncode": eval_result.returncode,
             "metrics_path": metrics_path,
@@ -730,6 +972,24 @@ def main() -> int:
                 "llm_rule_overlap": payload.get("llm_rule_overlap", []),
                 "llm_override_count": payload.get("llm_override_count", 0),
                 "rule_override_count": payload.get("rule_override_count", 0),
+            }
+            (run_dir / "analysis_prompt.txt").write_text(
+                payload.get("analysis_prompt", ""), encoding="utf-8"
+            )
+            (run_dir / "analysis_response.txt").write_text(
+                payload.get("analysis_response_raw", ""), encoding="utf-8"
+            )
+            (run_dir / "overrides.json").write_text(
+                json.dumps({"overrides": applied_overrides}, indent=2), encoding="utf-8"
+            )
+        elif applied_overrides:
+            report["analysis"] = {
+                "issues": aggregated.get("train_only_issues", []),
+                "observations": [],
+                "llm_summary": payload.get("analysis_response_raw", ""),
+                "llm_overrides": applied_overrides,
+                "applied_overrides": applied_overrides,
+                "override_source": payload.get("override_source", ""),
             }
             (run_dir / "analysis_prompt.txt").write_text(
                 payload.get("analysis_prompt", ""), encoding="utf-8"

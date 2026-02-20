@@ -46,13 +46,30 @@ def call_openai_chat(prompt: str, model: str, temperature: float, max_tokens: in
 
 
 def call_ollama_chat(prompt: str, model: str, temperature: float, api_base: str) -> str:
+    return call_ollama_messages(
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an RL reward engineering expert analyzing bimanual grasping tasks. "
+                    "Analyze the training data step-by-step, then output JSON with keys: analysis, overrides. "
+                    "The 'analysis' field should contain your step-by-step reasoning. "
+                    "The 'overrides' field should be a list of 'key=value' strings."
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ],
+        model=model,
+        temperature=temperature,
+        api_base=api_base,
+    )
+
+
+def call_ollama_messages(messages: list[dict], model: str, temperature: float, api_base: str) -> str:
     url = api_base.rstrip("/") + "/api/chat"
     payload = {
         "model": model,
-        "messages": [
-            {"role": "system", "content": "You are an RL reward engineering expert analyzing bimanual grasping tasks. Analyze the training data step-by-step, then output JSON with keys: analysis, overrides. The 'analysis' field should contain your step-by-step reasoning. The 'overrides' field should be a list of 'key=value' strings."},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": messages,
         "options": {"temperature": temperature},
         "stream": False,
     }

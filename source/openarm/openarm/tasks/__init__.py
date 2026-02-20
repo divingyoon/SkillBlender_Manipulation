@@ -17,6 +17,7 @@
 ##
 
 import importlib
+from pathlib import Path
 
 from isaaclab_tasks.utils import import_packages
 
@@ -75,31 +76,17 @@ importlib.import_module(
     "openarm.tasks.manager_based.openarm_manipulation.pipeline.gripper.both.2g_pouring_v1.config"
 )
 
-# pipeline/hand/left/5g_approach_left_v1, 5g_approach_right_v1
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_approach_left_v1.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.right.5g_approach_right_v1.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v1.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v2.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_lift_left_v3.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_pickplace_left_v1.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.left.5g_grasp_v1.config"
-)
-importlib.import_module(
-    "openarm.tasks.manager_based.openarm_manipulation.pipeline.hand.right.5g_lift_right_v1.config"
-)
+# pipeline/hand/*: auto import all task config modules
+_TASKS_ROOT = Path(__file__).resolve().parent
+_HAND_ROOT = _TASKS_ROOT / "manager_based" / "openarm_manipulation" / "pipeline" / "hand"
+for cfg_init in sorted(_HAND_ROOT.glob("**/config/__init__.py")):
+    module_path = cfg_init.parent.as_posix()
+    marker = "openarm/tasks/"
+    if marker not in module_path:
+        continue
+    rel_module = module_path.split(marker, 1)[1].replace("/", ".")
+    module_name = f"openarm.tasks.{rel_module}"
+    importlib.import_module(module_name)
 
 # blending/pouring,pouring1,pouring2,pouring3,pouring4
 import openarm.tasks.manager_based.openarm_manipulation.blending.pouring.config

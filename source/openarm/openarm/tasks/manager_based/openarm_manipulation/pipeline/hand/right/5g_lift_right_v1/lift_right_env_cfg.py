@@ -88,7 +88,7 @@ class CommandsCfg:
     object_pose = mdp.UniformPoseCommandCfg(
         asset_name="robot",
         body_name=MISSING,
-        resampling_time_range=(5.0, 5.0),
+        resampling_time_range=(10.0, 10.0),
         debug_vis=False,
         ranges=mdp.UniformPoseCommandCfg.Ranges(
             pos_x=(0.2, 0.3),
@@ -235,7 +235,7 @@ class RewardsCfg:
     lifting_object = RewTerm(
         func=mdp.object_is_lifted,
         params={"minimal_height": 0.04, "object_cfg": SceneEntityCfg("cup2")},
-        weight=10.0,
+        weight=8.0,  # 10.0 -> 8.0: align with left_v1
     )
 
     # μ=1이면 컵 Z 상승에 연속적 gradient 제공 (tanh: delta=0에서 최대 gradient)
@@ -243,19 +243,19 @@ class RewardsCfg:
     cup_lift_progress = RewTerm(
         func=mdp.cup_lift_progress_reward,
         params={"std": 0.05, "object_cfg": SceneEntityCfg("cup2"), "eef_link_name": "rl_dg_ee"},
-        weight=20.0,
+        weight=15.0,  # 20.0 -> 15.0: align with left_v1
     )
 
     object_goal_tracking = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.3, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
-        weight=20.0,
+        weight=25.0,  # 20.0 -> 25.0: align with left_v1
     )
 
     object_goal_tracking_fine_grained = RewTerm(
         func=mdp.object_goal_distance,
         params={"std": 0.1, "minimal_height": 0.04, "command_name": "object_pose", "object_cfg": SceneEntityCfg("cup2")},
-        weight=10.0,
+        weight=20.0,  # 10.0 -> 20.0: align with left_v1
     )
 
     object_displacement = RewTerm(
@@ -312,11 +312,11 @@ class RewardsCfg:
         weight=10.0,
     )
 
-    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-1e-4)
+    action_rate = RewTerm(func=base_mdp.action_rate_l2, weight=-5e-4)
 
     joint_vel = RewTerm(
         func=base_mdp.joint_vel_l2,
-        weight=-1e-4,
+        weight=-5e-4,
         params={"asset_cfg": SceneEntityCfg("robot", joint_names=["openarm_right_joint.*", "rj_dg_.*"])},
     )
 

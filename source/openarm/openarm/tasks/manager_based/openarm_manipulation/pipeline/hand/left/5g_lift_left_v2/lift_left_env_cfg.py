@@ -222,12 +222,14 @@ class RewardsCfg:
     # Force-based grasp rewards (replacing geometry-based thumb_grasp/pinky_grasp/synergy_grip)
     contact_persistence = RewTerm(
         func=mdp.contact_persistence_reward_multi,
-        weight=10.0,  # 5.0 → 10.0: 접촉 유지 인센티브 복구 (너무 낮아 hover 전략 허용)
+        weight=10.0,
         params={
             "sensor_cfg": _SENSOR_CFG,
             "min_contacts": 4,
             "contact_threshold": 0.05,
             "use_filtered": False,
+            "object_cfg": SceneEntityCfg("cup"),        # λ gate: approach 전 조기 손가락 폐쇄 방지
+            "eef_link_name": "ll_dg_ee",
         },
     )
     slip_penalty = RewTerm(
@@ -341,19 +343,19 @@ class RewardsCfg:
     thumb_reaching_pose = RewTerm(
         func=mdp.thumb_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=0.5,
+        weight=4.0,  # 0.5 → 4.0: contact_persistence(10) 대비 충분한 억제력 확보
     )
 
     pinky_reaching_pose = RewTerm(
         func=mdp.pinky_reaching_pose_reward,
         params={"std": 1.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=0.5,
+        weight=4.0,  # 0.5 → 4.0
     )
 
     synergy_reaching_pose = RewTerm(
         func=mdp.synergy_reaching_pose_reward,
         params={"std": 5.0, "object_cfg": SceneEntityCfg("cup"), "eef_link_name": "ll_dg_ee"},
-        weight=0.5,
+        weight=4.0,  # 0.5 → 4.0: approach 전 손가락 조기 폐쇄 억제 핵심
     )
 
     thumb_tip_z = RewTerm(

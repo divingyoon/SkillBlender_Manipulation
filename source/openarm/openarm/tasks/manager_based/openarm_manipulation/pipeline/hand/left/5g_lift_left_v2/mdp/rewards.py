@@ -2161,6 +2161,8 @@ def contact_persistence_reward_multi(
     min_contacts: int = 3,
     contact_threshold: float = 0.1,
     use_filtered: bool = False,
+    object_cfg: SceneEntityCfg | None = None,
+    eef_link_name: str = "ll_dg_ee",
 ) -> torch.Tensor:
     """Reward for maintaining minimum number of contacts (multi-sensor).
 
@@ -2169,6 +2171,9 @@ def contact_persistence_reward_multi(
         sensor_cfg: Contact sensor entity config
         min_contacts: Minimum contacts for full reward
         contact_threshold: Force threshold for contact detection
+        object_cfg: If provided, gates reward by approach trigger λ (contact only rewarded
+                    after EE reaches cup proximity). Prevents premature finger closure.
+        eef_link_name: EE link name used for approach trigger computation.
 
     Returns:
         Reward in [0, 1] (num_envs,)
@@ -2178,7 +2183,15 @@ def contact_persistence_reward_multi(
     else:
         force_magnitudes = _force_magnitudes_multi(env, sensor_cfg)
     num_contacts = (force_magnitudes > contact_threshold).sum(dim=-1).float()
-    return torch.clamp(num_contacts / min_contacts, 0.0, 1.0)
+    reward = torch.clamp(num_contacts / min_contacts, 0.0, 1.0)
+
+    # λ gate: approach 완료(EE가 컵 근접) 이후에만 contact persistence 보상 지급
+    # approach 전 손가락 조기 폐쇄를 방지
+    if object_cfg is not None:
+        lambda_trigger = _approach_trigger(env, object_cfg, eef_link_name)
+        reward = reward * lambda_trigger
+
+    return reward
 
 
 def slip_magnitude_penalty(
